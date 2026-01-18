@@ -1,0 +1,30 @@
+services:
+  decidarr:
+    build: .
+    container_name: decidarr
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3100}:3000"
+    environment:
+      - NODE_ENV=production
+      - MONGODB_URI=mongodb://mongo:27017/decidarr
+    depends_on:
+      - mongo
+    networks:
+      - decidarr-network
+
+  mongo:
+    image: mongo:7
+    container_name: decidarr-mongo
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - decidarr-network
+
+volumes:
+  mongo-data:
+
+networks:
+  decidarr-network:
+    driver: bridge
