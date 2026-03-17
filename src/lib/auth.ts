@@ -118,13 +118,25 @@ export async function getSyncFrequencyHours(): Promise<number> {
   }
 }
 
+// Normalize a URL by ensuring it has a protocol
+export function normalizeUrl(url: string): string {
+  if (!url) return url;
+  const trimmed = url.trim();
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed.replace(/\/+$/, '');
+  }
+  return `http://${trimmed}`.replace(/\/+$/, '');
+}
+
 // Validate a Plex server URL to prevent SSRF attacks.
 // Allows RFC1918 private ranges (legitimate home networks) but blocks
 // loopback and link-local addresses (cloud metadata endpoints).
-export function validatePlexUrl(url: string): { valid: boolean; error?: string } {
+export function validatePlexUrl(url: string): { valid: boolean; error?: string; normalized?: string } {
+  const normalized = normalizeUrl(url);
+  
   let parsed: URL;
   try {
-    parsed = new URL(url);
+    parsed = new URL(normalized);
   } catch {
     return { valid: false, error: 'Invalid URL format' };
   }
@@ -155,7 +167,7 @@ export function validatePlexUrl(url: string): { valid: boolean; error?: string }
     return { valid: false, error: 'Link-local IPv6 addresses are not permitted' };
   }
 
-  return { valid: true };
+  return { valid: true, normalized };
 }
 
 // Shared helper to respond with auth/config errors in API routes

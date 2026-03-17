@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { getOrCreateSettings } from '@/lib/models/Settings';
-import { requireAuth, validatePlexUrl } from '@/lib/auth';
+import { requireAuth, validatePlexUrl, normalizeUrl } from '@/lib/auth';
 
 // Helper to mask sensitive values
 const maskValue = (value: string | undefined): string | null => {
@@ -77,7 +77,7 @@ export async function PUT(request: NextRequest) {
             { status: 400 }
           );
         }
-        settings.plexServerUrl = body.plex.serverUrl;
+        settings.plexServerUrl = urlCheck.normalized || body.plex.serverUrl;
       }
     }
 
@@ -101,7 +101,7 @@ export async function PUT(request: NextRequest) {
     // Update Tautulli settings if provided
     if (body.tautulli) {
       if (body.tautulli.url !== undefined) {
-        settings.tautulliUrl = body.tautulli.url || undefined;
+        settings.tautulliUrl = body.tautulli.url ? normalizeUrl(body.tautulli.url) : undefined;
       }
       if (body.tautulli.apiKey !== undefined) {
         if (body.tautulli.apiKey && !body.tautulli.apiKey.includes('****')) {

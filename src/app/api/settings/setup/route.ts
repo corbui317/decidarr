@@ -83,9 +83,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Update settings
+    // Update settings with normalized URL
     settings.plexToken = plexToken;
-    settings.plexServerUrl = finalServerUrl;
+    settings.plexServerUrl = urlCheck.normalized || finalServerUrl;
     settings.plexUsername = validation.user.username;
     if (machineId) {
       settings.plexMachineId = machineId;
