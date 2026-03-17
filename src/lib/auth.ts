@@ -2,6 +2,9 @@ import { cookies } from 'next/headers';
 import jwt from 'jsonwebtoken';
 import { connectDB } from './db';
 import { getOrCreateSettings, ISettings } from './models/Settings';
+import { createLogger } from './logger';
+
+const logger = createLogger('Auth');
 
 // Get the configured Plex credentials from Settings
 export async function getPlexCredentials(): Promise<{
@@ -39,16 +42,24 @@ export async function validateSession(): Promise<boolean> {
   try {
     await connectDB();
     const settings = await getOrCreateSettings();
-    if (!settings.setupComplete) return false;
+    if (!settings.setupComplete) {
+      logger.debug('Session invalid: setup not complete');
+      return false;
+    }
 
     const cookieStore = await cookies();
     const token = cookieStore.get('decidarr_session')?.value;
-    if (!token) return false;
+    if (!token) {
+      logger.debug('Session invalid: no session cookie found');
+      return false;
+    }
 
     const jwtSecret = settings.getJwtSecret();
     jwt.verify(token, jwtSecret);
+    logger.debug('Session valid');
     return true;
-  } catch {
+  } catch (err) {
+    logger.warn('Session validation failed', { error: (err as Error).message });
     return false;
   }
 }
@@ -63,6 +74,7 @@ export async function requireAuth(): Promise<{
   const settings = await getOrCreateSettings();
 
   if (!settings.setupComplete) {
+    logger.warn('Auth failed: app not configured');
     throw new Error('App not configured');
   }
 
@@ -70,25 +82,30 @@ export async function requireAuth(): Promise<{
   const cookieStore = await cookies();
   const token = cookieStore.get('decidarr_session')?.value;
   if (!token) {
+    logger.warn('Auth failed: no session cookie');
     throw new Error('Unauthorized');
   }
 
   try {
     const jwtSecret = settings.getJwtSecret();
     jwt.verify(token, jwtSecret);
-  } catch {
+  } catch (err) {
+    logger.warn('Auth failed: JWT verification error', { error: (err as Error).message });
     throw new Error('Unauthorized');
   }
 
   const plexToken = settings.getDecryptedPlexToken();
   if (!plexToken) {
+    logger.warn('Auth failed: Plex token not configured');
     throw new Error('Plex token not configured');
   }
 
   if (!settings.plexServerUrl) {
+    logger.warn('Auth failed: Plex server URL not configured');
     throw new Error('Plex server URL not configured');
   }
 
+  logger.debug('Auth successful', { username: settings.plexUsername });
   return {
     plexToken,
     plexServerUrl: settings.plexServerUrl,

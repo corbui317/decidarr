@@ -36,8 +36,11 @@ export default function LibrarySelector({
     try {
       const data = await libraryApi.getSections();
       setSections(data.sections as Section[]);
-    } catch {
-      setError('Failed to load libraries');
+      setError(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to load libraries';
+      console.error('[LibrarySelector] Load error:', message);
+      setError(message);
     } finally {
       setLoading(false);
     }

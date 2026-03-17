@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
-import { settingsApi } from '@/lib/api';
+import { settingsApi, authApi } from '@/lib/api';
 
 interface User {
   username: string;
@@ -34,19 +34,41 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const checkAuth = async () => {
     try {
-      // Check if app is configured and get user info
+      // First check if app is configured
       const status = await settingsApi.getStatus();
-
-      if (status.setupComplete && status.hasPlexToken && status.plexUsername) {
-        setUser({
-          username: status.plexUsername,
-          plexServerUrl: '', // Will be fetched from settings when needed
-        });
-      } else {
+      
+      if (!status.setupComplete) {
+        console.log('[Auth] Setup not complete');
         setUser(null);
+        setLoading(false);
+        return;
+      }
+
+      // App is configured, now verify the session by calling an authenticated endpoint
+      try {
+        const me = await authApi.getCurrentUser();
+        console.log('[Auth] Session valid, user:', me.user.username);
+        setUser({
+          username: me.user.username,
+          plexServerUrl: me.user.serverUrl || '',
+        });
+      } catch (authErr) {
+        // Session cookie might be missing or invalid
+        console.log('[Auth] Session check failed:', authErr instanceof Error ? authErr.message : 'Unknown');
+        // Still show as "authenticated" based on status if setup is complete
+        // This allows the dashboard to load and show a proper error
+        if (status.plexUsername) {
+          setUser({
+            username: status.plexUsername,
+            plexServerUrl: '',
+          });
+        } else {
+          setUser(null);
+        }
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Connection failed';
+      console.error('[Auth] Status check failed:', errorMessage);
       setError(errorMessage);
       setUser(null);
     } finally {

@@ -14,12 +14,15 @@ export default function Home() {
 
   useEffect(() => {
     if (appLoading || authLoading) return;
+    
+    console.log('[Home] State:', { configured, isAuthenticated, appLoading, authLoading });
+    
     if (configured && isAuthenticated) {
-      router.push('/dashboard');
-    } else if (configured && !isAuthenticated) {
-      // App is configured but no active session — send to dashboard which handles it
-      router.push('/dashboard');
+      console.log('[Home] Configured and authenticated, going to dashboard');
+      router.replace('/dashboard');
     }
+    // If configured but not authenticated, stay on home page and show loading
+    // The AuthContext will set isAuthenticated based on status check
   }, [isAuthenticated, authLoading, appLoading, configured, router]);
 
   // Show loading while checking status

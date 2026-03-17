@@ -27,11 +27,18 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
   const response = await fetch(`${API_BASE}${endpoint}`, config);
 
   if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ error: 'Request failed' }));
+    
     if (response.status === 401) {
-      window.location.href = '/';
+      console.warn(`[API] 401 Unauthorized on ${endpoint}:`, errorData.error);
+      // Only redirect if we're not already on the home page and not during setup
+      if (typeof window !== 'undefined' && window.location.pathname !== '/') {
+        // Use replace to avoid back-button loops
+        window.location.replace('/');
+      }
     }
-    const error = await response.json().catch(() => ({ error: 'Request failed' }));
-    throw new Error(error.error || 'Request failed');
+    
+    throw new Error(errorData.error || 'Request failed');
   }
 
   return response.json();
