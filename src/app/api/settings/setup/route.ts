@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { connectDB } from '@/lib/db';
 import { getOrCreateSettings } from '@/lib/models/Settings';
 import { PlexService } from '@/lib/services/plex';
+import { validateSession, validatePlexUrl } from '@/lib/auth';
 import jwt from 'jsonwebtoken';
 
 // POST /api/settings/setup - Complete initial setup
@@ -10,8 +11,19 @@ export async function POST(request: NextRequest) {
   try {
     await connectDB();
     const settings = await getOrCreateSettings();
-    const body = await request.json();
 
+    // If setup is already complete, require a valid session to re-configure
+    if (settings.setupComplete) {
+      const valid = await validateSession();
+      if (!valid) {
+        return NextResponse.json(
+          { error: 'Unauthorized: app is already configured' },
+          { status: 401 }
+        );
+      }
+    }
+
+    const body = await request.json();
     const { plexToken, plexServerUrl, tmdbApiKey } = body;
 
     if (!plexToken) {
@@ -34,27 +46,25 @@ export async function POST(request: NextRequest) {
 
     // If no server URL provided, try to discover it
     let finalServerUrl = plexServerUrl;
-    if (!finalServerUrl) {
-      try {
-        const servers = await plexService.getServers();
-        if (servers.length > 0) {
-          // Try to find local server first, then fall back to first available
-          const localServer = servers.find(s =>
-            s.connections.some(c => c.local)
-          );
-          const server = localServer || servers[0];
+    let machineId: string | null = null;
 
-          // Prefer local connection
+    try {
+      const servers = await plexService.getServers();
+      if (servers.length > 0) {
+        const localServer = servers.find(s => s.connections.some(c => c.local));
+        const server = localServer || servers[0];
+        machineId = server.clientIdentifier;
+
+        if (!finalServerUrl) {
           const localConnection = server.connections.find(c => c.local);
           const connection = localConnection || server.connections[0];
-
           if (connection) {
             finalServerUrl = connection.uri;
           }
         }
-      } catch (err) {
-        console.error('Server discovery error:', err);
       }
+    } catch (err) {
+      console.error('Server discovery error:', err);
     }
 
     if (!finalServerUrl) {
@@ -64,10 +74,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validate the server URL to prevent SSRF
+    const urlCheck = validatePlexUrl(finalServerUrl);
+    if (!urlCheck.valid) {
+      return NextResponse.json(
+        { error: `Invalid server URL: ${urlCheck.error}` },
+        { status: 400 }
+      );
+    }
+
     // Update settings
     settings.plexToken = plexToken;
     settings.plexServerUrl = finalServerUrl;
     settings.plexUsername = validation.user.username;
+    if (machineId) {
+      settings.plexMachineId = machineId;
+    }
 
     if (tmdbApiKey) {
       settings.tmdbApiKey = tmdbApiKey;

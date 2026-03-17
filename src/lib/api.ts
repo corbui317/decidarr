@@ -44,6 +44,13 @@ export const authApi = {
 };
 
 // Library API
+export interface PlexCollection {
+  ratingKey: string;
+  title: string;
+  childCount: number;
+  libraryId: string;
+}
+
 export const libraryApi = {
   getSections: () => request<{ sections: unknown[] }>('/library/sections'),
   getItems: (id: string, forceRefresh = false) =>
@@ -63,6 +70,8 @@ export const libraryApi = {
       ratingRange: { min: number; max: number };
       studios: string[];
     }>(`/library/filter-options?libraryIds=${libraryIds.join(',')}`),
+  getCollections: (libraryIds: string[]) =>
+    request<{ collections: PlexCollection[] }>(`/library/collections?libraryIds=${libraryIds.join(',')}`),
 };
 
 // Selection API
@@ -123,11 +132,14 @@ export const watchedApi = {
 };
 
 // Settings API
+export type AppTheme = 'dark' | 'light' | 'vegas' | 'macao' | 'poker';
+
 export interface SettingsResponse {
   setupComplete: boolean;
   plex: {
     serverUrl: string | null;
     username: string | null;
+    machineId: string | null;
     hasToken: boolean;
     tokenMasked: string | null;
   };
@@ -135,9 +147,17 @@ export interface SettingsResponse {
     hasKey: boolean;
     keyMasked: string | null;
   };
+  tautulli: {
+    url: string | null;
+    enabled: boolean;
+    hasKey: boolean;
+    keyMasked: string | null;
+    syncIntervalMinutes: number;
+    lastSync: string | null;
+  };
   syncFrequencyHours: number;
   uiPreferences: {
-    theme: 'dark' | 'light';
+    theme: AppTheme;
     defaultMediaType: 'movie' | 'show';
     tvSelectionMode: 'show' | 'episode';
   };
@@ -184,9 +204,10 @@ export const settingsApi = {
   updateSettings: (settings: {
     plex?: { token?: string; serverUrl?: string };
     tmdb?: { apiKey?: string };
+    tautulli?: { url?: string; apiKey?: string; enabled?: boolean; syncIntervalMinutes?: number };
     syncFrequencyHours?: number;
     uiPreferences?: {
-      theme?: 'dark' | 'light';
+      theme?: AppTheme;
       defaultMediaType?: 'movie' | 'show';
       tvSelectionMode?: 'show' | 'episode';
     };
@@ -220,4 +241,35 @@ export const settingsApi = {
       method: 'POST',
       body: { apiKey },
     }),
+};
+
+// Tautulli API
+export interface TautulliUser {
+  id: number;
+  username: string;
+  friendlyName: string;
+}
+
+export interface TautulliTestResponse {
+  success: boolean;
+  error?: string;
+  users?: TautulliUser[];
+}
+
+export interface TautulliSyncResponse {
+  success: boolean;
+  synced: number;
+  movies: number;
+  shows: number;
+  lastSync: string;
+  error?: string;
+}
+
+export const tautulliApi = {
+  test: (url: string, apiKey: string) =>
+    request<TautulliTestResponse>('/tautulli/test', {
+      method: 'POST',
+      body: { url, apiKey },
+    }),
+  sync: () => request<TautulliSyncResponse>('/tautulli/sync', { method: 'POST' }),
 };

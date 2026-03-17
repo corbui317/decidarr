@@ -53,29 +53,27 @@ export async function GET(
 
     const items = await plexService.getLibraryItems(id);
 
-    // Enrich with TMDb data for missing fields
+    // Enrich with TMDb data for missing fields using parallel batch processing
     const tmdbApiKey = await getTmdbApiKey();
     if (tmdbApiKey) {
       const tmdbService = new TMDbService(tmdbApiKey);
-      // Limit enrichment to avoid API rate limits (40 requests/10 seconds for TMDb)
       const enrichLimit = Math.min(items.length, 50);
+      const itemsToEnrich = items.slice(0, enrichLimit) as unknown as Record<string, unknown>[];
 
-      for (let i = 0; i < enrichLimit; i++) {
-        const item = items[i] as any;
-        try {
-          // Enrich missing data from TMDb
-          const enrichment = await tmdbService.enrichPlexItem(
-            item.title,
-            item.year,
-            section.type as 'movie' | 'show',
-            {
-              contentRating: item.contentRating,
-              rating: item.rating,
-              studio: item.studio,
-            }
-          );
+      try {
+        const enrichments = await tmdbService.enrichBatch(
+          itemsToEnrich.map(item => ({
+            title: item.title as string,
+            year: item.year as number | undefined,
+            contentRating: item.contentRating as string | undefined,
+            rating: item.rating as number | undefined,
+            studio: item.studio as string | undefined,
+          })),
+          section.type as 'movie' | 'show'
+        );
 
-          // Apply enrichment data
+        enrichments.forEach((enrichment, i) => {
+          const item = itemsToEnrich[i];
           if (enrichment.certification && !item.contentRating) {
             item.contentRating = enrichment.certification;
           }
@@ -84,7 +82,6 @@ export async function GET(
             item.tmdbRating = enrichment.rating;
           }
           if (!item.studio) {
-            // For TV, prefer networks
             if (section.type === 'show' && enrichment.networks?.length) {
               item.studio = enrichment.networks[0];
               item.networks = enrichment.networks;
@@ -94,10 +91,9 @@ export async function GET(
             }
           }
           item.enrichedAt = new Date();
-        } catch (err) {
-          // Skip failed enrichments, continue with Plex data
-          console.error(`Failed to enrich ${item.title}:`, err);
-        }
+        });
+      } catch (err) {
+        console.error('Batch enrichment error:', err);
       }
     }
 
@@ -120,13 +116,11 @@ export async function GET(
       lastSyncedAt: new Date(),
     });
   } catch (error) {
-    if ((error as Error).message === 'App not configured') {
-      return NextResponse.json({ error: 'App not configured' }, { status: 401 });
+    const msg = (error as Error)?.message;
+    if (msg === 'App not configured' || msg === 'Unauthorized') {
+      return NextResponse.json({ error: msg }, { status: 401 });
     }
     console.error('Get library items error:', error);
-    return NextResponse.json(
-      { error: 'Failed to get library items' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to get library items' }, { status: 500 });
   }
 }

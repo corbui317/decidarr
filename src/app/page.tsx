@@ -13,8 +13,11 @@ export default function Home() {
   const router = useRouter();
 
   useEffect(() => {
-    // If app is configured and user is authenticated, go to dashboard
-    if (!appLoading && !authLoading && configured && isAuthenticated) {
+    if (appLoading || authLoading) return;
+    if (configured && isAuthenticated) {
+      router.push('/dashboard');
+    } else if (configured && !isAuthenticated) {
+      // App is configured but no active session — send to dashboard which handles it
       router.push('/dashboard');
     }
   }, [isAuthenticated, authLoading, appLoading, configured, router]);
@@ -50,11 +53,7 @@ export default function Home() {
     );
   }
 
-  // App is configured but user not authenticated
-  // In single-user mode, try to auto-authenticate from stored session
-  // For now, redirect to dashboard which will handle auth
-  router.push('/dashboard');
-
+  // App is configured but user not authenticated — redirect in effect
   return (
     <div className="min-h-screen flex items-center justify-center bg-decidarr-dark">
       <LoadingSpinner size="lg" />

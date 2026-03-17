@@ -3,41 +3,18 @@ import { requireAuth } from '@/lib/auth';
 import { connectDB } from '@/lib/db';
 import { LibraryCache } from '@/lib/models/LibraryCache';
 import { WatchedItem } from '@/lib/models/WatchedItem';
+import { PlexService } from '@/lib/services/plex';
 import mongoose from 'mongoose';
+import { createLogger } from '@/lib/logger';
 
-// Use a constant ObjectId for single-user mode
+const logger = createLogger('API:PoolCount');
 const SINGLE_USER_ID = new mongoose.Types.ObjectId('000000000000000000000001');
 
-interface Filters {
-  genres?: string[];
-  yearRange?: { start?: number; end?: number };
-  contentRatings?: string[];
-  studios?: string[];
-  ratingRange?: { min?: number; max?: number };
-  ratingFilter?: string;
-  unwatchedOnly?: boolean;
-}
-
-interface FilterBreakdown {
-  filterName: string;
-  label: string;
-  beforeCount: number;
-  afterCount: number;
-  itemsRemoved: number;
-  causedEmpty: boolean;
-}
-
-interface DataStats {
-  itemsWithRating: number;
-  itemsWithContentRating: number;
-  itemsWithStudio: number;
-  itemsWithYear: number;
-  itemsWithGenres: number;
-}
+import type { Filters, FilterBreakdown, DataStats } from '@/types/filters';
 
 export async function POST(request: NextRequest) {
   try {
-    await requireAuth();
+    const { plexToken, plexServerUrl, settings } = await requireAuth();
     const { libraryIds, mediaType, filters = {} } = await request.json();
 
     if (!libraryIds || libraryIds.length === 0) {
@@ -99,8 +76,29 @@ export async function POST(request: NextRequest) {
       watchedIds = new Set(watchedItems.map((w) => w.plexId));
     }
 
+    // Get collection item IDs if collections filter is active
+    let collectionItemIds: Set<string> | null = null;
+    if (filters.collections && filters.collections.length > 0) {
+      collectionItemIds = new Set<string>();
+      const plexService = new PlexService(plexToken, plexServerUrl, settings.plexMachineId);
+
+      await Promise.all(
+        (filters.collections as string[]).map(async (collectionKey: string) => {
+          try {
+            const items = await plexService.getCollectionItems(collectionKey);
+            for (const item of items) {
+              collectionItemIds!.add(item.plexId);
+            }
+          } catch (err) {
+            logger.warn('Failed to fetch collection items', { collectionKey, error: (err as Error).message });
+          }
+        })
+      );
+      logger.debug('Collection filter active', { collectionCount: filters.collections.length, itemCount: collectionItemIds.size });
+    }
+
     // Apply filters and track breakdown
-    const result = getPoolCountWithBreakdown(allItems, filters as Filters, watchedIds, dataStats);
+    const result = getPoolCountWithBreakdown(allItems, filters as Filters, watchedIds, dataStats, collectionItemIds);
 
     return NextResponse.json({
       totalItems: allItems.length,
@@ -110,22 +108,21 @@ export async function POST(request: NextRequest) {
       dataStats,
     });
   } catch (error) {
-    if ((error as Error).message === 'App not configured') {
-      return NextResponse.json({ error: 'App not configured' }, { status: 401 });
+    const msg = (error as Error)?.message;
+    if (msg === 'App not configured' || msg === 'Unauthorized') {
+      return NextResponse.json({ error: msg }, { status: 401 });
     }
     console.error('Pool count error:', error);
-    return NextResponse.json(
-      { error: 'Failed to get pool count' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to get pool count' }, { status: 500 });
   }
 }
 
 function getPoolCountWithBreakdown(
-  items: any[],
+  items: Record<string, unknown>[],
   filters: Filters,
   watchedIds: Set<string>,
-  dataStats: DataStats
+  dataStats: DataStats,
+  collectionItemIds: Set<string> | null
 ): { matchingCount: number; breakdown: FilterBreakdown[]; emptyReason: string | null } {
   const breakdown: FilterBreakdown[] = [];
   let current = [...items];
@@ -134,24 +131,32 @@ function getPoolCountWithBreakdown(
   // Define filter steps
   const filterSteps = [
     {
+      name: 'collections',
+      label: 'Collections',
+      active: collectionItemIds !== null,
+      apply: (list: Record<string, unknown>[]) =>
+        list.filter((item) => collectionItemIds!.has(item.plexId as string)),
+      emptyMsg: () => 'No items found in the selected collections',
+    },
+    {
       name: 'genres',
       label: 'Genres',
       active: filters.genres && filters.genres.length > 0,
-      apply: (list: any[]) =>
-        list.filter((item) => item.genres && item.genres.some((g: string) => filters.genres!.includes(g))),
+      apply: (list: Record<string, unknown>[]) =>
+        list.filter((item) => (item.genres as string[])?.some((g: string) => filters.genres!.includes(g))),
       emptyMsg: () => `No items have the selected genres: ${filters.genres!.join(', ')}`,
     },
     {
       name: 'yearRange',
       label: 'Year Range',
       active: filters.yearRange?.start || filters.yearRange?.end,
-      apply: (list: any[]) => {
+      apply: (list: Record<string, unknown>[]) => {
         let filtered = list;
         if (filters.yearRange?.start) {
-          filtered = filtered.filter((item) => item.year && item.year >= filters.yearRange!.start!);
+          filtered = filtered.filter((item) => (item.year as number) >= filters.yearRange!.start!);
         }
         if (filters.yearRange?.end) {
-          filtered = filtered.filter((item) => item.year && item.year <= filters.yearRange!.end!);
+          filtered = filtered.filter((item) => (item.year as number) <= filters.yearRange!.end!);
         }
         return filtered;
       },
@@ -162,8 +167,8 @@ function getPoolCountWithBreakdown(
       name: 'contentRatings',
       label: 'Age Rating',
       active: filters.contentRatings && filters.contentRatings.length > 0,
-      apply: (list: any[]) =>
-        list.filter((item) => item.contentRating && filters.contentRatings!.includes(item.contentRating)),
+      apply: (list: Record<string, unknown>[]) =>
+        list.filter((item) => item.contentRating && filters.contentRatings!.includes(item.contentRating as string)),
       emptyMsg: () => {
         if (dataStats.itemsWithContentRating === 0) {
           return 'Age Rating filter active, but no items in your library have age ratings. Try syncing your library to fetch this data from TMDb.';
@@ -175,10 +180,10 @@ function getPoolCountWithBreakdown(
       name: 'studios',
       label: 'Studios/Networks',
       active: filters.studios && filters.studios.length > 0,
-      apply: (list: any[]) =>
+      apply: (list: Record<string, unknown>[]) =>
         list.filter((item) => {
           if (!item.studio) return false;
-          const itemStudio = item.studio.toLowerCase();
+          const itemStudio = (item.studio as string).toLowerCase();
           return filters.studios!.some((studio) => itemStudio.includes(studio.toLowerCase()));
         }),
       emptyMsg: () => {
@@ -192,13 +197,13 @@ function getPoolCountWithBreakdown(
       name: 'ratingRange',
       label: 'Score Rating (Custom)',
       active: filters.ratingRange?.min != null || filters.ratingRange?.max != null,
-      apply: (list: any[]) => {
+      apply: (list: Record<string, unknown>[]) => {
         let filtered = list;
         if (filters.ratingRange?.min != null) {
-          filtered = filtered.filter((item) => item.rating && item.rating >= filters.ratingRange!.min!);
+          filtered = filtered.filter((item) => (item.rating as number) >= filters.ratingRange!.min!);
         }
         if (filters.ratingRange?.max != null) {
-          filtered = filtered.filter((item) => item.rating && item.rating <= filters.ratingRange!.max!);
+          filtered = filtered.filter((item) => (item.rating as number) <= filters.ratingRange!.max!);
         }
         return filtered;
       },
@@ -213,14 +218,17 @@ function getPoolCountWithBreakdown(
       name: 'ratingFilter',
       label: 'Score Rating (Preset)',
       active: !!filters.ratingFilter,
-      apply: (list: any[]) => {
+      apply: (list: Record<string, unknown>[]) => {
         switch (filters.ratingFilter) {
           case 'critically_acclaimed':
-            return list.filter((item) => item.rating && item.rating >= 7.5);
+            return list.filter((item) => (item.rating as number) >= 7.5);
           case 'hidden_gems':
-            return list.filter((item) => item.rating && item.rating >= 6.5 && item.rating <= 8.0);
+            return list.filter((item) => {
+              const r = item.rating as number;
+              return r >= 6.5 && r <= 8.0;
+            });
           case 'top_rated':
-            return list.filter((item) => item.rating && item.rating >= 8.0);
+            return list.filter((item) => (item.rating as number) >= 8.0);
           default:
             return list;
         }
@@ -241,7 +249,7 @@ function getPoolCountWithBreakdown(
       name: 'unwatchedOnly',
       label: 'Unwatched Only',
       active: filters.unwatchedOnly,
-      apply: (list: any[]) => list.filter((item) => !watchedIds.has(item.plexId)),
+      apply: (list: Record<string, unknown>[]) => list.filter((item) => !watchedIds.has(item.plexId as string)),
       emptyMsg: () => 'All matching items have been marked as watched',
     },
   ];

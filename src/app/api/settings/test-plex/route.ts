@@ -1,9 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PlexService } from '@/lib/services/plex';
+import { validateSession, validatePlexUrl } from '@/lib/auth';
+import { connectDB } from '@/lib/db';
+import { getOrCreateSettings } from '@/lib/models/Settings';
 
 // POST /api/settings/test-plex - Test Plex connection
+// Allowed during initial setup (no session) OR with a valid session post-setup.
 export async function POST(request: NextRequest) {
   try {
+    // Require auth if the app is already configured
+    await connectDB();
+    const settings = await getOrCreateSettings();
+    if (settings.setupComplete) {
+      const valid = await validateSession();
+      if (!valid) {
+        return NextResponse.json({ valid: false, error: 'Unauthorized' }, { status: 401 });
+      }
+    }
+
     const body = await request.json();
     const { plexToken, plexServerUrl } = body;
 
@@ -12,6 +26,17 @@ export async function POST(request: NextRequest) {
         { error: 'Plex token is required' },
         { status: 400 }
       );
+    }
+
+    // Validate plexServerUrl if provided
+    if (plexServerUrl) {
+      const urlCheck = validatePlexUrl(plexServerUrl);
+      if (!urlCheck.valid) {
+        return NextResponse.json(
+          { valid: false, error: `Invalid server URL: ${urlCheck.error}` },
+          { status: 400 }
+        );
+      }
     }
 
     // Validate Plex token
@@ -30,7 +55,6 @@ export async function POST(request: NextRequest) {
     try {
       const serverList = await plexService.getServers();
       servers = serverList.map(server => {
-        // Prefer local connection
         const localConnection = server.connections.find(c => c.local);
         const connection = localConnection || server.connections[0];
         return {

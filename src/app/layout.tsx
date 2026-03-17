@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google';
 import './globals.css';
 import { AuthProvider } from '@/context/AuthContext';
 import { AppProvider } from '@/context/AppContext';
+import { ThemeProvider } from '@/context/ThemeContext';
 import ErrorBoundary from '@/components/ErrorBoundary';
 
 const inter = Inter({ subsets: ['latin'] });
@@ -18,11 +19,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" data-theme="dark">
       <body className={`${inter.className} bg-decidarr-dark`}>
         <ErrorBoundary>
           <AppProvider>
-            <AuthProvider>{children}</AuthProvider>
+            <AuthProvider>
+              <ThemeProvider>
+                {children}
+              </ThemeProvider>
+            </AuthProvider>
           </AppProvider>
         </ErrorBoundary>
       </body>

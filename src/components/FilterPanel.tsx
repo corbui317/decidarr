@@ -1,17 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { libraryApi, selectionApi } from '@/lib/api';
-
-interface Filters {
-  genres: string[];
-  yearRange: { start?: number; end?: number } | null;
-  contentRatings: string[];
-  studios: string[];
-  ratingRange: { min?: number; max?: number } | null;
-  ratingFilter: string | null;
-  unwatchedOnly: boolean;
-}
+import { libraryApi, selectionApi, PlexCollection } from '@/lib/api';
+import { Filters, DataStats } from '@/types/filters';
 
 interface RatingCategory {
   id: string;
@@ -30,14 +21,6 @@ interface FilterOptions {
   hasRatings: boolean;
   ratingRange: { min: number; max: number };
   studios: string[];
-}
-
-interface DataStats {
-  itemsWithRating: number;
-  itemsWithContentRating: number;
-  itemsWithStudio: number;
-  itemsWithYear: number;
-  itemsWithGenres: number;
 }
 
 interface FilterPanelProps {
@@ -83,6 +66,7 @@ export default function FilterPanel({
     ratingRange: { min: 0, max: 10 },
     studios: [],
   });
+  const [collections, setCollections] = useState<PlexCollection[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [studioTab, setStudioTab] = useState<'streaming' | 'anime' | 'traditional' | 'library'>('streaming');
 
@@ -123,15 +107,17 @@ export default function FilterPanel({
 
   const loadLibraryOptions = async () => {
     try {
-      const [genresRes, yearsRes, filterOptionsRes] = await Promise.all([
+      const [genresRes, yearsRes, filterOptionsRes, collectionsRes] = await Promise.all([
         libraryApi.getGenres(libraryIds),
         libraryApi.getYears(libraryIds),
         libraryApi.getFilterOptions(libraryIds),
+        libraryApi.getCollections(libraryIds),
       ]);
 
       setGenres(genresRes.genres || []);
       setYearRange(yearsRes);
       setFilterOptions(filterOptionsRes);
+      setCollections(collectionsRes.collections || []);
     } catch (err) {
       console.error('Failed to load library filter options:', err);
     }
@@ -191,6 +177,14 @@ export default function FilterPanel({
     onFiltersChange({ ...filters, unwatchedOnly: !filters.unwatchedOnly });
   };
 
+  const toggleCollection = (ratingKey: string) => {
+    const current = filters.collections || [];
+    const newCollections = current.includes(ratingKey)
+      ? current.filter((c) => c !== ratingKey)
+      : [...current, ratingKey];
+    onFiltersChange({ ...filters, collections: newCollections });
+  };
+
   const clearFilters = () => {
     onFiltersChange({
       genres: [],
@@ -200,6 +194,7 @@ export default function FilterPanel({
       ratingRange: null,
       ratingFilter: null,
       unwatchedOnly: false,
+      collections: [],
     });
   };
 
@@ -211,6 +206,7 @@ export default function FilterPanel({
     filters.ratingRange?.min !== undefined || filters.ratingRange?.max !== undefined,
     filters.ratingFilter,
     filters.unwatchedOnly,
+    (filters.collections || []).length > 0,
   ].filter(Boolean).length;
 
   // Get current studio list based on tab
@@ -304,6 +300,34 @@ export default function FilterPanel({
               {filters.unwatchedOnly && <span className="text-decidarr-primary">✓</span>}
             </button>
           </div>
+
+          {/* Collections Filter - Kometa collections */}
+          {collections.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-400 mb-2">
+                Collections
+                {(filters.collections || []).length > 0 && (
+                  <span className="ml-2 text-decidarr-primary">({filters.collections?.length})</span>
+                )}
+              </label>
+              <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+                {collections.map((collection) => (
+                  <button
+                    key={collection.ratingKey}
+                    onClick={() => toggleCollection(collection.ratingKey)}
+                    className={`px-3 py-1 rounded-full text-sm transition ${
+                      (filters.collections || []).includes(collection.ratingKey)
+                        ? 'bg-decidarr-primary text-decidarr-dark'
+                        : 'bg-decidarr-dark text-gray-300 hover:text-white'
+                    }`}
+                    title={`${collection.childCount} items`}
+                  >
+                    {collection.title}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Genre Filter - only show if genres available */}
           {genres.length > 0 && (

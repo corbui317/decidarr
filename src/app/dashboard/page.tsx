@@ -12,15 +12,7 @@ import LibrarySelector from '@/components/LibrarySelector';
 import FilterPanel from '@/components/FilterPanel';
 import LoadingSpinner from '@/components/LoadingSpinner';
 
-interface Filters {
-  genres: string[];
-  yearRange: { start?: number; end?: number } | null;
-  contentRatings: string[];
-  studios: string[];
-  ratingRange: { min?: number; max?: number } | null;
-  ratingFilter: string | null;
-  unwatchedOnly: boolean;
-}
+import { Filters, DEFAULT_FILTERS, PoolCountResult } from '@/types/filters';
 
 interface SelectionResult {
   selection: {
@@ -30,29 +22,12 @@ interface SelectionResult {
     tmdb?: unknown;
     [key: string]: unknown;
   };
+  playLinks?: {
+    app: string;
+    web: string;
+  } | null;
   stats: {
     totalMatches: number;
-  };
-}
-
-interface PoolCountResult {
-  totalItems: number;
-  matchingItems: number;
-  filterBreakdown: {
-    filterName: string;
-    label: string;
-    beforeCount: number;
-    afterCount: number;
-    itemsRemoved: number;
-    causedEmpty: boolean;
-  }[];
-  emptyReason: string | null;
-  dataStats: {
-    itemsWithRating: number;
-    itemsWithContentRating: number;
-    itemsWithStudio: number;
-    itemsWithYear: number;
-    itemsWithGenres: number;
   };
 }
 
@@ -62,15 +37,7 @@ export default function Dashboard() {
 
   const [selectedLibraries, setSelectedLibraries] = useState<string[]>([]);
   const [mediaType, setMediaType] = useState('movie');
-  const [filters, setFilters] = useState<Filters>({
-    genres: [],
-    yearRange: null,
-    contentRatings: [],
-    studios: [],
-    ratingRange: null,
-    ratingFilter: null,
-    unwatchedOnly: false,
-  });
+  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [spinning, setSpinning] = useState(false);
   const [result, setResult] = useState<SelectionResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -160,25 +127,17 @@ export default function Dashboard() {
     }
   }, [selectedLibraries, mediaType, filters]);
 
-  const handleMediaTypeChange = (type: string) => {
+  const handleMediaTypeChange = useCallback((type: string) => {
     setMediaType(type);
     setSelectedLibraries([]);
     setResult(null);
-    setFilters({
-      genres: [],
-      yearRange: null,
-      contentRatings: [],
-      studios: [],
-      ratingRange: null,
-      ratingFilter: null,
-      unwatchedOnly: false,
-    });
-  };
+    setFilters(DEFAULT_FILTERS);
+  }, []);
 
-  const handleSpinAgain = () => {
+  const handleSpinAgain = useCallback(() => {
     setResult(null);
     handleSpin();
-  };
+  }, [handleSpin]);
 
   if (authLoading) {
     return (
@@ -261,6 +220,7 @@ export default function Dashboard() {
                       tmdb={result.selection.tmdb as Parameters<typeof MovieCard>[0]['tmdb']}
                       isWatched={false}
                       onWatchedChange={() => {}}
+                      playLinks={result.playLinks}
                     />
 
                     {/* Actions */}

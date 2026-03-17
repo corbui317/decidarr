@@ -2,54 +2,162 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Custom scrollbar */
+/* ─── Theme: Dark (default) ─────────────────────────────────────────────── */
+:root,
+[data-theme="dark"] {
+  --decidarr-primary: #E5A00D;
+  --decidarr-secondary: #1a1a2e;
+  --decidarr-dark: #0f0f1a;
+  --decidarr-accent: #cc7000;
+  --decidarr-surface: #16213e;
+  --decidarr-text: #ffffff;
+  --decidarr-text-muted: #9ca3af;
+  --decidarr-border: #374151;
+  --decidarr-glow: rgba(229, 160, 13, 0.4);
+  --decidarr-glow-strong: rgba(229, 160, 13, 0.7);
+  --decidarr-card-bg: rgba(26, 26, 46, 0.9);
+  --decidarr-input-bg: #0f0f1a;
+  --decidarr-gradient: linear-gradient(135deg, #E5A00D 0%, #cc7000 100%);
+  --decidarr-slot-bg: linear-gradient(180deg, #0f0f1a 0%, #1a1a2e 100%);
+  --scrollbar-bg: #0f0f1a;
+  --scrollbar-thumb: #E5A00D;
+  --scrollbar-thumb-hover: #cc7000;
+}
+
+/* ─── Theme: Light ───────────────────────────────────────────────────────── */
+[data-theme="light"] {
+  --decidarr-primary: #d4820a;
+  --decidarr-secondary: #f0f0f7;
+  --decidarr-dark: #f8f8fc;
+  --decidarr-accent: #b86a00;
+  --decidarr-surface: #ffffff;
+  --decidarr-text: #1a1a2e;
+  --decidarr-text-muted: #6b7280;
+  --decidarr-border: #d1d5db;
+  --decidarr-glow: rgba(212, 130, 10, 0.3);
+  --decidarr-glow-strong: rgba(212, 130, 10, 0.5);
+  --decidarr-card-bg: rgba(255, 255, 255, 0.95);
+  --decidarr-input-bg: #ffffff;
+  --decidarr-gradient: linear-gradient(135deg, #d4820a 0%, #b86a00 100%);
+  --decidarr-slot-bg: linear-gradient(180deg, #f8f8fc 0%, #f0f0f7 100%);
+  --scrollbar-bg: #f0f0f7;
+  --scrollbar-thumb: #d4820a;
+  --scrollbar-thumb-hover: #b86a00;
+}
+
+/* ─── Theme: Vegas Casino ────────────────────────────────────────────────── */
+[data-theme="vegas"] {
+  --decidarr-primary: #FFD700;
+  --decidarr-secondary: #1a0505;
+  --decidarr-dark: #0d0000;
+  --decidarr-accent: #FF3D00;
+  --decidarr-surface: #2a0808;
+  --decidarr-text: #ffffff;
+  --decidarr-text-muted: #e0b0b0;
+  --decidarr-border: #5c1a1a;
+  --decidarr-glow: rgba(255, 215, 0, 0.5);
+  --decidarr-glow-strong: rgba(255, 215, 0, 0.85);
+  --decidarr-card-bg: rgba(42, 8, 8, 0.95);
+  --decidarr-input-bg: #1a0505;
+  --decidarr-gradient: linear-gradient(135deg, #FFD700 0%, #FF3D00 100%);
+  --decidarr-slot-bg: linear-gradient(180deg, #0d0000 0%, #1a0505 100%);
+  --scrollbar-bg: #0d0000;
+  --scrollbar-thumb: #FFD700;
+  --scrollbar-thumb-hover: #FF3D00;
+}
+
+/* ─── Theme: Macao ───────────────────────────────────────────────────────── */
+[data-theme="macao"] {
+  --decidarr-primary: #C9A84C;
+  --decidarr-secondary: #1a0a00;
+  --decidarr-dark: #0d0500;
+  --decidarr-accent: #8B0000;
+  --decidarr-surface: #2d1500;
+  --decidarr-text: #FFE4B5;
+  --decidarr-text-muted: #c8a060;
+  --decidarr-border: #5a2a00;
+  --decidarr-glow: rgba(201, 168, 76, 0.4);
+  --decidarr-glow-strong: rgba(201, 168, 76, 0.75);
+  --decidarr-card-bg: rgba(45, 21, 0, 0.95);
+  --decidarr-input-bg: #1a0a00;
+  --decidarr-gradient: linear-gradient(135deg, #C9A84C 0%, #8B0000 100%);
+  --decidarr-slot-bg: linear-gradient(180deg, #0d0500 0%, #1a0a00 100%);
+  --scrollbar-bg: #0d0500;
+  --scrollbar-thumb: #C9A84C;
+  --scrollbar-thumb-hover: #8B0000;
+}
+
+/* ─── Theme: Underground Poker ───────────────────────────────────────────── */
+[data-theme="poker"] {
+  --decidarr-primary: #4a9e4a;
+  --decidarr-secondary: #0f1f0f;
+  --decidarr-dark: #080e08;
+  --decidarr-accent: #2d7a2d;
+  --decidarr-surface: #1a2e1a;
+  --decidarr-text: #F5F5DC;
+  --decidarr-text-muted: #8fa88f;
+  --decidarr-border: #2d4a2d;
+  --decidarr-glow: rgba(74, 158, 74, 0.4);
+  --decidarr-glow-strong: rgba(74, 158, 74, 0.7);
+  --decidarr-card-bg: rgba(26, 46, 26, 0.95);
+  --decidarr-input-bg: #0f1f0f;
+  --decidarr-gradient: linear-gradient(135deg, #4a9e4a 0%, #2d7a2d 100%);
+  --decidarr-slot-bg: linear-gradient(180deg, #080e08 0%, #0f1f0f 100%);
+  --scrollbar-bg: #080e08;
+  --scrollbar-thumb: #4a9e4a;
+  --scrollbar-thumb-hover: #2d7a2d;
+}
+
+/* ─── Scrollbar ──────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0f0f1a;
+  background: var(--scrollbar-bg);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #E5A00D;
+  background: var(--scrollbar-thumb);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #cc7000;
+  background: var(--scrollbar-thumb-hover);
 }
 
-/* Slot machine reel animation */
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-bg);
+}
+
+/* ─── Slot machine reel animation ────────────────────────────────────────── */
 @keyframes reelSpin {
-  0% {
-    transform: translateY(0);
-  }
-  100% {
-    transform: translateY(-50%);
-  }
+  0% { transform: translateY(0); }
+  100% { transform: translateY(-50%); }
 }
 
 .animate-reel {
   animation: reelSpin 0.1s linear infinite;
 }
 
-/* Glow button effect */
+/* ─── Glow button effect ─────────────────────────────────────────────────── */
 @keyframes rotate {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.glow-button {
+  position: relative;
 }
 
 .glow-button::before {
   content: '';
   position: absolute;
   inset: -3px;
-  background: conic-gradient(from 0deg, #E5A00D, #cc7000, #E5A00D);
+  background: conic-gradient(from 0deg, var(--decidarr-primary), var(--decidarr-accent), var(--decidarr-primary));
   border-radius: inherit;
   z-index: -1;
   animation: rotate 3s linear infinite;
@@ -64,7 +172,7 @@
   z-index: -1;
 }
 
-/* Card shine effect */
+/* ─── Card shine effect ──────────────────────────────────────────────────── */
 .card-shine {
   position: relative;
   overflow: hidden;
@@ -80,7 +188,7 @@
   background: linear-gradient(
     90deg,
     transparent,
-    rgba(255, 255, 255, 0.1),
+    rgba(255, 255, 255, 0.08),
     transparent
   );
   transition: left 0.5s;
@@ -90,7 +198,29 @@
   left: 100%;
 }
 
-/* Line clamp utility */
+/* ─── Vegas / Macao neon border ──────────────────────────────────────────── */
+[data-theme="vegas"] .neon-border,
+[data-theme="macao"] .neon-border {
+  box-shadow:
+    0 0 5px var(--decidarr-primary),
+    0 0 15px var(--decidarr-glow),
+    inset 0 0 5px var(--decidarr-glow);
+}
+
+/* ─── Poker felt texture overlay ─────────────────────────────────────────── */
+[data-theme="poker"] .felt-texture {
+  background-image:
+    radial-gradient(ellipse at center, rgba(74, 158, 74, 0.05) 0%, transparent 70%),
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 2px,
+      rgba(74, 158, 74, 0.03) 2px,
+      rgba(74, 158, 74, 0.03) 4px
+    );
+}
+
+/* ─── Line clamp utility ─────────────────────────────────────────────────── */
 .line-clamp-3 {
   display: -webkit-box;
   -webkit-line-clamp: 3;
@@ -98,12 +228,29 @@
   overflow: hidden;
 }
 
-/* Shimmer animation for buttons */
+/* ─── Shimmer animation ──────────────────────────────────────────────────── */
 @keyframes shimmer {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(100%);
-  }
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* ─── Light theme text overrides ─────────────────────────────────────────── */
+[data-theme="light"] .text-white {
+  color: var(--decidarr-text);
+}
+
+[data-theme="light"] .text-gray-400 {
+  color: #6b7280;
+}
+
+[data-theme="light"] .text-gray-300 {
+  color: #4b5563;
+}
+
+[data-theme="light"] .placeholder-gray-500::placeholder {
+  color: #9ca3af;
+}
+
+[data-theme="light"] .bg-black\/50 {
+  background-color: rgba(0, 0, 0, 0.4);
 }

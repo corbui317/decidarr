@@ -11,8 +11,10 @@ export async function GET(request: NextRequest) {
   try {
     await requireAuth();
     const mediaType = request.nextUrl.searchParams.get('mediaType');
-    const page = parseInt(request.nextUrl.searchParams.get('page') || '1');
-    const limit = parseInt(request.nextUrl.searchParams.get('limit') || '50');
+    const rawPage = parseInt(request.nextUrl.searchParams.get('page') || '1');
+    const rawLimit = parseInt(request.nextUrl.searchParams.get('limit') || '50');
+    const page = Math.max(1, isNaN(rawPage) ? 1 : rawPage);
+    const limit = Math.max(1, Math.min(200, isNaN(rawLimit) ? 50 : rawLimit));
 
     await connectDB();
 
@@ -37,13 +39,11 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    if ((error as Error).message === 'App not configured') {
-      return NextResponse.json({ error: 'App not configured' }, { status: 401 });
+    const msg = (error as Error)?.message;
+    if (msg === 'App not configured' || msg === 'Unauthorized') {
+      return NextResponse.json({ error: msg }, { status: 401 });
     }
     console.error('Get watched error:', error);
-    return NextResponse.json(
-      { error: 'Failed to get watched items' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to get watched items' }, { status: 500 });
   }
 }

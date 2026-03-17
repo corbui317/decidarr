@@ -7,6 +7,9 @@ export interface IWatchedItem extends Document {
   title: string;
   watchedAt: Date;
   markedManually: boolean;
+  source: 'manual' | 'tautulli';
+  plexUserId?: number;
+  plexUsername?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -19,12 +22,16 @@ const watchedItemSchema = new mongoose.Schema<IWatchedItem>(
     title: { type: String, required: true },
     watchedAt: { type: Date, default: Date.now },
     markedManually: { type: Boolean, default: false },
+    source: { type: String, enum: ['manual', 'tautulli'], default: 'manual' },
+    plexUserId: { type: Number },
+    plexUsername: { type: String },
   },
   { timestamps: true }
 );
 
 watchedItemSchema.index({ userId: 1, plexId: 1 }, { unique: true });
 watchedItemSchema.index({ userId: 1 });
+watchedItemSchema.index({ plexUserId: 1, plexId: 1 });
 
 export const WatchedItem: Model<IWatchedItem> =
   mongoose.models.WatchedItem || mongoose.model<IWatchedItem>('WatchedItem', watchedItemSchema);

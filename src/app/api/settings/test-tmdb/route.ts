@@ -1,21 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { validateSession } from '@/lib/auth';
+import { connectDB } from '@/lib/db';
+import { getOrCreateSettings } from '@/lib/models/Settings';
 
 // POST /api/settings/test-tmdb - Test TMDB API key
+// Allowed during initial setup (no session) OR with a valid session post-setup.
 export async function POST(request: NextRequest) {
   try {
+    await connectDB();
+    const settings = await getOrCreateSettings();
+    if (settings.setupComplete) {
+      const valid = await validateSession();
+      if (!valid) {
+        return NextResponse.json({ valid: false, error: 'Unauthorized' }, { status: 401 });
+      }
+    }
+
     const body = await request.json();
     const { apiKey } = body;
 
-    if (!apiKey) {
+    if (!apiKey || typeof apiKey !== 'string') {
       return NextResponse.json(
         { error: 'TMDB API key is required' },
         { status: 400 }
       );
     }
 
-    // Test the API key by making a simple request
+    // Encode the key safely to prevent URL injection
+    const encodedKey = encodeURIComponent(apiKey.trim());
     const response = await fetch(
-      `https://api.themoviedb.org/3/configuration?api_key=${apiKey}`
+      `https://api.themoviedb.org/3/configuration?api_key=${encodedKey}`,
+      { signal: AbortSignal.timeout(10_000) }
     );
 
     if (!response.ok) {

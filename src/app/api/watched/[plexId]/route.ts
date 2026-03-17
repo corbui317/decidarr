@@ -31,14 +31,12 @@ export async function POST(
 
     return NextResponse.json({ item });
   } catch (error) {
-    if ((error as Error).message === 'App not configured') {
-      return NextResponse.json({ error: 'App not configured' }, { status: 401 });
+    const msg = (error as Error)?.message;
+    if (msg === 'App not configured' || msg === 'Unauthorized') {
+      return NextResponse.json({ error: msg }, { status: 401 });
     }
     console.error('Mark watched error:', error);
-    return NextResponse.json(
-      { error: 'Failed to mark as watched' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to mark as watched' }, { status: 500 });
   }
 }
 
@@ -56,13 +54,11 @@ export async function DELETE(
 
     return NextResponse.json({ message: 'Marked as unwatched' });
   } catch (error) {
-    if ((error as Error).message === 'App not configured') {
-      return NextResponse.json({ error: 'App not configured' }, { status: 401 });
+    const msg = (error as Error)?.message;
+    if (msg === 'App not configured' || msg === 'Unauthorized') {
+      return NextResponse.json({ error: msg }, { status: 401 });
     }
     console.error('Mark unwatched error:', error);
-    return NextResponse.json(
-      { error: 'Failed to mark as unwatched' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to mark as unwatched' }, { status: 500 });
   }
 }

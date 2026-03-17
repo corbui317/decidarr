@@ -1,9 +1,14 @@
 import mongoose, { Document, Model } from 'mongoose';
 import CryptoJS from 'crypto-js';
 import crypto from 'crypto';
+import { createLogger } from '../logger';
+
+const logger = createLogger('Settings');
+
+export type AppTheme = 'dark' | 'light' | 'vegas' | 'macao' | 'poker';
 
 export interface IUIPreferences {
-  theme: 'dark' | 'light';
+  theme: AppTheme;
   defaultMediaType: 'movie' | 'show';
   tvSelectionMode: 'show' | 'episode';
 }
@@ -20,9 +25,17 @@ export interface ISettings extends Omit<Document, '_id'> {
   plexToken?: string;
   plexServerUrl?: string;
   plexUsername?: string;
+  plexMachineId?: string;
 
   // TMDB configuration
   tmdbApiKey?: string;
+
+  // Tautulli configuration
+  tautulliUrl?: string;
+  tautulliApiKey?: string;
+  tautulliEnabled: boolean;
+  tautulliSyncIntervalMinutes: number;
+  tautulliLastSync?: Date;
 
   // Sync settings
   syncFrequencyHours: number;
@@ -39,6 +52,7 @@ export interface ISettings extends Omit<Document, '_id'> {
   // Methods
   getDecryptedPlexToken(): string | null;
   getDecryptedTmdbKey(): string | null;
+  getDecryptedTautulliKey(): string | null;
   getJwtSecret(): string;
   getEncryptionKey(): string;
 }
@@ -64,16 +78,24 @@ const settingsSchema = new mongoose.Schema<ISettings>(
     plexToken: { type: String },
     plexServerUrl: { type: String },
     plexUsername: { type: String },
+    plexMachineId: { type: String },
 
     // TMDB configuration (encrypted)
     tmdbApiKey: { type: String },
+
+    // Tautulli configuration
+    tautulliUrl: { type: String },
+    tautulliApiKey: { type: String },
+    tautulliEnabled: { type: Boolean, default: false },
+    tautulliSyncIntervalMinutes: { type: Number, default: 30 },
+    tautulliLastSync: { type: Date },
 
     // Sync settings
     syncFrequencyHours: { type: Number, default: 24 },
 
     // UI Preferences
     uiPreferences: {
-      theme: { type: String, enum: ['dark', 'light'], default: 'dark' },
+      theme: { type: String, enum: ['dark', 'light', 'vegas', 'macao', 'poker'], default: 'dark' },
       defaultMediaType: { type: String, enum: ['movie', 'show'], default: 'movie' },
       tvSelectionMode: { type: String, enum: ['show', 'episode'], default: 'show' },
     },
@@ -125,22 +147,27 @@ settingsSchema.methods.getDecryptedTmdbKey = function(): string | null {
   }
 };
 
-settingsSchema.methods.getJwtSecret = function(): string {
+settingsSchema.methods.getDecryptedTautulliKey = function(): string | null {
+  if (!this.tautulliApiKey) return null;
   try {
-    return decryptWithMaster(this.jwtSecret);
+    const encryptionKey = this.getEncryptionKey();
+    const bytes = CryptoJS.AES.decrypt(this.tautulliApiKey, encryptionKey);
+    return bytes.toString(CryptoJS.enc.Utf8);
   } catch {
-    // Fallback for legacy or corrupted data
-    return 'decidarr-fallback-secret-' + Date.now();
+    return null;
   }
 };
 
+settingsSchema.methods.getJwtSecret = function(): string {
+  const secret = decryptWithMaster(this.jwtSecret);
+  if (!secret) throw new Error('JWT secret could not be decrypted');
+  return secret;
+};
+
 settingsSchema.methods.getEncryptionKey = function(): string {
-  try {
-    return decryptWithMaster(this.encryptionKey);
-  } catch {
-    // Fallback for legacy or corrupted data
-    return 'decidarr-fallback-key-' + Date.now();
-  }
+  const key = decryptWithMaster(this.encryptionKey);
+  if (!key) throw new Error('Encryption key could not be decrypted');
+  return key;
 };
 
 // Pre-save hook to encrypt sensitive fields
@@ -155,6 +182,11 @@ settingsSchema.pre('save', function(next) {
   // Encrypt TMDB key if modified and not already encrypted
   if (this.isModified('tmdbApiKey') && this.tmdbApiKey && !this.tmdbApiKey.startsWith('U2F')) {
     this.tmdbApiKey = CryptoJS.AES.encrypt(this.tmdbApiKey, encryptionKey).toString();
+  }
+
+  // Encrypt Tautulli API key if modified and not already encrypted
+  if (this.isModified('tautulliApiKey') && this.tautulliApiKey && !this.tautulliApiKey.startsWith('U2F')) {
+    this.tautulliApiKey = CryptoJS.AES.encrypt(this.tautulliApiKey, encryptionKey).toString();
   }
 
   next();

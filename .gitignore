@@ -34,11 +34,27 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# IDE
+# IDE / Editor
 .idea/
 .vscode/
+.cursor/
 *.swp
 *.swo
 
 # OS
 Thumbs.db
+.DS_Store
+
+# Docker
+.dockerignore
+
+# Logs
+logs/
+*.log
+
+# MongoDB local data
+data/
+
+# Next.js standalone output (generated at build time)
+.next/standalone/
+.next/static/

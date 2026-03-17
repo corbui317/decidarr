@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { watchedApi } from '@/lib/api';
 
@@ -21,10 +21,14 @@ interface Item {
   directors?: string[];
   actors?: string[];
   studio?: string;
-  // TMDb enrichment fields
   tmdbRating?: number;
   networks?: string[];
   studios?: string[];
+}
+
+interface PlayLinks {
+  app: string;
+  web: string;
 }
 
 interface TMDbData {
@@ -39,12 +43,27 @@ interface MovieCardProps {
   tmdb?: TMDbData;
   isWatched?: boolean;
   onWatchedChange?: (watched: boolean) => void;
+  playLinks?: PlayLinks | null;
 }
 
-export default function MovieCard({ item, tmdb, isWatched = false, onWatchedChange }: MovieCardProps) {
+export default function MovieCard({ item, tmdb, isWatched = false, onWatchedChange, playLinks }: MovieCardProps) {
   const [watched, setWatched] = useState(isWatched);
   const [updating, setUpdating] = useState(false);
   const [expanded, setExpanded] = useState(false);
+
+  const handlePlayNow = useCallback(() => {
+    if (!playLinks) return;
+
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    iframe.src = playLinks.app;
+    document.body.appendChild(iframe);
+
+    setTimeout(() => {
+      document.body.removeChild(iframe);
+      window.open(playLinks.web, '_blank', 'noopener,noreferrer');
+    }, 1500);
+  }, [playLinks]);
 
   const handleWatchedToggle = async () => {
     setUpdating(true);
@@ -122,19 +141,37 @@ export default function MovieCard({ item, tmdb, isWatched = false, onWatchedChan
             </div>
           </div>
 
-          {/* Watched toggle */}
-          <button
-            onClick={handleWatchedToggle}
-            disabled={updating}
-            className={`flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center
-                      transition-all ${
-                        watched
-                          ? 'bg-decidarr-success text-white'
-                          : 'bg-decidarr-dark text-gray-400 hover:text-white'
-                      } ${updating ? 'opacity-50' : ''}`}
-          >
-            {updating ? <span className="animate-spin">⏳</span> : watched ? '✓' : '👁'}
-          </button>
+          {/* Action buttons */}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {playLinks && (
+              <button
+                onClick={handlePlayNow}
+                className="w-12 h-12 rounded-full flex items-center justify-center
+                          bg-decidarr-primary text-white hover:bg-decidarr-primary/80
+                          transition-all shadow-lg"
+                title="Play in Plex"
+                aria-label="Play in Plex"
+              >
+                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+              </button>
+            )}
+            <button
+              onClick={handleWatchedToggle}
+              disabled={updating}
+              className={`w-12 h-12 rounded-full flex items-center justify-center
+                        transition-all ${
+                          watched
+                            ? 'bg-decidarr-success text-white'
+                            : 'bg-decidarr-dark text-gray-400 hover:text-white'
+                        } ${updating ? 'opacity-50' : ''}`}
+              title={watched ? 'Mark as unwatched' : 'Mark as watched'}
+              aria-label={watched ? 'Mark as unwatched' : 'Mark as watched'}
+            >
+              {updating ? <span className="animate-spin">⏳</span> : watched ? '✓' : '👁'}
+            </button>
+          </div>
         </div>
 
         {/* Tagline */}
