@@ -38,12 +38,15 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
       const result = await settingsApi.testPlex(plexToken.trim(), plexServerUrl.trim() || undefined);
       setPlexValidation(result);
 
-      if (result.valid && result.servers) {
+      if (result.valid && result.servers && result.servers.length > 0) {
         setAvailableServers(result.servers);
-        // Auto-select first server if no URL provided
-        if (!plexServerUrl && result.servers.length > 0) {
+        // Auto-select first server (prefer local connection)
+        if (!plexServerUrl) {
           setPlexServerUrl(result.servers[0].uri);
         }
+      } else if (result.valid && (!result.servers || result.servers.length === 0)) {
+        // Token valid but no servers discovered - show manual entry
+        setAvailableServers([]);
       } else if (!result.valid) {
         setError(result.error || 'Invalid Plex token');
       }
@@ -189,37 +192,42 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
                 </div>
               )}
 
-              {availableServers.length > 0 && (
+              {plexValidation?.valid && (
                 <div>
                   <label className="block text-gray-300 text-sm mb-2">
-                    Plex Server
+                    Plex Server {availableServers.length > 0 && <span className="text-green-400 text-xs ml-2">(Auto-discovered)</span>}
                   </label>
-                  <select
-                    value={plexServerUrl}
-                    onChange={(e) => setPlexServerUrl(e.target.value)}
-                    className="w-full bg-decidarr-dark border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-decidarr-primary"
-                  >
-                    {availableServers.map((server) => (
-                      <option key={server.uri} value={server.uri}>
-                        {server.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {!availableServers.length && plexValidation?.valid && (
-                <div>
-                  <label className="block text-gray-300 text-sm mb-2">
-                    Plex Server URL
-                  </label>
-                  <input
-                    type="text"
-                    value={plexServerUrl}
-                    onChange={(e) => setPlexServerUrl(e.target.value)}
-                    placeholder="http://192.168.1.100:32400"
-                    className="w-full bg-decidarr-dark border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-decidarr-primary"
-                  />
+                  {availableServers.length > 0 ? (
+                    <>
+                      <select
+                        value={plexServerUrl}
+                        onChange={(e) => setPlexServerUrl(e.target.value)}
+                        className="w-full bg-decidarr-dark border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-decidarr-primary"
+                      >
+                        {availableServers.map((server) => (
+                          <option key={server.uri} value={server.uri}>
+                            {server.name} ({server.uri})
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-gray-500 text-xs mt-1">
+                        {availableServers.length} server{availableServers.length !== 1 ? 's' : ''} found
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <input
+                        type="text"
+                        value={plexServerUrl}
+                        onChange={(e) => setPlexServerUrl(e.target.value)}
+                        placeholder="http://192.168.1.100:32400"
+                        className="w-full bg-decidarr-dark border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-decidarr-primary"
+                      />
+                      <p className="text-yellow-500 text-xs mt-1">
+                        No servers auto-discovered. Please enter your server URL manually.
+                      </p>
+                    </>
+                  )}
                 </div>
               )}
 
