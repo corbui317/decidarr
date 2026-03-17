@@ -5,6 +5,7 @@ import { AuthProvider } from '@/context/AuthContext';
 import { AppProvider } from '@/context/AppContext';
 import { ThemeProvider } from '@/context/ThemeContext';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import ErrorLogger from '@/components/ErrorLogger';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -25,6 +26,7 @@ export default function RootLayout({
           <AppProvider>
             <AuthProvider>
               <ThemeProvider>
+                <ErrorLogger />
                 {children}
               </ThemeProvider>
             </AuthProvider>

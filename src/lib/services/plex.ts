@@ -146,56 +146,64 @@ export class PlexService {
   async getLibrarySections(): Promise<PlexLibrary[]> {
     if (!this.serverUrl) throw new Error('Server URL not set');
 
-    const response = await fetch(`${this.serverUrl}/library/sections`, {
+    logger.debug('Fetching library sections', { serverUrl: this.serverUrl });
+    const response = await this.fetchWithTimeout(`${this.serverUrl}/library/sections`, {
       headers: this.headers,
     });
 
     if (!response.ok) {
-      throw new Error('Failed to get library sections');
+      logger.warn('Failed to get library sections', { status: response.status });
+      throw new Error(`Failed to get library sections (HTTP ${response.status})`);
     }
 
     const data = await response.json();
     const sections = data.MediaContainer?.Directory || [];
+    logger.debug('Got library sections', { count: sections.length });
 
-    return sections.map((section: any) => ({
-      id: section.key,
-      title: section.title,
-      type: section.type,
-      agent: section.agent,
-      scanner: section.scanner,
-      language: section.language,
-      uuid: section.uuid,
+    return sections.map((section: Record<string, unknown>) => ({
+      id: section.key as string,
+      title: section.title as string,
+      type: section.type as string,
+      agent: section.agent as string,
+      scanner: section.scanner as string,
+      language: section.language as string,
+      uuid: section.uuid as string,
     }));
   }
 
   async getLibraryItems(sectionId: string): Promise<PlexItem[]> {
     if (!this.serverUrl) throw new Error('Server URL not set');
 
+    logger.debug('Fetching library items', { sectionId });
     const url = `${this.serverUrl}/library/sections/${sectionId}/all?X-Plex-Token=${this.token}`;
-    const response = await fetch(url, {
+    const response = await this.fetchWithTimeout(url, {
       headers: { Accept: 'application/json' },
     });
 
     if (!response.ok) {
-      throw new Error('Failed to get library items');
+      logger.warn('Failed to get library items', { sectionId, status: response.status });
+      throw new Error(`Failed to get library items (HTTP ${response.status})`);
     }
 
     const data = await response.json();
     const items = data.MediaContainer?.Metadata || [];
+    logger.debug('Got library items', { sectionId, count: items.length });
 
-    return items.map((item: any) => this.mapPlexItem(item));
+    return items.map((item: Record<string, unknown>) => this.mapPlexItem(item));
   }
 
   async getItemMetadata(ratingKey: string): Promise<PlexItem> {
     if (!this.serverUrl) throw new Error('Server URL not set');
 
-    const response = await fetch(
+    logger.debug('Fetching item metadata', { ratingKey });
+    const response = await this.fetchWithTimeout(
       `${this.serverUrl}/library/metadata/${ratingKey}?X-Plex-Token=${this.token}`,
       { headers: { Accept: 'application/json' } }
     );
 
     if (!response.ok) {
-      throw new Error('Failed to get item metadata');
+      logger.warn('Failed to get item metadata', { ratingKey, status: response.status });
+      throw new Error(`Failed to get item metadata (HTTP ${response.status})`);
     }
 
     const data = await response.json();
@@ -203,29 +211,31 @@ export class PlexService {
     return this.mapPlexItem(item, true);
   }
 
-  async getShowEpisodes(showRatingKey: string): Promise<any[]> {
+  async getShowEpisodes(showRatingKey: string): Promise<Record<string, unknown>[]> {
     if (!this.serverUrl) throw new Error('Server URL not set');
 
-    const response = await fetch(
+    logger.debug('Fetching show episodes', { showRatingKey });
+    const response = await this.fetchWithTimeout(
       `${this.serverUrl}/library/metadata/${showRatingKey}/allLeaves?X-Plex-Token=${this.token}`,
       { headers: { Accept: 'application/json' } }
     );
 
     if (!response.ok) {
-      throw new Error('Failed to get show episodes');
+      logger.warn('Failed to get show episodes', { showRatingKey, status: response.status });
+      throw new Error(`Failed to get show episodes (HTTP ${response.status})`);
     }
 
     const data = await response.json();
     const episodes = data.MediaContainer?.Metadata || [];
 
-    return episodes.map((ep: any) => ({
-      plexId: ep.ratingKey,
-      title: ep.title,
-      seasonNumber: ep.parentIndex,
-      episodeNumber: ep.index,
-      summary: ep.summary,
-      duration: ep.duration,
-      rating: ep.rating,
+    return episodes.map((ep: Record<string, unknown>) => ({
+      plexId: ep.ratingKey as string,
+      title: ep.title as string,
+      seasonNumber: ep.parentIndex as number,
+      episodeNumber: ep.index as number,
+      summary: ep.summary as string,
+      duration: ep.duration as number,
+      rating: ep.rating as number,
       thumb: ep.thumb ? `${this.serverUrl}${ep.thumb}?X-Plex-Token=${this.token}` : null,
     }));
   }

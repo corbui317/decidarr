@@ -8,6 +8,23 @@ interface RequestOptions {
   headers?: Record<string, string>;
 }
 
+// Custom error class for authentication errors
+export class AuthError extends Error {
+  public isAuthError = true;
+  public statusCode: number;
+  
+  constructor(message: string, statusCode: number = 401) {
+    super(message);
+    this.name = 'AuthError';
+    this.statusCode = statusCode;
+  }
+}
+
+// Helper to check if an error is an auth error
+export function isAuthError(error: unknown): error is AuthError {
+  return error instanceof AuthError || (error as AuthError)?.isAuthError === true;
+}
+
 async function request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, headers = {} } = options;
 
@@ -28,17 +45,16 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ error: 'Request failed' }));
+    const errorMessage = errorData.error || 'Request failed';
     
     if (response.status === 401) {
-      console.warn(`[API] 401 Unauthorized on ${endpoint}:`, errorData.error);
-      // Only redirect if we're not already on the home page and not during setup
-      if (typeof window !== 'undefined' && window.location.pathname !== '/') {
-        // Use replace to avoid back-button loops
-        window.location.replace('/');
-      }
+      console.warn(`[API] 401 Unauthorized on ${endpoint}:`, errorMessage);
+      // Throw a typed AuthError instead of auto-redirecting
+      // This lets components decide how to handle the auth failure
+      throw new AuthError(errorMessage, 401);
     }
     
-    throw new Error(errorData.error || 'Request failed');
+    throw new Error(errorMessage);
   }
 
   return response.json();
@@ -47,6 +63,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
 // Auth API (simplified for single-user mode)
 export const authApi = {
   getCurrentUser: () => request<{ user: { username: string; serverUrl: string }; preferences: unknown }>('/auth/me'),
+  login: () => request<{ success: boolean; user: { username: string; serverUrl: string } }>('/auth/login', { method: 'POST' }),
   logout: () => request('/auth/logout', { method: 'DELETE' }),
 };
 

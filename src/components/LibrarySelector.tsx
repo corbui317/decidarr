@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { libraryApi } from '@/lib/api';
+import { useState, useEffect, useCallback } from 'react';
+import { libraryApi, isAuthError } from '@/lib/api';
 import LoadingSpinner from './LoadingSpinner';
 
 interface Section {
@@ -26,25 +26,41 @@ export default function LibrarySelector({
   const [sections, setSections] = useState<Section[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isAuthErrorState, setIsAuthErrorState] = useState(false);
   const [syncing, setSyncing] = useState<Record<string, boolean>>({});
 
-  useEffect(() => {
-    loadSections();
-  }, []);
-
-  const loadSections = async () => {
+  const loadSections = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    setIsAuthErrorState(false);
+    
     try {
+      console.log('[LibrarySelector] Loading library sections...');
       const data = await libraryApi.getSections();
       setSections(data.sections as Section[]);
-      setError(null);
+      console.log('[LibrarySelector] Loaded sections:', data.sections.length);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load libraries';
       console.error('[LibrarySelector] Load error:', message);
       setError(message);
+      
+      // Check if this is an auth error
+      if (isAuthError(err)) {
+        setIsAuthErrorState(true);
+      }
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadSections();
+  }, [loadSections]);
+
+  const handleReLogin = useCallback(() => {
+    // Clear any stale state and redirect to home for re-authentication
+    window.location.href = '/';
+  }, []);
 
   const filteredSections = sections.filter((s) => s.type === mediaType);
 
@@ -82,11 +98,32 @@ export default function LibrarySelector({
 
   if (error) {
     return (
-      <div className="text-center p-4">
-        <p className="text-decidarr-error">{error}</p>
-        <button onClick={loadSections} className="mt-2 text-decidarr-primary hover:underline">
-          Retry
-        </button>
+      <div className="bg-decidarr-secondary rounded-xl p-4">
+        <div className="text-center">
+          <div className="text-4xl mb-3">⚠️</div>
+          <p className="text-decidarr-error mb-4">{error}</p>
+          
+          {isAuthErrorState ? (
+            <div className="space-y-2">
+              <p className="text-gray-400 text-sm mb-3">
+                Your session may have expired. Please log in again.
+              </p>
+              <button
+                onClick={handleReLogin}
+                className="px-4 py-2 bg-decidarr-primary text-decidarr-dark font-medium rounded-lg hover:opacity-90 transition-opacity"
+              >
+                Re-Login
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={loadSections}
+              className="px-4 py-2 bg-decidarr-surface text-decidarr-text font-medium rounded-lg border border-decidarr-border hover:border-decidarr-primary transition-colors"
+            >
+              Retry
+            </button>
+          )}
+        </div>
       </div>
     );
   }

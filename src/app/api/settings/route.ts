@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { getOrCreateSettings } from '@/lib/models/Settings';
-import { requireAuth, validatePlexUrl, normalizeUrl } from '@/lib/auth';
+import { requireAuth, validatePlexUrl, normalizeUrl, isAuthError } from '@/lib/auth';
+import { createLogger } from '@/lib/logger';
+
+const logger = createLogger('API:Settings');
 
 // Helper to mask sensitive values
 const maskValue = (value: string | undefined): string | null => {
@@ -13,6 +16,7 @@ const maskValue = (value: string | undefined): string | null => {
 // GET /api/settings - Get current settings (masked sensitive values)
 export async function GET() {
   try {
+    logger.debug('Fetching settings');
     await connectDB();
     const { settings } = await requireAuth();
 
@@ -21,6 +25,7 @@ export async function GET() {
     const tmdbKey = settings.getDecryptedTmdbKey();
     const tautulliKey = settings.getDecryptedTautulliKey();
 
+    logger.debug('Settings fetched successfully');
     return NextResponse.json({
       setupComplete: settings.setupComplete,
       plex: {
@@ -46,11 +51,17 @@ export async function GET() {
       uiPreferences: settings.uiPreferences,
     });
   } catch (error) {
-    const msg = (error as Error)?.message;
-    if (msg === 'App not configured' || msg === 'Unauthorized') {
-      return NextResponse.json({ error: msg }, { status: 401 });
+    const errorMsg = (error as Error)?.message;
+    
+    if (isAuthError(error)) {
+      logger.warn('Auth error fetching settings', { error: errorMsg });
+      return NextResponse.json(
+        { error: errorMsg === 'Unauthorized' ? 'Session expired' : errorMsg },
+        { status: 401 }
+      );
     }
-    console.error('Get settings error:', error);
+    
+    logger.error('Failed to get settings', { error: errorMsg });
     return NextResponse.json({ error: 'Failed to get settings' }, { status: 500 });
   }
 }
@@ -167,11 +178,17 @@ export async function PUT(request: NextRequest) {
       },
     });
   } catch (error) {
-    const msg = (error as Error)?.message;
-    if (msg === 'App not configured' || msg === 'Unauthorized') {
-      return NextResponse.json({ error: msg }, { status: 401 });
+    const errorMsg = (error as Error)?.message;
+    
+    if (isAuthError(error)) {
+      logger.warn('Auth error updating settings', { error: errorMsg });
+      return NextResponse.json(
+        { error: errorMsg === 'Unauthorized' ? 'Session expired' : errorMsg },
+        { status: 401 }
+      );
     }
-    console.error('Update settings error:', error);
+    
+    logger.error('Failed to update settings', { error: errorMsg });
     return NextResponse.json({ error: 'Failed to update settings' }, { status: 500 });
   }
 }

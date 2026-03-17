@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { settingsApi, tautulliApi, SettingsResponse, PlexTestResponse, TautulliUser } from '@/lib/api';
+import { settingsApi, tautulliApi, SettingsResponse, PlexTestResponse, TautulliUser, isAuthError } from '@/lib/api';
 import { useTheme, THEME_CONFIG, AppTheme } from '@/context/ThemeContext';
 import LoadingSpinner from './LoadingSpinner';
 
@@ -12,10 +12,14 @@ interface SettingsModalProps {
 
 type Tab = 'plex' | 'tmdb' | 'tautulli' | 'sync' | 'preferences';
 
+const LOAD_TIMEOUT_MS = 15000;
+
 export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const { theme: currentTheme, saveTheme } = useTheme();
   const [activeTab, setActiveTab] = useState<Tab>('plex');
   const [loading, setLoading] = useState(true);
+  const [loadingTimedOut, setLoadingTimedOut] = useState(false);
+  const [isAuthErrorState, setIsAuthErrorState] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -70,6 +74,11 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const loadSettings = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setLoadingTimedOut(false);
+    setIsAuthErrorState(false);
+    
+    console.log('[SettingsModal] Loading settings...');
+    
     try {
       const data = await settingsApi.getSettings();
       setSettings(data);
@@ -80,8 +89,15 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       setSelectedTheme(data.uiPreferences.theme as AppTheme);
       setDefaultMediaType(data.uiPreferences.defaultMediaType);
       setTvSelectionMode(data.uiPreferences.tvSelectionMode);
+      console.log('[SettingsModal] Settings loaded successfully');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load settings');
+      const message = err instanceof Error ? err.message : 'Failed to load settings';
+      console.error('[SettingsModal] Load error:', message);
+      setError(message);
+      
+      if (isAuthError(err)) {
+        setIsAuthErrorState(true);
+      }
     } finally {
       setLoading(false);
     }
@@ -90,6 +106,13 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   useEffect(() => {
     if (isOpen) {
       loadSettings();
+      
+      // Set a timeout to show a message if loading takes too long
+      const timeoutId = setTimeout(() => {
+        setLoadingTimedOut(true);
+      }, LOAD_TIMEOUT_MS);
+      
+      return () => clearTimeout(timeoutId);
     }
   }, [isOpen, loadSettings]);
 
@@ -355,8 +378,35 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
           {loading ? (
-            <div className="flex items-center justify-center py-12" role="status" aria-label="Loading settings">
+            <div className="flex flex-col items-center justify-center py-12" role="status" aria-label="Loading settings">
               <LoadingSpinner size="lg" />
+              {loadingTimedOut && (
+                <div className="mt-4 text-center">
+                  <p className="text-decidarr-text-muted text-sm">
+                    Taking longer than expected...
+                  </p>
+                  <button
+                    onClick={onClose}
+                    className="mt-2 text-decidarr-primary hover:underline text-sm"
+                  >
+                    Close and try again later
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : isAuthErrorState ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <div className="text-4xl mb-4">🔐</div>
+              <h3 className="text-lg font-semibold text-decidarr-text mb-2">Session Expired</h3>
+              <p className="text-decidarr-text-muted mb-4">
+                Your session has expired. Please log in again.
+              </p>
+              <button
+                onClick={() => { window.location.href = '/'; }}
+                className="px-4 py-2 bg-decidarr-primary text-decidarr-dark font-medium rounded-lg hover:opacity-90 transition-opacity"
+              >
+                Re-Login
+              </button>
             </div>
           ) : (
             <>

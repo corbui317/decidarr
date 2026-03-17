@@ -44,7 +44,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         return;
       }
 
-      // App is configured, now verify the session by calling an authenticated endpoint
+      // App is configured — verify the session cookie is valid
       try {
         const me = await authApi.getCurrentUser();
         console.log('[Auth] Session valid, user:', me.user.username);
@@ -53,18 +53,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
           plexServerUrl: me.user.serverUrl || '',
         });
       } catch (authErr) {
-        // Session cookie might be missing or invalid
-        console.log('[Auth] Session check failed:', authErr instanceof Error ? authErr.message : 'Unknown');
-        // Still show as "authenticated" based on status if setup is complete
-        // This allows the dashboard to load and show a proper error
-        if (status.plexUsername) {
-          setUser({
-            username: status.plexUsername,
-            plexServerUrl: '',
-          });
-        } else {
-          setUser(null);
-        }
+        // Session cookie is missing or expired — user must log in
+        console.log('[Auth] Session invalid or missing:', authErr instanceof Error ? authErr.message : 'Unknown');
+        // Do NOT fall back to plexUsername from status — that would bypass authentication
+        setUser(null);
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Connection failed';
@@ -91,10 +83,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, []);
 
   const logout = useCallback(async () => {
-    // In single-user mode, logout just clears the local state
-    // The user can re-access by refreshing the page
+    try {
+      // Call the logout API to clear the server-side session cookie
+      await authApi.logout();
+      console.log('[Auth] Logged out successfully');
+    } catch (err) {
+      // Log but don't block - we still want to clear local state
+      console.warn('[Auth] Logout API call failed:', err instanceof Error ? err.message : 'Unknown error');
+    }
+    
+    // Always clear local state and redirect
     setUser(null);
-    // Optionally redirect to home page
     window.location.href = '/';
   }, []);
 

@@ -1,12 +1,38 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import SettingsModal from './SettingsModal';
 
 export default function Header() {
   const { user, logout } = useAuth();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  const handleOpenSettings = useCallback(() => {
+    console.log('[Header] Opening settings modal');
+    setSettingsOpen(true);
+  }, []);
+
+  const handleCloseSettings = useCallback(() => {
+    console.log('[Header] Closing settings modal');
+    setSettingsOpen(false);
+  }, []);
+
+  const handleLogout = useCallback(async () => {
+    if (loggingOut) return;
+    
+    console.log('[Header] Logout clicked');
+    setLoggingOut(true);
+    
+    try {
+      await logout();
+    } catch (err) {
+      console.error('[Header] Logout failed:', err);
+      // Force redirect anyway to ensure user can get to a clean state
+      window.location.href = '/';
+    }
+  }, [logout, loggingOut]);
 
   return (
     <>
@@ -29,9 +55,10 @@ export default function Header() {
 
             {/* Settings button */}
             <button
-              onClick={() => setSettingsOpen(true)}
+              onClick={handleOpenSettings}
               className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors"
               title="Settings"
+              type="button"
             >
               <svg
                 className="w-5 h-5"
@@ -55,11 +82,13 @@ export default function Header() {
             </button>
 
             <button
-              onClick={logout}
+              onClick={handleLogout}
+              disabled={loggingOut}
+              type="button"
               className="px-3 py-1.5 text-sm text-gray-300 hover:text-white
-                       hover:bg-white/10 rounded transition-colors"
+                       hover:bg-white/10 rounded transition-colors disabled:opacity-50"
             >
-              Logout
+              {loggingOut ? 'Logging out...' : 'Logout'}
             </button>
           </div>
         </div>
@@ -67,7 +96,7 @@ export default function Header() {
 
       <SettingsModal
         isOpen={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
+        onClose={handleCloseSettings}
       />
     </>
   );
