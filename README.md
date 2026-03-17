@@ -7,11 +7,14 @@ Decidarr is a movie roulette application that randomly selects movies or TV show
 ## Features
 
 - **Random Selection** - Spin the slot machine to pick a random movie or TV show
-- **Smart Filters** - Filter by genre, year, rating, age rating, and studio/network
-- **Library Sync** - Configurable sync frequency (1 hour to 1 week)
-- **TMDb Integration** - Optional enhanced movie data and ratings
+- **Smart Filters** - Filter by genre, year, rating, age rating, studio/network, and Plex collections
+- **Play Now** - Launch content directly in your Plex app with deep link support
+- **Tautulli Integration** - Sync watch history per Plex user from Tautulli
+- **Library Sync** - Configurable sync frequency with manual refresh option
+- **TMDb Integration** - Enhanced movie data, ratings, and certifications
 - **Watch Tracking** - Mark items as watched to exclude from future spins
-- **Beautiful UI** - Slot machine animations with a sleek dark theme
+- **Multiple Themes** - Choose from Dark, Light, Vegas Casino, Macao, or Underground Poker themes
+- **Beautiful UI** - Slot machine animations with smooth transitions
 
 ## Quick Start
 
@@ -37,7 +40,7 @@ Decidarr is a movie roulette application that randomly selects movies or TV show
 
 4. Complete the setup wizard:
    - Enter your Plex token
-   - Select your Plex server
+   - Your Plex servers will be auto-discovered (or enter manually)
    - Optionally add a TMDB API key for enhanced data
 
 That's it! No `.env` file needed - all configuration is done through the web UI.
@@ -46,24 +49,64 @@ That's it! No `.env` file needed - all configuration is done through the web UI.
 
 All settings are managed through the **Settings** panel (gear icon in the header):
 
+### Plex Tab
 | Setting | Description |
 |---------|-------------|
 | **Plex Token** | Your Plex authentication token |
 | **Plex Server** | Auto-discovered or manually entered |
-| **TMDB API Key** | Optional - enables enhanced movie data |
-| **Sync Frequency** | How often to refresh library cache (1h - 1 week) |
-| **Preferences** | Default media type, TV selection mode |
 
-### Optional Environment Variable
+### TMDB Tab
+| Setting | Description |
+|---------|-------------|
+| **TMDB API Key** | Optional - enables enhanced movie data and ratings |
+
+### Tautulli Tab
+| Setting | Description |
+|---------|-------------|
+| **Tautulli URL** | Your Tautulli server URL (e.g., `http://192.168.1.100:8181`) |
+| **Tautulli API Key** | Found in Tautulli Settings → Web Interface → API Key |
+| **Enable Sync** | Toggle to enable watch history syncing |
+| **Sync Now** | Manually trigger a watch history sync |
+
+### Sync Tab
+| Setting | Description |
+|---------|-------------|
+| **Sync Frequency** | How often to refresh library cache (1h - 1 week) |
+
+### Preferences Tab
+| Setting | Description |
+|---------|-------------|
+| **Theme** | Choose from 5 visual themes |
+| **Default Media Type** | Movies or TV Shows |
+| **TV Selection Mode** | Pick a show or pick an episode |
+
+### Environment Variables (Optional)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | 3100 | Port to expose the application |
+| `LOG_LEVEL` | info | Logging level: debug, info, warn, error |
 
 To use a different port:
 ```bash
 PORT=8080 docker compose up -d
 ```
+
+## Filters
+
+Decidarr supports powerful filtering to narrow down your selection pool:
+
+- **Collections** - Filter by Plex collections (works great with Kometa-managed collections)
+- **Genres** - Action, Comedy, Drama, etc.
+- **Year Range** - Filter by release year
+- **Age Rating** - PG, PG-13, R, TV-MA, etc.
+- **Score Rating** - Filter by TMDb rating or use presets (Top Rated, Hidden Gems, etc.)
+- **Studios/Networks** - Filter by streaming service, anime studio, or traditional studio
+- **Unwatched Only** - Exclude items you've already seen
+
+## Play Now
+
+When a movie or show is selected, click the **Play** button to launch it directly in your Plex app. Decidarr uses Plex deep links (`plex://`) to open the native app, with a fallback to Plex Web if the app isn't available.
 
 ## Getting Your Plex Token
 
@@ -86,7 +129,7 @@ Or visit: https://support.plex.tv/articles/204059436-finding-an-authentication-t
 - **Framework**: Next.js 14 with App Router
 - **Language**: TypeScript
 - **Database**: MongoDB
-- **Styling**: TailwindCSS
+- **Styling**: TailwindCSS with CSS Variables for theming
 - **Animations**: Framer Motion
 - **Containerization**: Docker
 
@@ -98,17 +141,19 @@ decidarr/
 │   ├── app/                 # Next.js App Router
 │   │   ├── api/             # API Routes
 │   │   │   ├── auth/        # Authentication
-│   │   │   ├── library/     # Plex library endpoints
-│   │   │   ├── selection/   # Random selection
+│   │   │   ├── library/     # Plex library & collections
+│   │   │   ├── selection/   # Random selection & pool count
 │   │   │   ├── settings/    # Configuration endpoints
+│   │   │   ├── tautulli/    # Tautulli sync endpoints
 │   │   │   └── watched/     # Watch tracking
 │   │   ├── dashboard/       # Main app page
 │   │   └── page.tsx         # Setup wizard / Home
 │   ├── components/          # React components
-│   ├── context/             # React contexts
+│   ├── context/             # React contexts (Auth, App, Theme)
+│   ├── types/               # TypeScript types
 │   └── lib/                 # Utilities
 │       ├── models/          # MongoDB models
-│       └── services/        # Plex & TMDb services
+│       └── services/        # Plex, TMDb, Tautulli services
 ├── docker-compose.yml       # Docker configuration
 ├── Dockerfile               # Container build
 └── tailwind.config.ts       # TailwindCSS config
@@ -128,12 +173,30 @@ npm run dev
 
 # Build for production
 npm run build
+
+# Type check
+npx tsc --noEmit
 ```
+
+## Updating
+
+To update an existing deployment:
+
+```bash
+cd /path/to/decidarr
+git pull origin main
+docker compose up -d --build
+docker image prune -f  # Clean up old images
+```
+
+Your settings and watch history are stored in MongoDB and will be preserved.
 
 ## Security
 
 - Encryption keys are auto-generated on first run
-- Plex tokens and API keys are encrypted in the database
+- Plex tokens, TMDB keys, and Tautulli keys are encrypted in the database
+- Session-based authentication with JWT
+- SSRF protection for server URLs
 - No sensitive data stored in environment variables or config files
 
 ## License
