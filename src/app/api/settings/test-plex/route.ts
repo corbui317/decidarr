@@ -1,22 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PlexService } from '@/lib/services/plex';
-import { validateSession, validatePlexUrl } from '@/lib/auth';
-import { connectDB } from '@/lib/db';
-import { getOrCreateSettings } from '@/lib/models/Settings';
+import { validatePlexUrl } from '@/lib/auth';
+import { createLogger } from '@/lib/logger';
+
+const logger = createLogger('API:TestPlex');
 
 // POST /api/settings/test-plex - Test Plex connection
-// Allowed during initial setup (no session) OR with a valid session post-setup.
+// This endpoint is intentionally open (no session required) because:
+// - During initial setup, there is no session yet
+// - During reconfiguration, the Plex token itself IS the credential being tested
+// The token is provided in the request body and validated against plex.tv
 export async function POST(request: NextRequest) {
   try {
-    // Require auth if the app is already configured
-    await connectDB();
-    const settings = await getOrCreateSettings();
-    if (settings.setupComplete) {
-      const valid = await validateSession();
-      if (!valid) {
-        return NextResponse.json({ valid: false, error: 'Unauthorized' }, { status: 401 });
-      }
-    }
+    logger.debug('Test Plex request received');
 
     const body = await request.json();
     const { plexToken, plexServerUrl } = body;
@@ -39,18 +35,22 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Validate Plex token
+    // Validate Plex token against plex.tv
+    logger.debug('Validating Plex token');
     const plexService = new PlexService(plexToken);
     const validation = await plexService.validateToken();
 
     if (!validation.valid || !validation.user) {
+      logger.warn('Plex token invalid', { error: validation.error });
       return NextResponse.json({
         valid: false,
         error: 'Invalid Plex token',
       });
     }
 
-    // Get available servers
+    logger.info('Plex token valid', { username: validation.user.username });
+
+    // Discover available servers
     let servers: Array<{ name: string; uri: string }> = [];
     try {
       const serverList = await plexService.getServers();
@@ -62,21 +62,24 @@ export async function POST(request: NextRequest) {
           uri: connection?.uri || '',
         };
       }).filter(s => s.uri);
+      logger.debug('Discovered servers', { count: servers.length });
     } catch (err) {
-      console.error('Server discovery error:', err);
+      logger.warn('Server discovery error', { error: (err as Error).message });
     }
 
-    // If server URL provided, test connection to it
+    // If server URL provided, test direct connection
     let serverValid = false;
     let libraryCount = 0;
     if (plexServerUrl) {
       try {
+        logger.debug('Testing server connection', { plexServerUrl });
         const serverPlexService = new PlexService(plexToken, plexServerUrl);
         const sections = await serverPlexService.getLibrarySections();
         serverValid = true;
         libraryCount = sections.length;
+        logger.info('Server connection successful', { plexServerUrl, libraryCount });
       } catch (err) {
-        console.error('Server connection error:', err);
+        logger.warn('Server connection failed', { plexServerUrl, error: (err as Error).message });
         serverValid = false;
       }
     }
@@ -95,7 +98,7 @@ export async function POST(request: NextRequest) {
       } : null,
     });
   } catch (error) {
-    console.error('Test Plex error:', error);
+    logger.error('Test Plex error', { error: (error as Error).message });
     return NextResponse.json(
       { valid: false, error: 'Failed to test Plex connection' },
       { status: 500 }

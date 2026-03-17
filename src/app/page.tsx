@@ -7,10 +7,9 @@ import { useApp } from '@/context/AppContext';
 import SetupWizard from '@/components/SetupWizard';
 import LoginScreen from '@/components/LoginScreen';
 import LoadingSpinner from '@/components/LoadingSpinner';
-import { settingsApi } from '@/lib/api';
 
 export default function Home() {
-  const { isAuthenticated, loading: authLoading, login } = useAuth();
+  const { isAuthenticated, loading: authLoading, login, setAuthenticatedUser } = useAuth();
   const { configured, loading: appLoading, checkStatus, setConfigured, status } = useApp();
   const router = useRouter();
   const [showReconfigure, setShowReconfigure] = useState(false);
@@ -43,6 +42,7 @@ export default function Home() {
       <SetupWizard
         onComplete={async () => {
           setShowReconfigure(false);
+          // Refresh status so configured=true, then re-check auth for the new cookie
           await checkStatus();
           await login();
           router.push('/dashboard');
@@ -56,14 +56,14 @@ export default function Home() {
     return (
       <LoginScreen
         username={status?.plexUsername ?? null}
-        onLoginSuccess={async (username, serverUrl) => {
+        onLoginSuccess={(username, serverUrl) => {
           console.log('[Home] Login successful for:', username);
-          // Refresh auth state so AuthContext picks up the new cookie
-          await login();
+          // Directly update auth state — no extra round-trip needed since
+          // the login API already validated the token and set the cookie
+          setAuthenticatedUser(username, serverUrl);
           router.replace('/dashboard');
         }}
         onReconfigure={() => {
-          // Allow force-reconfigure: temporarily mark as unconfigured in UI only
           setShowReconfigure(true);
         }}
       />

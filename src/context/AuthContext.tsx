@@ -14,6 +14,7 @@ interface AuthContextType {
   error: string | null;
   login: () => Promise<void>;
   logout: () => Promise<void>;
+  setAuthenticatedUser: (username: string, serverUrl: string) => void;
   isAuthenticated: boolean;
 }
 
@@ -82,6 +83,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }, []);
 
+  // Directly set the authenticated user — used after a successful login API call
+  // so we don't need a round-trip to /api/auth/me
+  const setAuthenticatedUser = useCallback((username: string, serverUrl: string) => {
+    console.log('[Auth] Setting authenticated user:', username);
+    setUser({ username, plexServerUrl: serverUrl });
+    setError(null);
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       // Call the logout API to clear the server-side session cookie
@@ -104,9 +113,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
       error,
       login,
       logout,
+      setAuthenticatedUser,
       isAuthenticated: !!user,
     }),
-    [user, loading, error, login, logout]
+    [user, loading, error, login, logout, setAuthenticatedUser]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

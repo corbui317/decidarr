@@ -117,9 +117,12 @@ export async function POST(request: NextRequest) {
     );
 
     const cookieStore = await cookies();
+    // secure: false because this is a self-hosted app commonly accessed over HTTP on a LAN.
+    // Enabling secure cookies on HTTP causes browsers to silently drop them.
+    // Users who deploy behind HTTPS can set SECURE_COOKIES=true in their environment.
     cookieStore.set('decidarr_session', sessionToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: process.env.SECURE_COOKIES === 'true',
       sameSite: 'lax',
       maxAge: 7 * 24 * 60 * 60,
       path: '/',
