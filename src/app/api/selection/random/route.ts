@@ -43,8 +43,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get Plex service for collections
+    // Get Plex service for collections and play links
     const plexService = new PlexService(plexToken, plexServerUrl, settings.plexMachineId);
+
+    // If machineId is missing, try to fetch and store it now
+    if (!settings.plexMachineId) {
+      logger.info('MachineId missing, fetching from server');
+      const fetchedMachineId = await plexService.fetchMachineIdFromServer();
+      if (fetchedMachineId) {
+        settings.plexMachineId = fetchedMachineId;
+        await settings.save();
+        logger.info('Stored machineId', { machineId: fetchedMachineId });
+      }
+    }
 
     // Filter by collections if specified
     if (filters.collections && filters.collections.length > 0) {

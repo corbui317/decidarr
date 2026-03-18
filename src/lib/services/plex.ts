@@ -143,6 +143,42 @@ export class PlexService {
     this.machineId = machineId;
   }
 
+  // Fetch machineId directly from the Plex server's identity endpoint
+  // This is more reliable than server discovery when the URL is manually entered
+  async fetchMachineIdFromServer(): Promise<string | null> {
+    if (!this.serverUrl) {
+      logger.warn('Cannot fetch machineId: no server URL');
+      return null;
+    }
+
+    try {
+      logger.debug('Fetching machineId from server identity', { serverUrl: this.serverUrl });
+      const response = await this.fetchWithTimeout(`${this.serverUrl}/identity`, {
+        headers: { ...this.headers, Accept: 'application/json' },
+      });
+
+      if (!response.ok) {
+        logger.warn('Failed to fetch server identity', { status: response.status });
+        return null;
+      }
+
+      const data = await response.json();
+      const machineId = data.MediaContainer?.machineIdentifier;
+      
+      if (machineId) {
+        logger.info('Fetched machineId from server', { machineId });
+        this.machineId = machineId;
+        return machineId;
+      }
+
+      logger.warn('Server identity response missing machineIdentifier');
+      return null;
+    } catch (err) {
+      logger.error('Error fetching server identity', { error: (err as Error).message });
+      return null;
+    }
+  }
+
   async getLibrarySections(): Promise<PlexLibrary[]> {
     if (!this.serverUrl) throw new Error('Server URL not set');
 
@@ -328,22 +364,65 @@ export class PlexService {
     }
   }
 
-  buildDeepLink(ratingKey: string, type: 'app' | 'web' = 'app'): string {
-    if (type === 'app') {
-      return `plex://play/?metadataKey=%2Flibrary%2Fmetadata%2F${ratingKey}&metadataType=1`;
-    }
+  // Build a deep link to view/play content in Plex
+  // Supports multiple targets: web, desktop app, iOS/tvOS, Android
+  buildDeepLink(
+    ratingKey: string,
+    target: 'web' | 'app' | 'ios' | 'android' = 'web'
+  ): string {
+    const metadataKey = `/library/metadata/${ratingKey}`;
+    const encodedKey = encodeURIComponent(metadataKey);
 
-    if (this.machineId && this.serverUrl) {
-      return `https://app.plex.tv/desktop#!/server/${this.machineId}/details?key=%2Flibrary%2Fmetadata%2F${ratingKey}`;
-    }
+    switch (target) {
+      case 'web':
+        // Plex Web - requires machineId to link to the correct server
+        if (this.machineId) {
+          return `https://app.plex.tv/desktop#!/server/${this.machineId}/details?key=${encodedKey}`;
+        }
+        // Fallback without machineId (won't work well)
+        logger.warn('Building web link without machineId - may not work correctly');
+        return `https://app.plex.tv/desktop#!/server/*/details?key=${encodedKey}`;
 
-    return `https://app.plex.tv/desktop#!/provider/tv.plex.provider.discover/details?key=%2Flibrary%2Fmetadata%2F${ratingKey}`;
+      case 'app':
+        // Desktop app (macOS/Windows) via plex:// protocol
+        if (this.machineId) {
+          return `plex://server/${this.machineId}/details?key=${encodedKey}`;
+        }
+        return `plex://play?metadataKey=${encodedKey}`;
+
+      case 'ios':
+        // iOS/tvOS app via plex:// - same format works for Apple TV
+        if (this.machineId) {
+          return `plex://server/${this.machineId}/playMedia?key=${encodedKey}`;
+        }
+        return `plex://playMedia?key=${encodedKey}`;
+
+      case 'android':
+        // Android/Android TV (Shield) via plex:// protocol
+        if (this.machineId) {
+          return `plex://server/${this.machineId}/playMedia?key=${encodedKey}`;
+        }
+        return `plex://playMedia?key=${encodedKey}`;
+
+      default:
+        return this.buildDeepLink(ratingKey, 'web');
+    }
   }
 
-  buildPlayLinks(ratingKey: string): { app: string; web: string } {
+  // Build all play links for different platforms
+  buildPlayLinks(ratingKey: string): {
+    web: string;
+    app: string;
+    ios: string;
+    android: string;
+    machineId: string | null;
+  } {
     return {
-      app: this.buildDeepLink(ratingKey, 'app'),
       web: this.buildDeepLink(ratingKey, 'web'),
+      app: this.buildDeepLink(ratingKey, 'app'),
+      ios: this.buildDeepLink(ratingKey, 'ios'),
+      android: this.buildDeepLink(ratingKey, 'android'),
+      machineId: this.machineId,
     };
   }
 }

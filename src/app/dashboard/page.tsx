@@ -23,8 +23,11 @@ interface SelectionResult {
     [key: string]: unknown;
   };
   playLinks?: {
-    app: string;
     web: string;
+    app: string;
+    ios: string;
+    android: string;
+    machineId: string | null;
   } | null;
   stats: {
     totalMatches: number;

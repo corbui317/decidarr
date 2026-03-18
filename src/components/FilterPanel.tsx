@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { libraryApi, selectionApi, PlexCollection } from '@/lib/api';
 import { Filters, DataStats } from '@/types/filters';
 
@@ -46,6 +46,9 @@ function getRatingIcon(icon: string): string {
   return icons[icon] || '🏅';
 }
 
+// Minimum percentage of items that must have data for a filter to be shown
+const MIN_DATA_THRESHOLD = 10;
+
 export default function FilterPanel({
   libraryIds,
   filters,
@@ -68,7 +71,7 @@ export default function FilterPanel({
   });
   const [collections, setCollections] = useState<PlexCollection[]>([]);
   const [isOpen, setIsOpen] = useState(false);
-  const [studioTab, setStudioTab] = useState<'streaming' | 'anime' | 'traditional' | 'library'>('streaming');
+  const [studioTab, setStudioTab] = useState<'streaming' | 'anime' | 'traditional' | 'library'>('library');
 
   // Load static options (rating categories, popular studios)
   useEffect(() => {
@@ -221,14 +224,26 @@ export default function FilterPanel({
   const hasLibraries = libraryIds.length > 0;
 
   // Calculate data availability percentages
-  const getDataAvailability = (field: keyof DataStats): number | null => {
-    if (!dataStats || !totalItems || totalItems === 0) return null;
+  const getDataAvailability = (field: keyof DataStats): number => {
+    if (!dataStats || !totalItems || totalItems === 0) return 0;
     return Math.round((dataStats[field] / totalItems) * 100);
   };
 
-  const ratingAvailability = getDataAvailability('itemsWithRating');
-  const contentRatingAvailability = getDataAvailability('itemsWithContentRating');
-  const studioAvailability = getDataAvailability('itemsWithStudio');
+  // Memoize data availability to avoid recalculating on every render
+  const dataAvailability = useMemo(() => ({
+    rating: getDataAvailability('itemsWithRating'),
+    contentRating: getDataAvailability('itemsWithContentRating'),
+    studio: getDataAvailability('itemsWithStudio'),
+    year: getDataAvailability('itemsWithYear'),
+    genres: getDataAvailability('itemsWithGenres'),
+  }), [dataStats, totalItems]);
+
+  // Determine which filters should be shown based on data availability
+  const showRatingFilter = filterOptions.hasRatings && dataAvailability.rating >= MIN_DATA_THRESHOLD;
+  const showContentRatingFilter = filterOptions.contentRatings.length > 0 && dataAvailability.contentRating >= MIN_DATA_THRESHOLD;
+  const showStudioFilter = (filterOptions.studios.length > 0 || popularStudios.streaming.length > 0) && dataAvailability.studio >= MIN_DATA_THRESHOLD;
+  const showYearFilter = hasLibraries && dataAvailability.year >= MIN_DATA_THRESHOLD;
+  const showGenreFilter = genres.length > 0 && dataAvailability.genres >= MIN_DATA_THRESHOLD;
 
   return (
     <div className="bg-decidarr-secondary rounded-xl overflow-hidden">
@@ -286,8 +301,9 @@ export default function FilterPanel({
             </div>
           )}
 
-          {/* Unwatched Only */}
-          <div>
+          {/* 1. QUICK FILTERS - Always shown at top */}
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-400 mb-2">Quick Filters</label>
             <button
               onClick={toggleUnwatched}
               className={`w-full flex items-center justify-between p-3 rounded-lg transition ${
@@ -301,7 +317,7 @@ export default function FilterPanel({
             </button>
           </div>
 
-          {/* Collections Filter - Kometa collections */}
+          {/* 2. COLLECTIONS - Most useful for curated lists (Kometa) */}
           {collections.length > 0 && (
             <div>
               <label className="block text-sm font-medium text-gray-400 mb-2">
@@ -329,8 +345,8 @@ export default function FilterPanel({
             </div>
           )}
 
-          {/* Genre Filter - only show if genres available */}
-          {genres.length > 0 && (
+          {/* 3. GENRES - Very commonly used filter */}
+          {showGenreFilter && (
             <div>
               <label className="block text-sm font-medium text-gray-400 mb-2">
                 Genres
@@ -356,40 +372,8 @@ export default function FilterPanel({
             </div>
           )}
 
-          {/* Content Rating Filter - only show if content ratings available */}
-          {filterOptions.contentRatings.length > 0 && (
-            <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">
-                Age Rating
-                {filters.contentRatings.length > 0 && (
-                  <span className="ml-2 text-decidarr-primary">({filters.contentRatings.length})</span>
-                )}
-                {contentRatingAvailability !== null && contentRatingAvailability < 50 && (
-                  <span className="ml-2 text-yellow-500 text-xs" title="Percentage of items with age rating data">
-                    ({contentRatingAvailability}% have data)
-                  </span>
-                )}
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {filterOptions.contentRatings.map((rating) => (
-                  <button
-                    key={rating}
-                    onClick={() => toggleContentRating(rating)}
-                    className={`px-3 py-1 rounded-full text-sm transition ${
-                      filters.contentRatings.includes(rating)
-                        ? 'bg-decidarr-primary text-decidarr-dark'
-                        : 'bg-decidarr-dark text-gray-300 hover:text-white'
-                    }`}
-                  >
-                    {rating}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Year Range - only show if libraries selected */}
-          {hasLibraries && (
+          {/* 4. YEAR RANGE - Commonly used */}
+          {showYearFilter && (
             <div>
               <label className="block text-sm font-medium text-gray-400 mb-2">Year Range</label>
               <div className="flex items-center gap-2">
@@ -414,35 +398,37 @@ export default function FilterPanel({
             </div>
           )}
 
-          {/* Rating Filter - only show if items have ratings */}
-          {filterOptions.hasRatings && (
+          {/* 5. SCORE RATING - Only if sufficient data */}
+          {showRatingFilter && (
             <div>
               <label className="block text-sm font-medium text-gray-400 mb-2">
                 Score Rating
-                {ratingAvailability !== null && ratingAvailability < 50 && (
+                {dataAvailability.rating < 80 && (
                   <span className="ml-2 text-yellow-500 text-xs" title="Percentage of items with rating data">
-                    ({ratingAvailability}% have data)
+                    ({dataAvailability.rating}% have data)
                   </span>
                 )}
               </label>
 
               {/* Preset options */}
-              <div className="grid grid-cols-1 gap-2 mb-3">
-                {ratingCategories.map((category) => (
-                  <button
-                    key={category.id}
-                    onClick={() => toggleRatingFilter(category.id)}
-                    className={`p-2 rounded-lg text-sm text-left transition flex items-center gap-2 ${
-                      filters.ratingFilter === category.id
-                        ? 'bg-decidarr-primary/20 border-2 border-decidarr-primary'
-                        : 'bg-decidarr-dark border-2 border-transparent hover:border-gray-700'
-                    }`}
-                  >
-                    <span>{getRatingIcon(category.icon)}</span>
-                    <span className="text-white text-xs">{category.name}</span>
-                  </button>
-                ))}
-              </div>
+              {ratingCategories.length > 0 && (
+                <div className="grid grid-cols-1 gap-2 mb-3">
+                  {ratingCategories.map((category) => (
+                    <button
+                      key={category.id}
+                      onClick={() => toggleRatingFilter(category.id)}
+                      className={`p-2 rounded-lg text-sm text-left transition flex items-center gap-2 ${
+                        filters.ratingFilter === category.id
+                          ? 'bg-decidarr-primary/20 border-2 border-decidarr-primary'
+                          : 'bg-decidarr-dark border-2 border-transparent hover:border-gray-700'
+                      }`}
+                    >
+                      <span>{getRatingIcon(category.icon)}</span>
+                      <span className="text-white text-xs">{category.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
 
               {/* Custom range */}
               <div className="flex items-center gap-2">
@@ -474,89 +460,113 @@ export default function FilterPanel({
             </div>
           )}
 
-          {/* Studio Filter */}
-          <div>
-            <label className="block text-sm font-medium text-gray-400 mb-2">
-              Studios / Networks
-              {filters.studios.length > 0 && (
-                <span className="ml-2 text-decidarr-primary">({filters.studios.length})</span>
-              )}
-              {studioAvailability !== null && studioAvailability < 50 && (
-                <span className="ml-2 text-yellow-500 text-xs" title="Percentage of items with studio/network data">
-                  ({studioAvailability}% have data)
-                </span>
-              )}
-            </label>
-
-            {/* Studio Tabs */}
-            <div className="flex gap-1 mb-2">
-              <button
-                onClick={() => setStudioTab('streaming')}
-                className={`flex-1 py-1.5 px-2 text-xs rounded-lg transition ${
-                  studioTab === 'streaming'
-                    ? 'bg-decidarr-primary text-decidarr-dark'
-                    : 'bg-decidarr-dark text-gray-400 hover:text-white'
-                }`}
-              >
-                Streaming
-              </button>
-              <button
-                onClick={() => setStudioTab('anime')}
-                className={`flex-1 py-1.5 px-2 text-xs rounded-lg transition ${
-                  studioTab === 'anime'
-                    ? 'bg-decidarr-primary text-decidarr-dark'
-                    : 'bg-decidarr-dark text-gray-400 hover:text-white'
-                }`}
-              >
-                Anime
-              </button>
-              <button
-                onClick={() => setStudioTab('traditional')}
-                className={`flex-1 py-1.5 px-2 text-xs rounded-lg transition ${
-                  studioTab === 'traditional'
-                    ? 'bg-decidarr-primary text-decidarr-dark'
-                    : 'bg-decidarr-dark text-gray-400 hover:text-white'
-                }`}
-              >
-                Studios
-              </button>
-              {filterOptions.studios.length > 0 && (
-                <button
-                  onClick={() => setStudioTab('library')}
-                  className={`flex-1 py-1.5 px-2 text-xs rounded-lg transition ${
-                    studioTab === 'library'
-                      ? 'bg-decidarr-primary text-decidarr-dark'
-                      : 'bg-decidarr-dark text-gray-400 hover:text-white'
-                  }`}
-                >
-                  In Library
-                </button>
-              )}
-            </div>
-
-            {/* Studio List */}
-            <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
-              {currentStudios.length > 0 ? (
-                currentStudios.map((studio) => (
+          {/* 6. AGE RATING - Only if sufficient data */}
+          {showContentRatingFilter && (
+            <div>
+              <label className="block text-sm font-medium text-gray-400 mb-2">
+                Age Rating
+                {filters.contentRatings.length > 0 && (
+                  <span className="ml-2 text-decidarr-primary">({filters.contentRatings.length})</span>
+                )}
+                {dataAvailability.contentRating < 80 && (
+                  <span className="ml-2 text-yellow-500 text-xs" title="Percentage of items with age rating data">
+                    ({dataAvailability.contentRating}% have data)
+                  </span>
+                )}
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {filterOptions.contentRatings.map((rating) => (
                   <button
-                    key={studio}
-                    onClick={() => toggleStudio(studio)}
-                    className={`px-3 py-1 rounded-full text-xs transition ${
-                      filters.studios.includes(studio)
+                    key={rating}
+                    onClick={() => toggleContentRating(rating)}
+                    className={`px-3 py-1 rounded-full text-sm transition ${
+                      filters.contentRatings.includes(rating)
                         ? 'bg-decidarr-primary text-decidarr-dark'
                         : 'bg-decidarr-dark text-gray-300 hover:text-white'
                     }`}
                   >
-                    {studio}
+                    {rating}
                   </button>
-                ))
-              ) : (
-                <p className="text-gray-500 text-xs py-2">
-                  {studioTab === 'library' ? 'No studios found in selected libraries' : 'No studios available'}
-                </p>
-              )}
+                ))}
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* 7. STUDIOS/NETWORKS - Only if sufficient data */}
+          {showStudioFilter && (
+            <div>
+              <label className="block text-sm font-medium text-gray-400 mb-2">
+                Studios / Networks
+                {filters.studios.length > 0 && (
+                  <span className="ml-2 text-decidarr-primary">({filters.studios.length})</span>
+                )}
+                {dataAvailability.studio < 80 && (
+                  <span className="ml-2 text-yellow-500 text-xs" title="Percentage of items with studio/network data">
+                    ({dataAvailability.studio}% have data)
+                  </span>
+                )}
+              </label>
+
+              {/* Studio Tabs - only show tabs if we have library studios */}
+              {filterOptions.studios.length > 0 && (
+                <div className="flex gap-1 mb-2">
+                  <button
+                    onClick={() => setStudioTab('library')}
+                    className={`flex-1 py-1.5 px-2 text-xs rounded-lg transition ${
+                      studioTab === 'library'
+                        ? 'bg-decidarr-primary text-decidarr-dark'
+                        : 'bg-decidarr-dark text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    In Library
+                  </button>
+                  <button
+                    onClick={() => setStudioTab('streaming')}
+                    className={`flex-1 py-1.5 px-2 text-xs rounded-lg transition ${
+                      studioTab === 'streaming'
+                        ? 'bg-decidarr-primary text-decidarr-dark'
+                        : 'bg-decidarr-dark text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    Streaming
+                  </button>
+                  <button
+                    onClick={() => setStudioTab('traditional')}
+                    className={`flex-1 py-1.5 px-2 text-xs rounded-lg transition ${
+                      studioTab === 'traditional'
+                        ? 'bg-decidarr-primary text-decidarr-dark'
+                        : 'bg-decidarr-dark text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    Studios
+                  </button>
+                </div>
+              )}
+
+              {/* Studio List */}
+              <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+                {currentStudios.length > 0 ? (
+                  currentStudios.map((studio) => (
+                    <button
+                      key={studio}
+                      onClick={() => toggleStudio(studio)}
+                      className={`px-3 py-1 rounded-full text-xs transition ${
+                        filters.studios.includes(studio)
+                          ? 'bg-decidarr-primary text-decidarr-dark'
+                          : 'bg-decidarr-dark text-gray-300 hover:text-white'
+                      }`}
+                    >
+                      {studio}
+                    </button>
+                  ))
+                ) : (
+                  <p className="text-gray-500 text-xs py-2">
+                    {studioTab === 'library' ? 'No studios found in selected libraries' : 'No studios available'}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Clear Button */}
           {activeFilterCount > 0 && (

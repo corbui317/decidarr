@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { watchedApi } from '@/lib/api';
 
 interface Item {
@@ -27,8 +27,11 @@ interface Item {
 }
 
 interface PlayLinks {
-  app: string;
   web: string;
+  app: string;
+  ios: string;
+  android: string;
+  machineId: string | null;
 }
 
 interface TMDbData {
@@ -37,6 +40,20 @@ interface TMDbData {
   tagline?: string;
   overview?: string;
 }
+
+interface PlayDevice {
+  id: 'web' | 'app' | 'ios' | 'android';
+  name: string;
+  icon: string;
+  description: string;
+}
+
+const PLAY_DEVICES: PlayDevice[] = [
+  { id: 'web', name: 'Plex Web', icon: '🌐', description: 'Open in browser' },
+  { id: 'app', name: 'Desktop App', icon: '💻', description: 'macOS / Windows' },
+  { id: 'ios', name: 'Apple TV / iOS', icon: '📱', description: 'iPhone, iPad, Apple TV' },
+  { id: 'android', name: 'Android / Shield', icon: '📺', description: 'Android TV, NVIDIA Shield' },
+];
 
 interface MovieCardProps {
   item: Item;
@@ -50,20 +67,48 @@ export default function MovieCard({ item, tmdb, isWatched = false, onWatchedChan
   const [watched, setWatched] = useState(isWatched);
   const [updating, setUpdating] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [showDevicePicker, setShowDevicePicker] = useState(false);
+  const [selectedDevice, setSelectedDevice] = useState<PlayDevice['id']>('web');
+  const devicePickerRef = useRef<HTMLDivElement>(null);
 
-  const handlePlayNow = useCallback(() => {
+  // Close device picker when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (devicePickerRef.current && !devicePickerRef.current.contains(event.target as Node)) {
+        setShowDevicePicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handlePlayOnDevice = useCallback((deviceId: PlayDevice['id']) => {
     if (!playLinks) return;
 
-    const iframe = document.createElement('iframe');
-    iframe.style.display = 'none';
-    iframe.src = playLinks.app;
-    document.body.appendChild(iframe);
+    const link = playLinks[deviceId];
+    setSelectedDevice(deviceId);
+    setShowDevicePicker(false);
 
-    setTimeout(() => {
-      document.body.removeChild(iframe);
-      window.open(playLinks.web, '_blank', 'noopener,noreferrer');
-    }, 1500);
+    if (deviceId === 'web') {
+      window.open(link, '_blank', 'noopener,noreferrer');
+    } else {
+      // For native apps, try the deep link
+      const iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      iframe.src = link;
+      document.body.appendChild(iframe);
+
+      // Fallback to web after a delay if app doesn't open
+      setTimeout(() => {
+        document.body.removeChild(iframe);
+      }, 2000);
+    }
   }, [playLinks]);
+
+  const handlePlayButtonClick = useCallback(() => {
+    if (!playLinks) return;
+    handlePlayOnDevice(selectedDevice);
+  }, [playLinks, selectedDevice, handlePlayOnDevice]);
 
   const handleWatchedToggle = async () => {
     setUpdating(true);
@@ -144,18 +189,83 @@ export default function MovieCard({ item, tmdb, isWatched = false, onWatchedChan
           {/* Action buttons */}
           <div className="flex items-center gap-2 flex-shrink-0">
             {playLinks && (
-              <button
-                onClick={handlePlayNow}
-                className="w-12 h-12 rounded-full flex items-center justify-center
-                          bg-decidarr-primary text-white hover:bg-decidarr-primary/80
-                          transition-all shadow-lg"
-                title="Play in Plex"
-                aria-label="Play in Plex"
-              >
-                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M8 5v14l11-7z" />
-                </svg>
-              </button>
+              <div className="relative" ref={devicePickerRef}>
+                {/* Play button with dropdown */}
+                <div className="flex">
+                  <button
+                    onClick={handlePlayButtonClick}
+                    className="w-12 h-12 rounded-l-full flex items-center justify-center
+                              bg-decidarr-primary text-white hover:bg-decidarr-primary/80
+                              transition-all shadow-lg"
+                    title={`Play on ${PLAY_DEVICES.find(d => d.id === selectedDevice)?.name}`}
+                    aria-label="Play"
+                  >
+                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => setShowDevicePicker(!showDevicePicker)}
+                    className="w-8 h-12 rounded-r-full flex items-center justify-center
+                              bg-decidarr-primary/80 text-white hover:bg-decidarr-primary/60
+                              transition-all shadow-lg border-l border-white/20"
+                    title="Choose device"
+                    aria-label="Choose playback device"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                </div>
+
+                {/* Device picker dropdown */}
+                <AnimatePresence>
+                  {showDevicePicker && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute right-0 top-14 z-50 w-56 bg-decidarr-dark
+                                rounded-xl shadow-2xl border border-gray-700 overflow-hidden"
+                    >
+                      <div className="p-2">
+                        <p className="text-xs text-gray-500 uppercase tracking-wide px-2 py-1 mb-1">
+                          Play on device
+                        </p>
+                        {PLAY_DEVICES.map((device) => (
+                          <button
+                            key={device.id}
+                            onClick={() => handlePlayOnDevice(device.id)}
+                            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg
+                                      text-left transition-colors ${
+                                        selectedDevice === device.id
+                                          ? 'bg-decidarr-primary/20 text-decidarr-primary'
+                                          : 'text-white hover:bg-gray-700'
+                                      }`}
+                          >
+                            <span className="text-xl">{device.icon}</span>
+                            <div>
+                              <p className="font-medium text-sm">{device.name}</p>
+                              <p className="text-xs text-gray-400">{device.description}</p>
+                            </div>
+                            {selectedDevice === device.id && (
+                              <span className="ml-auto text-decidarr-primary">✓</span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                      {!playLinks.machineId && (
+                        <div className="px-3 py-2 bg-yellow-900/30 border-t border-yellow-800/50">
+                          <p className="text-xs text-yellow-400">
+                            ⚠️ Server ID not found. Some links may not work correctly.
+                          </p>
+                        </div>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
             )}
             <button
               onClick={handleWatchedToggle}
