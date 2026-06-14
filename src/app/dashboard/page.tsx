@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
-import { selectionApi } from '@/lib/api';
+import { selectionApi, spinHistoryApi, SpinHistoryEntry } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import Header from '@/components/Header';
 import SlotMachine from '@/components/SlotMachine';
@@ -11,6 +11,7 @@ import MovieCard from '@/components/MovieCard';
 import LibrarySelector from '@/components/LibrarySelector';
 import FilterPanel from '@/components/FilterPanel';
 import LoadingSpinner from '@/components/LoadingSpinner';
+import RecentSpins, { historyFiltersToFilters } from '@/components/RecentSpins';
 
 import { Filters, DEFAULT_FILTERS, PoolCountResult } from '@/types/filters';
 
@@ -50,6 +51,8 @@ export default function Dashboard() {
   const [emptyReason, setEmptyReason] = useState<string | null>(null);
   const [dataStats, setDataStats] = useState<PoolCountResult['dataStats'] | null>(null);
   const [loadingPoolCount, setLoadingPoolCount] = useState(false);
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
+  const [tvSelectionMode, setTvSelectionMode] = useState<'show' | 'episode'>('show');
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -114,6 +117,22 @@ export default function Dashboard() {
 
       setResult(data as SelectionResult);
       setStats(data.stats);
+
+      const selection = (data as SelectionResult).selection;
+      spinHistoryApi
+        .create({
+          plexId: selection.plexId,
+          title: selection.title,
+          mediaType: (selection.type as 'movie' | 'show' | 'episode') || 'movie',
+          posterUrl: typeof selection.posterUrl === 'string' ? selection.posterUrl : undefined,
+          year: typeof selection.year === 'number' ? selection.year : undefined,
+          libraryIds: selectedLibraries,
+          filtersSnapshot: filters,
+          tvSelectionMode: mediaType === 'show' ? tvSelectionMode : undefined,
+          poolSizeAtSpin: data.stats?.totalMatches,
+        })
+        .then(() => setHistoryRefreshKey((k) => k + 1))
+        .catch((historyErr) => console.error('Failed to record spin history:', historyErr));
     } catch (err) {
       const elapsed = Date.now() - startTime;
       if (elapsed < minSpinTime) {
@@ -129,7 +148,38 @@ export default function Dashboard() {
     } finally {
       setSpinning(false);
     }
-  }, [selectedLibraries, mediaType, filters]);
+  }, [selectedLibraries, mediaType, filters, tvSelectionMode]);
+
+  const handleReapplyHistory = useCallback((entry: SpinHistoryEntry) => {
+    if (entry.libraryIds?.length) {
+      setSelectedLibraries(entry.libraryIds);
+    }
+    if (entry.mediaType === 'movie' || entry.mediaType === 'show' || entry.mediaType === 'episode') {
+      setMediaType(entry.mediaType === 'episode' ? 'show' : entry.mediaType);
+    }
+    if (entry.tvSelectionMode) {
+      setTvSelectionMode(entry.tvSelectionMode);
+    }
+    const restoredFilters = historyFiltersToFilters(entry.filtersSnapshot);
+    if (restoredFilters) {
+      setFilters(restoredFilters);
+    }
+    setResult(null);
+  }, []);
+
+  const handleRevisitHistory = useCallback((entry: SpinHistoryEntry) => {
+    setResult({
+      selection: {
+        plexId: entry.plexId,
+        title: entry.title,
+        type: entry.mediaType,
+        year: entry.year,
+        posterUrl: entry.posterUrl,
+      },
+      playLinks: null,
+      stats: { totalMatches: entry.poolSizeAtSpin ?? 0 },
+    });
+  }, []);
 
   const handleMediaTypeChange = useCallback((type: string) => {
     setMediaType(type);
@@ -191,6 +241,12 @@ export default function Dashboard() {
                   </p>
                 </div>
               )}
+
+              <RecentSpins
+                refreshKey={historyRefreshKey}
+                onReapply={handleReapplyHistory}
+                onRevisit={handleRevisitHistory}
+              />
             </div>
 
             {/* Main content - Slot Machine and Results */}

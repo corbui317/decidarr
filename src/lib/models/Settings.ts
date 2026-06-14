@@ -7,6 +7,12 @@ const logger = createLogger('Settings');
 
 export type AppTheme = 'dark' | 'light' | 'vegas' | 'macao' | 'poker';
 
+export interface ISpinHistoryPreferences {
+  enabled: boolean;
+  retentionLimit: number;
+  storeFilterSnapshot: boolean;
+}
+
 export interface IUIPreferences {
   theme: AppTheme;
   defaultMediaType: 'movie' | 'show';
@@ -42,6 +48,9 @@ export interface ISettings extends Omit<Document, '_id'> {
 
   // UI Preferences
   uiPreferences: IUIPreferences;
+
+  // Spin history preferences (single-user / installation scope)
+  spinHistoryPreferences: ISpinHistoryPreferences;
 
   // Setup status
   setupComplete: boolean;
@@ -98,6 +107,12 @@ const settingsSchema = new mongoose.Schema<ISettings>(
       theme: { type: String, enum: ['dark', 'light', 'vegas', 'macao', 'poker'], default: 'dark' },
       defaultMediaType: { type: String, enum: ['movie', 'show'], default: 'movie' },
       tvSelectionMode: { type: String, enum: ['show', 'episode'], default: 'show' },
+    },
+
+    spinHistoryPreferences: {
+      enabled: { type: Boolean, default: true },
+      retentionLimit: { type: Number, default: 50, min: 1, max: 500 },
+      storeFilterSnapshot: { type: Boolean, default: true },
     },
 
     // Setup status
@@ -213,6 +228,11 @@ export async function getOrCreateSettings(): Promise<ISettings> {
         theme: 'dark',
         defaultMediaType: 'movie',
         tvSelectionMode: 'show',
+      },
+      spinHistoryPreferences: {
+        enabled: true,
+        retentionLimit: 50,
+        storeFilterSnapshot: true,
       },
       setupComplete: false,
     });

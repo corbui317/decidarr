@@ -1,5 +1,7 @@
 'use client';
 
+import type { Filters } from '@/types/filters';
+
 const API_BASE = '/api';
 
 interface RequestOptions {
@@ -296,4 +298,65 @@ export const tautulliApi = {
       body: { url, apiKey },
     }),
   sync: () => request<TautulliSyncResponse>('/tautulli/sync', { method: 'POST' }),
+};
+
+// Spin History API
+export interface SpinHistoryPreferences {
+  enabled: boolean;
+  retentionLimit: number;
+  storeFilterSnapshot: boolean;
+}
+
+export interface SpinHistoryEntry {
+  _id: string;
+  userId: string;
+  plexId: string;
+  title: string;
+  mediaType: 'movie' | 'show' | 'episode';
+  posterUrl?: string;
+  year?: number;
+  libraryIds: string[];
+  filtersSnapshot?: Filters;
+  tvSelectionMode?: 'show' | 'episode';
+  poolSizeAtSpin?: number;
+  spunAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateSpinHistoryPayload {
+  plexId: string;
+  title: string;
+  mediaType: 'movie' | 'show' | 'episode';
+  posterUrl?: string;
+  year?: number;
+  libraryIds: string[];
+  filtersSnapshot?: Filters;
+  tvSelectionMode?: 'show' | 'episode';
+  poolSizeAtSpin?: number;
+}
+
+export const spinHistoryApi = {
+  list: (page = 1, limit = 20) =>
+    request<{ items: SpinHistoryEntry[]; total: number; page: number; pageSize: number }>(
+      `/spin-history?page=${page}&limit=${limit}`
+    ),
+  create: (payload: CreateSpinHistoryPayload) =>
+    request<{ entry?: SpinHistoryEntry; skipped?: boolean; reason?: string }>('/spin-history', {
+      method: 'POST',
+      body: payload,
+    }),
+  delete: (id: string) =>
+    request<{ success: boolean }>(`/spin-history/${id}`, { method: 'DELETE' }),
+  clearAll: () =>
+    request<{ deleted: number }>('/spin-history', { method: 'DELETE' }),
+};
+
+export const userPreferencesApi = {
+  get: () => request<{ spinHistory: SpinHistoryPreferences }>('/users/me/preferences'),
+  updateSpinHistory: (spinHistory: Partial<SpinHistoryPreferences>) =>
+    request<{ spinHistory: SpinHistoryPreferences }>('/users/me/preferences', {
+      method: 'PATCH',
+      body: { spinHistory },
+    }),
 };

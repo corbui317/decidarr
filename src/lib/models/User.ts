@@ -1,6 +1,12 @@
 import mongoose, { Document, Model } from 'mongoose';
 import CryptoJS from 'crypto-js';
 
+export interface ISpinHistoryPreferences {
+  enabled: boolean;
+  retentionLimit: number;
+  storeFilterSnapshot: boolean;
+}
+
 export interface IUserPreferences {
   selectedLibraries?: string[];
   defaultMediaType?: 'movie' | 'show';
@@ -11,6 +17,7 @@ export interface IUserPreferences {
     collections?: string[];
     unwatchedOnly?: boolean;
   };
+  spinHistory?: ISpinHistoryPreferences;
 }
 
 export interface IUser extends Document {
@@ -49,6 +56,11 @@ const userSchema = new mongoose.Schema<IUser>(
         yearRange: { start: Number, end: Number },
         collections: [String],
         unwatchedOnly: { type: Boolean, default: false },
+      },
+      spinHistory: {
+        enabled: { type: Boolean, default: true },
+        retentionLimit: { type: Number, default: 50, min: 1, max: 500 },
+        storeFilterSnapshot: { type: Boolean, default: true },
       },
     },
   },

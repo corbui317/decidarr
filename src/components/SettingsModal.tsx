@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { settingsApi, tautulliApi, SettingsResponse, PlexTestResponse, TautulliUser, isAuthError } from '@/lib/api';
+import { settingsApi, tautulliApi, spinHistoryApi, userPreferencesApi, SettingsResponse, PlexTestResponse, TautulliUser, isAuthError } from '@/lib/api';
 import { useTheme, THEME_CONFIG, AppTheme } from '@/context/ThemeContext';
 import LoadingSpinner from './LoadingSpinner';
 
@@ -51,6 +51,13 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [defaultMediaType, setDefaultMediaType] = useState<'movie' | 'show'>('movie');
   const [tvSelectionMode, setTvSelectionMode] = useState<'show' | 'episode'>('show');
 
+  // Spin history preferences
+  const [spinHistoryEnabled, setSpinHistoryEnabled] = useState(true);
+  const [spinHistoryRetention, setSpinHistoryRetention] = useState(50);
+  const [spinHistoryStoreSnapshots, setSpinHistoryStoreSnapshots] = useState(true);
+  const [clearingHistory, setClearingHistory] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
 
@@ -89,6 +96,16 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       setSelectedTheme(data.uiPreferences.theme as AppTheme);
       setDefaultMediaType(data.uiPreferences.defaultMediaType);
       setTvSelectionMode(data.uiPreferences.tvSelectionMode);
+
+      try {
+        const prefs = await userPreferencesApi.get();
+        setSpinHistoryEnabled(prefs.spinHistory.enabled);
+        setSpinHistoryRetention(prefs.spinHistory.retentionLimit);
+        setSpinHistoryStoreSnapshots(prefs.spinHistory.storeFilterSnapshot);
+      } catch (prefsErr) {
+        console.warn('[SettingsModal] Could not load spin history preferences:', prefsErr);
+      }
+
       console.log('[SettingsModal] Settings loaded successfully');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load settings';
@@ -303,11 +320,31 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       await settingsApi.updateSettings({
         uiPreferences: { theme: selectedTheme, defaultMediaType, tvSelectionMode },
       });
+      await userPreferencesApi.updateSpinHistory({
+        enabled: spinHistoryEnabled,
+        retentionLimit: Math.max(1, Math.min(500, spinHistoryRetention)),
+        storeFilterSnapshot: spinHistoryStoreSnapshots,
+      });
       setSuccess('Preferences saved');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save preferences');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleClearSpinHistory = async () => {
+    setClearingHistory(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const result = await spinHistoryApi.clearAll();
+      setSuccess(`Cleared ${result.deleted} spin history ${result.deleted === 1 ? 'entry' : 'entries'}`);
+      setShowClearConfirm(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to clear spin history');
+    } finally {
+      setClearingHistory(false);
     }
   };
 
@@ -835,6 +872,86 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                       &quot;Pick a Show&quot; selects a random TV series. &quot;Pick an Episode&quot; selects a
                       specific random episode.
                     </p>
+                  </div>
+
+                  {/* Spin History */}
+                  <div className="border-t border-decidarr-border pt-6 space-y-4">
+                    <h3 className="text-sm font-semibold text-decidarr-text">Spin History</h3>
+
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={spinHistoryEnabled}
+                        onChange={e => setSpinHistoryEnabled(e.target.checked)}
+                        className="w-4 h-4 rounded border-gray-600 text-decidarr-primary focus:ring-decidarr-primary"
+                      />
+                      <span className="text-decidarr-text text-sm">Record spin history</span>
+                    </label>
+
+                    <div>
+                      <label htmlFor="spin-history-retention" className={labelClass}>
+                        Retention Limit
+                      </label>
+                      <input
+                        id="spin-history-retention"
+                        type="number"
+                        min={1}
+                        max={500}
+                        value={spinHistoryRetention}
+                        onChange={e => setSpinHistoryRetention(Number(e.target.value))}
+                        disabled={!spinHistoryEnabled}
+                        className={inputClass}
+                        style={{ background: 'var(--decidarr-input-bg)' }}
+                      />
+                      <p className="text-decidarr-text-muted text-xs mt-1">
+                        Keep up to 500 recent spins (oldest removed automatically).
+                      </p>
+                    </div>
+
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={spinHistoryStoreSnapshots}
+                        onChange={e => setSpinHistoryStoreSnapshots(e.target.checked)}
+                        disabled={!spinHistoryEnabled}
+                        className="w-4 h-4 rounded border-gray-600 text-decidarr-primary focus:ring-decidarr-primary"
+                      />
+                      <span className="text-decidarr-text text-sm">Store filter snapshots</span>
+                    </label>
+                    <p className="text-decidarr-text-muted text-xs -mt-2">
+                      Save filter settings with each spin so you can reapply them later.
+                    </p>
+
+                    {showClearConfirm ? (
+                      <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-4 space-y-3">
+                        <p className="text-red-400 text-sm">
+                          Delete all spin history? This cannot be undone.
+                        </p>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={handleClearSpinHistory}
+                            disabled={clearingHistory}
+                            className="flex-1 bg-red-600 text-white font-medium py-2 px-4 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+                          >
+                            {clearingHistory ? 'Clearing...' : 'Yes, clear all'}
+                          </button>
+                          <button
+                            onClick={() => setShowClearConfirm(false)}
+                            disabled={clearingHistory}
+                            className="flex-1 bg-decidarr-surface text-decidarr-text font-medium py-2 px-4 rounded-lg border border-decidarr-border hover:border-decidarr-primary transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setShowClearConfirm(true)}
+                        className="w-full bg-decidarr-surface text-red-400 font-medium py-2 px-4 rounded-lg border border-decidarr-border hover:border-red-500/50 transition-colors"
+                      >
+                        Clear All Spin History
+                      </button>
+                    )}
                   </div>
 
                   <button
