@@ -32,6 +32,7 @@ interface FilterPanelProps {
   emptyReason?: string | null;
   dataStats?: DataStats | null;
   loadingPoolCount?: boolean;
+  overseerrWarning?: string | null;
 }
 
 function getRatingIcon(icon: string): string {
@@ -58,6 +59,7 @@ export default function FilterPanel({
   emptyReason,
   dataStats,
   loadingPoolCount,
+  overseerrWarning,
 }: FilterPanelProps) {
   const [genres, setGenres] = useState<string[]>([]);
   const [yearRange, setYearRange] = useState({ min: 1900, max: new Date().getFullYear() });
@@ -265,6 +267,15 @@ export default function FilterPanel({
 
       {isOpen && (
         <div className="p-4 pt-0 space-y-4">
+          {overseerrWarning && (
+            <div
+              role="status"
+              className="p-3 rounded-lg bg-amber-900/30 border border-amber-700/50 text-amber-200 text-sm"
+            >
+              {overseerrWarning}
+            </div>
+          )}
+
           {/* Pool Count Display */}
           {hasLibraries && (
             <div className={`p-3 rounded-lg ${

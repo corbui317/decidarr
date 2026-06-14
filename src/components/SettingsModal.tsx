@@ -1,8 +1,26 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { settingsApi, tautulliApi, SettingsResponse, PlexTestResponse, TautulliUser, isAuthError } from '@/lib/api';
+import {
+  settingsApi,
+  tautulliApi,
+  overseerrApi,
+  adminUsersApi,
+  userPreferencesApi,
+  SettingsResponse,
+  PlexTestResponse,
+  TautulliUser,
+  PlexFriendUser,
+  isAuthError,
+  AnimationStyle,
+  AnimationSpeed,
+} from '@/lib/api';
+import {
+  ANIMATION_STYLE_LABELS,
+  ANIMATION_SPEED_LABELS,
+} from '@/components/animations';
 import { useTheme, THEME_CONFIG, AppTheme } from '@/context/ThemeContext';
+import { useAuth } from '@/context/AuthContext';
 import LoadingSpinner from './LoadingSpinner';
 
 interface SettingsModalProps {
@@ -10,13 +28,16 @@ interface SettingsModalProps {
   onClose: () => void;
 }
 
-type Tab = 'plex' | 'tmdb' | 'tautulli' | 'sync' | 'preferences';
+type Tab = 'plex' | 'tmdb' | 'tautulli' | 'overseerr' | 'sync' | 'users' | 'preferences';
 
 const LOAD_TIMEOUT_MS = 15000;
 
 export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const { theme: currentTheme, saveTheme } = useTheme();
-  const [activeTab, setActiveTab] = useState<Tab>('plex');
+  const { isAdmin } = useAuth();
+  const [activeTab, setActiveTab] = useState<Tab>('preferences');
+  const [plexFriends, setPlexFriends] = useState<PlexFriendUser[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingTimedOut, setLoadingTimedOut] = useState(false);
   const [isAuthErrorState, setIsAuthErrorState] = useState(false);
@@ -46,10 +67,19 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [tautulliValid, setTautulliValid] = useState<boolean | null>(null);
   const [syncingTautulli, setSyncingTautulli] = useState(false);
 
+  // Overseerr tab
+  const [overseerrUrl, setOverseerrUrl] = useState('');
+  const [overseerrApiKey, setOverseerrApiKey] = useState('');
+  const [overseerrFilterEnabled, setOverseerrFilterEnabled] = useState(false);
+  const [overseerrValid, setOverseerrValid] = useState<boolean | null>(null);
+  const [overseerrVersion, setOverseerrVersion] = useState<string | null>(null);
+
   // Preferences tab
   const [selectedTheme, setSelectedTheme] = useState<AppTheme>(currentTheme);
   const [defaultMediaType, setDefaultMediaType] = useState<'movie' | 'show'>('movie');
   const [tvSelectionMode, setTvSelectionMode] = useState<'show' | 'episode'>('show');
+  const [animationStyle, setAnimationStyle] = useState<AnimationStyle>('slots');
+  const [animationSpeed, setAnimationSpeed] = useState<AnimationSpeed>('normal');
 
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
@@ -86,9 +116,13 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       setSyncFrequencyHours(data.syncFrequencyHours);
       setTautulliUrl(data.tautulli?.url || '');
       setTautulliEnabled(data.tautulli?.enabled || false);
+      setOverseerrUrl(data.overseerr?.url || '');
+      setOverseerrFilterEnabled(data.overseerr?.filterEnabled || false);
       setSelectedTheme(data.uiPreferences.theme as AppTheme);
       setDefaultMediaType(data.uiPreferences.defaultMediaType);
       setTvSelectionMode(data.uiPreferences.tvSelectionMode);
+      setAnimationStyle(data.uiPreferences.animationStyle ?? 'slots');
+      setAnimationSpeed(data.uiPreferences.animationSpeed ?? 'normal');
       console.log('[SettingsModal] Settings loaded successfully');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load settings';
@@ -104,8 +138,25 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   }, []);
 
   useEffect(() => {
+    if (isOpen && !isAdmin && activeTab !== 'preferences') {
+      setActiveTab('preferences');
+    }
+  }, [isOpen, isAdmin, activeTab]);
+
+  const loadUserAnimationPrefs = useCallback(async () => {
+    try {
+      const { preferences } = await userPreferencesApi.get();
+      if (preferences.animationStyle) setAnimationStyle(preferences.animationStyle);
+      if (preferences.animationSpeed) setAnimationSpeed(preferences.animationSpeed);
+    } catch {
+      // Non-fatal; fall back to settings defaults
+    }
+  }, []);
+
+  useEffect(() => {
     if (isOpen) {
       loadSettings();
+      loadUserAnimationPrefs();
       
       // Set a timeout to show a message if loading takes too long
       const timeoutId = setTimeout(() => {
@@ -114,7 +165,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       
       return () => clearTimeout(timeoutId);
     }
-  }, [isOpen, loadSettings]);
+  }, [isOpen, loadSettings, loadUserAnimationPrefs]);
 
   // Keep selectedTheme in sync when currentTheme changes externally
   useEffect(() => {
@@ -294,15 +345,120 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     }
   };
 
+  const handleTestOverseerr = async () => {
+    if (!overseerrUrl.trim() || !overseerrApiKey.trim()) {
+      setError('Please enter Overseerr URL and API key');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const result = await overseerrApi.test(overseerrUrl.trim(), overseerrApiKey.trim());
+      setOverseerrValid(result.success);
+      if (result.success) {
+        setOverseerrVersion(result.version || null);
+        setSuccess(
+          result.version
+            ? `Connected to Overseerr ${result.version}`
+            : 'Connected to Overseerr'
+        );
+      } else {
+        setError(result.error || 'Failed to connect to Overseerr');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to test Overseerr');
+      setOverseerrValid(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveOverseerr = async () => {
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      await settingsApi.updateSettings({
+        overseerr: {
+          url: overseerrUrl.trim() || undefined,
+          apiKey: overseerrApiKey.trim() || undefined,
+          filterEnabled: overseerrFilterEnabled,
+        },
+      });
+      setSuccess('Overseerr settings saved');
+      setOverseerrApiKey('');
+      setOverseerrValid(null);
+      await loadSettings();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save Overseerr settings');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const loadUsers = useCallback(async () => {
+    if (!isAdmin) return;
+    setLoadingUsers(true);
+    try {
+      const data = await adminUsersApi.list();
+      setPlexFriends(data.users);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load users');
+    } finally {
+      setLoadingUsers(false);
+    }
+  }, [isAdmin]);
+
+  useEffect(() => {
+    if (isOpen && activeTab === 'users' && isAdmin) {
+      loadUsers();
+    }
+  }, [isOpen, activeTab, isAdmin, loadUsers]);
+
+  const handleToggleUser = async (plexUserId: string, approved: boolean) => {
+    setSaving(true);
+    setError(null);
+    try {
+      await adminUsersApi.setApproved(plexUserId, approved);
+      setPlexFriends((prev) =>
+        prev.map((u) => (u.id === plexUserId ? { ...u, isApproved: approved } : u))
+      );
+      setSuccess(approved ? 'User access granted' : 'User access revoked');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update user');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSavePreferences = async () => {
     setSaving(true);
     setError(null);
     setSuccess(null);
     try {
       await saveTheme(selectedTheme);
-      await settingsApi.updateSettings({
-        uiPreferences: { theme: selectedTheme, defaultMediaType, tvSelectionMode },
+      if (isAdmin) {
+        await settingsApi.updateSettings({
+          uiPreferences: {
+            theme: selectedTheme,
+            defaultMediaType,
+            tvSelectionMode,
+            animationStyle,
+            animationSpeed,
+          },
+        });
+      }
+      await userPreferencesApi.update({
+        theme: selectedTheme,
+        defaultMediaType,
+        tvSelectionMode,
+        animationStyle,
+        animationSpeed,
       });
+      window.dispatchEvent(new CustomEvent('decidarr:preferences-updated', {
+        detail: { animationStyle, animationSpeed },
+      }));
       setSuccess('Preferences saved');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save preferences');
@@ -310,6 +466,18 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       setSaving(false);
     }
   };
+
+  const visibleTabs: { id: Tab; label: string }[] = isAdmin
+    ? [
+        { id: 'plex', label: 'Plex' },
+        { id: 'tmdb', label: 'TMDB' },
+        { id: 'tautulli', label: 'Tautulli' },
+        { id: 'overseerr', label: 'Overseerr' },
+        { id: 'sync', label: 'Sync' },
+        { id: 'users', label: 'Users' },
+        { id: 'preferences', label: 'Prefs' },
+      ]
+    : [{ id: 'preferences', label: 'Preferences' }];
 
   if (!isOpen) return null;
 
@@ -347,13 +515,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
         {/* Tabs */}
         <div className="flex border-b border-decidarr-border overflow-x-auto" role="tablist" aria-label="Settings sections">
-          {([
-            { id: 'plex', label: 'Plex' },
-            { id: 'tmdb', label: 'TMDB' },
-            { id: 'tautulli', label: 'Tautulli' },
-            { id: 'sync', label: 'Sync' },
-            { id: 'preferences', label: 'Prefs' },
-          ] as { id: Tab; label: string }[]).map(tab => (
+          {visibleTabs.map(tab => (
             <button
               key={tab.id}
               role="tab"
@@ -712,6 +874,119 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 </div>
               )}
 
+              {/* Overseerr Tab */}
+              {activeTab === 'overseerr' && (
+                <div id="tab-panel-overseerr" role="tabpanel" className="space-y-5">
+                  <div className="bg-decidarr-dark/50 rounded-lg p-4 border border-decidarr-border">
+                    <p className="text-decidarr-text text-sm">
+                      <span className="text-decidarr-text-muted">Status: </span>
+                      {settings?.overseerr?.filterEnabled ? (
+                        <span className="text-green-400">Filter enabled</span>
+                      ) : settings?.overseerr?.hasKey ? (
+                        <span className="text-yellow-400">Configured (filter off)</span>
+                      ) : (
+                        <span className="text-decidarr-text-muted">Not configured</span>
+                      )}
+                    </p>
+                    {settings?.overseerr?.url && (
+                      <p className="text-decidarr-text-muted text-sm mt-1">
+                        <span>URL: </span>{settings.overseerr.url}
+                      </p>
+                    )}
+                    {settings?.overseerr?.lastSyncAt && (
+                      <p className="text-decidarr-text-muted text-sm mt-1">
+                        <span>Last sync: </span>
+                        {new Date(settings.overseerr.lastSyncAt).toLocaleString()}
+                        {!settings.overseerr.lastSyncOk && (
+                          <span className="text-yellow-400 ml-2">(stale data)</span>
+                        )}
+                      </p>
+                    )}
+                  </div>
+
+                  <p className="text-decidarr-text-muted text-sm">
+                    Exclude fully available titles from the spin pool. Partially available titles stay
+                    in the pool and show a badge on the result card.
+                  </p>
+
+                  <div>
+                    <label htmlFor="overseerr-url" className={labelClass}>Overseerr URL</label>
+                    <input
+                      id="overseerr-url"
+                      type="url"
+                      value={overseerrUrl}
+                      onChange={e => {
+                        setOverseerrUrl(e.target.value);
+                        setOverseerrValid(null);
+                      }}
+                      placeholder="http://192.168.1.100:5055"
+                      className={inputClass}
+                      style={{ background: 'var(--decidarr-input-bg)' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="overseerr-key" className={labelClass}>
+                      {settings?.overseerr?.hasKey ? 'Update API Key' : 'API Key'}
+                    </label>
+                    <input
+                      id="overseerr-key"
+                      type="password"
+                      value={overseerrApiKey}
+                      onChange={e => {
+                        setOverseerrApiKey(e.target.value);
+                        setOverseerrValid(null);
+                      }}
+                      placeholder="Enter Overseerr API key"
+                      className={inputClass}
+                      style={{ background: 'var(--decidarr-input-bg)' }}
+                    />
+                    <p className="text-decidarr-text-muted text-xs mt-1">
+                      Find your API key in Overseerr Settings &rarr; General
+                    </p>
+                  </div>
+
+                  {overseerrValid && (
+                    <div role="status" className="bg-green-500/10 border border-green-500/50 rounded-lg p-3">
+                      <p className="text-green-400 text-sm">
+                        Connected{overseerrVersion ? ` (v${overseerrVersion})` : ''}
+                      </p>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={overseerrFilterEnabled}
+                        onChange={e => setOverseerrFilterEnabled(e.target.checked)}
+                        className="w-4 h-4 rounded border-gray-600 text-decidarr-primary focus:ring-decidarr-primary"
+                      />
+                      <span className="text-decidarr-text text-sm">
+                        Exclude fully available titles from the spin pool
+                      </span>
+                    </label>
+                  </div>
+
+                  <div className="flex gap-3">
+                    <button
+                      onClick={handleTestOverseerr}
+                      disabled={saving || !overseerrUrl.trim() || !overseerrApiKey.trim()}
+                      className="flex-1 bg-decidarr-surface text-decidarr-text font-medium py-2 px-4 rounded-lg border border-decidarr-border hover:border-decidarr-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Test Connection
+                    </button>
+                    <button
+                      onClick={handleSaveOverseerr}
+                      disabled={saving}
+                      className="flex-1 bg-decidarr-primary text-black font-medium py-2 px-4 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                    >
+                      {saving ? <LoadingSpinner size="sm" /> : 'Save'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Sync Tab */}
               {activeTab === 'sync' && (
                 <div id="tab-panel-sync" role="tabpanel" className="space-y-5">
@@ -746,6 +1021,45 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   >
                     {saving ? <LoadingSpinner size="sm" /> : 'Save'}
                   </button>
+                </div>
+              )}
+
+              {activeTab === 'users' && isAdmin && (
+                <div id="tab-panel-users" role="tabpanel" className="space-y-4">
+                  <p className="text-decidarr-text-muted text-sm">
+                    Grant Plex friends access to Decidarr. They must already have access to your Plex server.
+                  </p>
+                  {loadingUsers ? (
+                    <LoadingSpinner size="md" />
+                  ) : plexFriends.length === 0 ? (
+                    <p className="text-decidarr-text-muted text-sm">No Plex friends found.</p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {plexFriends.map((friend) => (
+                        <li
+                          key={friend.id}
+                          className="flex items-center justify-between bg-decidarr-dark/50 border border-decidarr-border rounded-lg px-4 py-3"
+                        >
+                          <div>
+                            <p className="text-decidarr-text font-medium">{friend.username}</p>
+                            <p className="text-decidarr-text-muted text-xs">
+                              {friend.hasServerAccess ? 'Has server access' : 'No server access'}
+                            </p>
+                          </div>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <span className="text-sm text-decidarr-text-muted">Access</span>
+                            <input
+                              type="checkbox"
+                              checked={friend.isApproved}
+                              disabled={saving}
+                              onChange={(e) => handleToggleUser(friend.id, e.target.checked)}
+                              className="w-4 h-4 accent-decidarr-primary"
+                            />
+                          </label>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               )}
 
@@ -835,6 +1149,44 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                       &quot;Pick a Show&quot; selects a random TV series. &quot;Pick an Episode&quot; selects a
                       specific random episode.
                     </p>
+                  </div>
+
+                  <div>
+                    <label htmlFor="animation-style" className={labelClass}>
+                      Spin Animation
+                    </label>
+                    <select
+                      id="animation-style"
+                      value={animationStyle}
+                      onChange={e => setAnimationStyle(e.target.value as AnimationStyle)}
+                      className={inputClass}
+                      style={{ background: 'var(--decidarr-input-bg)' }}
+                    >
+                      {(Object.keys(ANIMATION_STYLE_LABELS) as AnimationStyle[]).map((key) => (
+                        <option key={key} value={key}>
+                          {ANIMATION_STYLE_LABELS[key]}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label htmlFor="animation-speed" className={labelClass}>
+                      Animation Speed
+                    </label>
+                    <select
+                      id="animation-speed"
+                      value={animationSpeed}
+                      onChange={e => setAnimationSpeed(e.target.value as AnimationSpeed)}
+                      className={inputClass}
+                      style={{ background: 'var(--decidarr-input-bg)' }}
+                    >
+                      {(Object.keys(ANIMATION_SPEED_LABELS) as AnimationSpeed[]).map((key) => (
+                        <option key={key} value={key}>
+                          {ANIMATION_SPEED_LABELS[key]}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <button

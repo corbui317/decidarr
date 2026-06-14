@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { getOrCreateSettings } from '@/lib/models/Settings';
-import { requireAuth, validatePlexUrl, normalizeUrl, isAuthError } from '@/lib/auth';
+import { requireAdmin, validatePlexUrl, normalizeUrl, isAuthError, authErrorStatus } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('API:Settings');
@@ -18,12 +18,13 @@ export async function GET() {
   try {
     logger.debug('Fetching settings');
     await connectDB();
-    const { settings } = await requireAuth();
+    const { settings } = await requireAdmin();
 
     // Get decrypted values for masking
     const plexToken = settings.getDecryptedPlexToken();
     const tmdbKey = settings.getDecryptedTmdbKey();
     const tautulliKey = settings.getDecryptedTautulliKey();
+    const overseerrKey = settings.getDecryptedOverseerrKey();
 
     logger.debug('Settings fetched successfully');
     return NextResponse.json({
@@ -47,8 +48,22 @@ export async function GET() {
         syncIntervalMinutes: settings.tautulliSyncIntervalMinutes,
         lastSync: settings.tautulliLastSync || null,
       },
+      overseerr: {
+        url: settings.overseerrUrl || null,
+        filterEnabled: settings.overseerrFilterEnabled ?? false,
+        hasKey: !!overseerrKey,
+        keyMasked: maskValue(overseerrKey || undefined),
+        lastSyncAt: settings.overseerrLastSyncAt || null,
+        lastSyncOk: settings.overseerrLastSyncOk ?? true,
+      },
       syncFrequencyHours: settings.syncFrequencyHours,
-      uiPreferences: settings.uiPreferences,
+      uiPreferences: {
+        theme: settings.uiPreferences?.theme ?? 'dark',
+        defaultMediaType: settings.uiPreferences?.defaultMediaType ?? 'movie',
+        tvSelectionMode: settings.uiPreferences?.tvSelectionMode ?? 'show',
+        animationStyle: settings.uiPreferences?.animationStyle ?? 'slots',
+        animationSpeed: settings.uiPreferences?.animationSpeed ?? 'normal',
+      },
     });
   } catch (error) {
     const errorMsg = (error as Error)?.message;
@@ -57,7 +72,7 @@ export async function GET() {
       logger.warn('Auth error fetching settings', { error: errorMsg });
       return NextResponse.json(
         { error: errorMsg === 'Unauthorized' ? 'Session expired' : errorMsg },
-        { status: 401 }
+        { status: authErrorStatus(error) }
       );
     }
     
@@ -70,7 +85,7 @@ export async function GET() {
 export async function PUT(request: NextRequest) {
   try {
     await connectDB();
-    const { settings } = await requireAuth();
+    const { settings } = await requireAdmin();
     const body = await request.json();
 
     // Update Plex settings if provided
@@ -109,6 +124,22 @@ export async function PUT(request: NextRequest) {
       settings.syncFrequencyHours = Math.max(1, Math.min(168, body.syncFrequencyHours));
     }
 
+    if (body.overseerr) {
+      if (body.overseerr.url !== undefined) {
+        settings.overseerrUrl = body.overseerr.url ? normalizeUrl(body.overseerr.url) : undefined;
+      }
+      if (body.overseerr.apiKey !== undefined) {
+        if (body.overseerr.apiKey && !body.overseerr.apiKey.includes('****')) {
+          settings.overseerrApiKey = body.overseerr.apiKey;
+        } else if (body.overseerr.apiKey === '') {
+          settings.overseerrApiKey = undefined;
+        }
+      }
+      if (body.overseerr.filterEnabled !== undefined) {
+        settings.overseerrFilterEnabled = !!body.overseerr.filterEnabled;
+      }
+    }
+
     // Update Tautulli settings if provided
     if (body.tautulli) {
       if (body.tautulli.url !== undefined) {
@@ -131,6 +162,8 @@ export async function PUT(request: NextRequest) {
 
     // Update UI preferences if provided
     const validThemes = ['dark', 'light', 'vegas', 'macao', 'poker'];
+    const validAnimationStyles = ['slots', 'roulette', 'wheel', 'plinko', 'random'];
+    const validAnimationSpeeds = ['fast', 'normal', 'dramatic'];
     if (body.uiPreferences) {
       if (body.uiPreferences.theme && validThemes.includes(body.uiPreferences.theme)) {
         settings.uiPreferences.theme = body.uiPreferences.theme;
@@ -141,6 +174,18 @@ export async function PUT(request: NextRequest) {
       if (body.uiPreferences.tvSelectionMode) {
         settings.uiPreferences.tvSelectionMode = body.uiPreferences.tvSelectionMode;
       }
+      if (
+        body.uiPreferences.animationStyle &&
+        validAnimationStyles.includes(body.uiPreferences.animationStyle)
+      ) {
+        settings.uiPreferences.animationStyle = body.uiPreferences.animationStyle;
+      }
+      if (
+        body.uiPreferences.animationSpeed &&
+        validAnimationSpeeds.includes(body.uiPreferences.animationSpeed)
+      ) {
+        settings.uiPreferences.animationSpeed = body.uiPreferences.animationSpeed;
+      }
     }
 
     await settings.save();
@@ -149,6 +194,7 @@ export async function PUT(request: NextRequest) {
     const plexToken = settings.getDecryptedPlexToken();
     const tmdbKey = settings.getDecryptedTmdbKey();
     const tautulliKey = settings.getDecryptedTautulliKey();
+    const overseerrKey = settings.getDecryptedOverseerrKey();
 
     return NextResponse.json({
       success: true,
@@ -173,8 +219,22 @@ export async function PUT(request: NextRequest) {
           syncIntervalMinutes: settings.tautulliSyncIntervalMinutes,
           lastSync: settings.tautulliLastSync || null,
         },
+        overseerr: {
+          url: settings.overseerrUrl || null,
+          filterEnabled: settings.overseerrFilterEnabled ?? false,
+          hasKey: !!overseerrKey,
+          keyMasked: maskValue(overseerrKey || undefined),
+          lastSyncAt: settings.overseerrLastSyncAt || null,
+          lastSyncOk: settings.overseerrLastSyncOk ?? true,
+        },
         syncFrequencyHours: settings.syncFrequencyHours,
-        uiPreferences: settings.uiPreferences,
+        uiPreferences: {
+          theme: settings.uiPreferences?.theme ?? 'dark',
+          defaultMediaType: settings.uiPreferences?.defaultMediaType ?? 'movie',
+          tvSelectionMode: settings.uiPreferences?.tvSelectionMode ?? 'show',
+          animationStyle: settings.uiPreferences?.animationStyle ?? 'slots',
+          animationSpeed: settings.uiPreferences?.animationSpeed ?? 'normal',
+        },
       },
     });
   } catch (error) {

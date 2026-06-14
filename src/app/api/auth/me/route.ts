@@ -1,21 +1,27 @@
 import { NextResponse } from 'next/server';
-import { requireAuth } from '@/lib/auth';
+import { requireUser, isAuthError, authErrorStatus } from '@/lib/auth';
+import { connectDB } from '@/lib/db';
 
 export async function GET() {
   try {
-    const { settings } = await requireAuth();
+    await connectDB();
+    const { user, settings, isAdmin } = await requireUser();
 
     return NextResponse.json({
       user: {
-        username: settings.plexUsername,
+        id: user._id.toString(),
+        username: user.plexUsername,
         serverUrl: settings.plexServerUrl,
+        thumb: user.plexThumb,
+        isAdmin,
       },
-      preferences: settings.uiPreferences,
+      preferences: user.preferences,
     });
   } catch (error) {
+    const status = authErrorStatus(error);
     return NextResponse.json(
-      { error: 'App not configured' },
-      { status: 401 }
+      { error: (error as Error).message === 'App not configured' ? 'App not configured' : 'Unauthorized' },
+      { status }
     );
   }
 }

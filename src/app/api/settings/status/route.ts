@@ -8,14 +8,10 @@ export async function GET() {
     await connectDB();
     const settings = await getOrCreateSettings();
 
-    const plexToken = settings.getDecryptedPlexToken();
-
     return NextResponse.json({
       setupComplete: settings.setupComplete,
-      hasPlexToken: !!plexToken,
       hasPlexServer: !!settings.plexServerUrl,
       hasTmdbKey: !!settings.getDecryptedTmdbKey(),
-      plexUsername: settings.plexUsername || null,
     });
   } catch (error) {
     console.error('Settings status error:', error);

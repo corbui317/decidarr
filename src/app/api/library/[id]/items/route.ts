@@ -1,32 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth, getTmdbApiKey, getSyncFrequencyHours } from '@/lib/auth';
+import { requireUser, getTmdbApiKey, getSyncFrequencyHours, getAccessibleLibraryIds, isAuthError, authErrorStatus } from '@/lib/auth';
 import { connectDB } from '@/lib/db';
 import { LibraryCache } from '@/lib/models/LibraryCache';
 import { PlexService } from '@/lib/services/plex';
 import { TMDbService } from '@/lib/services/tmdb';
-import mongoose from 'mongoose';
-
-// Use a constant ObjectId for single-user mode cache
-const SINGLE_USER_ID = new mongoose.Types.ObjectId('000000000000000000000001');
+import { enrichWithOverseerr } from '@/lib/services/overseerr-sync';
+import type { ILibraryItem } from '@/lib/models/LibraryCache';
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { plexToken, plexServerUrl } = await requireAuth();
+    const auth = await requireUser();
     const { id } = await params;
     const forceRefresh = request.nextUrl.searchParams.get('forceRefresh') === 'true';
 
+    const allowed = await getAccessibleLibraryIds(auth, [id]);
+    if (!allowed.includes(id)) {
+      return NextResponse.json({ error: 'Library not found or access denied' }, { status: 403 });
+    }
+
+    const machineId = auth.settings.plexMachineId || 'unknown';
     await connectDB();
 
-    // Get sync frequency from settings
     const syncFrequencyHours = await getSyncFrequencyHours();
 
-    // Check cache first
     if (!forceRefresh) {
       const cache = await LibraryCache.findOne({
-        userId: SINGLE_USER_ID,
+        plexMachineId: machineId,
         libraryId: id,
       });
 
@@ -39,21 +41,25 @@ export async function GET(
       }
     }
 
-    // Fetch from Plex
-    const plexService = new PlexService(plexToken, plexServerUrl);
+    const plexService = new PlexService(
+      auth.plexToken,
+      auth.plexServerUrl,
+      auth.settings.plexMachineId
+    );
     const sections = await plexService.getLibrarySections();
     const section = sections.find((s) => s.id === id);
 
     if (!section) {
-      return NextResponse.json(
-        { error: 'Library not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Library not found' }, { status: 404 });
     }
 
-    const items = await plexService.getLibraryItems(id);
+    const items = (await plexService.getLibraryItems(id)) as ILibraryItem[];
 
-    // Enrich with TMDb data for missing fields using parallel batch processing
+    const existingCache = await LibraryCache.findOne({
+      plexMachineId: machineId,
+      libraryId: id,
+    }).lean();
+
     const tmdbApiKey = await getTmdbApiKey();
     if (tmdbApiKey) {
       const tmdbService = new TMDbService(tmdbApiKey);
@@ -62,7 +68,7 @@ export async function GET(
 
       try {
         const enrichments = await tmdbService.enrichBatch(
-          itemsToEnrich.map(item => ({
+          itemsToEnrich.map((item) => ({
             title: item.title as string,
             year: item.year as number | undefined,
             contentRating: item.contentRating as string | undefined,
@@ -74,6 +80,9 @@ export async function GET(
 
         enrichments.forEach((enrichment, i) => {
           const item = itemsToEnrich[i];
+          if (enrichment.tmdbId && !item.tmdbId) {
+            item.tmdbId = String(enrichment.tmdbId);
+          }
           if (enrichment.certification && !item.contentRating) {
             item.contentRating = enrichment.certification;
           }
@@ -92,15 +101,30 @@ export async function GET(
           }
           item.enrichedAt = new Date();
         });
+
+        for (let i = 0; i < items.length; i++) {
+          const source = itemsToEnrich[i] as unknown as ILibraryItem | undefined;
+          if (source?.tmdbId && !items[i].tmdbId) {
+            items[i].tmdbId = source.tmdbId;
+          }
+        }
       } catch (err) {
         console.error('Batch enrichment error:', err);
       }
     }
 
-    // Update cache with configurable expiration
+    await enrichWithOverseerr(
+      items,
+      section.type as 'movie' | 'show',
+      auth.settings,
+      existingCache?.items
+    );
+
     await LibraryCache.findOneAndUpdate(
-      { userId: SINGLE_USER_ID, libraryId: id },
+      { plexMachineId: machineId, libraryId: id },
       {
+        plexMachineId: machineId,
+        libraryId: id,
         libraryName: section.title,
         mediaType: section.type,
         items,
@@ -117,8 +141,8 @@ export async function GET(
     });
   } catch (error) {
     const msg = (error as Error)?.message;
-    if (msg === 'App not configured' || msg === 'Unauthorized') {
-      return NextResponse.json({ error: msg }, { status: 401 });
+    if (isAuthError(error)) {
+      return NextResponse.json({ error: msg }, { status: authErrorStatus(error) });
     }
     console.error('Get library items error:', error);
     return NextResponse.json({ error: 'Failed to get library items' }, { status: 500 });

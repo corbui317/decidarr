@@ -25,6 +25,42 @@ export function isAuthError(error: unknown): error is AuthError {
   return error instanceof AuthError || (error as AuthError)?.isAuthError === true;
 }
 
+export class PlexLoginError extends Error {
+  public code?: string;
+  public statusCode: number;
+
+  constructor(message: string, statusCode: number, code?: string) {
+    super(message);
+    this.name = 'PlexLoginError';
+    this.statusCode = statusCode;
+    this.code = code;
+  }
+}
+
+export function isPlexLoginError(error: unknown): error is PlexLoginError {
+  return error instanceof PlexLoginError;
+}
+
+function plexLoginErrorMessage(error: PlexLoginError): string {
+  if (error.code === 'PLEX_PIN_EXPIRED') {
+    return 'Plex authorization expired, please try again.';
+  }
+  if (error.code === 'PLEX_UNAVAILABLE' || error.statusCode === 503) {
+    return 'Plex.tv is unavailable. Please try again later.';
+  }
+  return error.message;
+}
+
+export function formatPlexLoginError(error: unknown): string {
+  if (isPlexLoginError(error)) {
+    return plexLoginErrorMessage(error);
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return 'Login failed';
+}
+
 async function request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, headers = {} } = options;
 
@@ -60,11 +96,70 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
   return response.json();
 }
 
-// Auth API (simplified for single-user mode)
+export interface AuthUser {
+  id: string;
+  username: string;
+  serverUrl: string;
+  thumb?: string;
+  isAdmin: boolean;
+}
+
 export const authApi = {
-  getCurrentUser: () => request<{ user: { username: string; serverUrl: string }; preferences: unknown }>('/auth/me'),
-  login: () => request<{ success: boolean; user: { username: string; serverUrl: string } }>('/auth/login', { method: 'POST' }),
+  getCurrentUser: () =>
+    request<{ user: AuthUser; preferences: UserPreferences }>('/auth/me'),
+  startPlexLogin: () =>
+    request<{ authUrl: string; pinId: number; state: string }>('/auth/plex/start', {
+      method: 'POST',
+    }),
+  pollPlexLogin: async (pinId?: number) => {
+    const response = await fetch(
+      `${API_BASE}/auth/plex/poll${pinId ? `?pinId=${pinId}` : ''}`,
+      { credentials: 'include' }
+    );
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new PlexLoginError(
+        data.error || 'Login failed',
+        response.status,
+        data.code as string | undefined
+      );
+    }
+    return data as {
+      authorized: boolean;
+      success?: boolean;
+      user?: AuthUser;
+      error?: string;
+      code?: string;
+    };
+  },
+  refreshSession: () => request<{ success: boolean }>('/auth/refresh', { method: 'POST' }),
   logout: () => request('/auth/logout', { method: 'DELETE' }),
+};
+
+export interface PlexFriendUser {
+  id: string;
+  username: string;
+  thumb?: string;
+  hasServerAccess: boolean;
+  isApproved: boolean;
+}
+
+export const adminUsersApi = {
+  list: () => request<{ users: PlexFriendUser[] }>('/admin/users'),
+  setApproved: (plexUserId: string, approved: boolean) =>
+    request<{ success: boolean }>(`/admin/users/${encodeURIComponent(plexUserId)}`, {
+      method: 'PUT',
+      body: { approved },
+    }),
+};
+
+export const userPreferencesApi = {
+  get: () => request<{ preferences: UserPreferences }>('/users/me/preferences'),
+  update: (preferences: Partial<UserPreferences>) =>
+    request<{ success: boolean; preferences: UserPreferences }>('/users/me/preferences', {
+      method: 'PUT',
+      body: preferences,
+    }),
 };
 
 // Library API
@@ -134,6 +229,7 @@ export const selectionApi = {
         itemsWithYear: number;
         itemsWithGenres: number;
       };
+      overseerrWarning?: string | null;
     }>('/selection/pool-count', {
       method: 'POST',
       body: { libraryIds, mediaType, filters },
@@ -157,6 +253,18 @@ export const watchedApi = {
 
 // Settings API
 export type AppTheme = 'dark' | 'light' | 'vegas' | 'macao' | 'poker';
+export type AnimationStyle = 'slots' | 'roulette' | 'wheel' | 'plinko' | 'random';
+export type AnimationSpeed = 'fast' | 'normal' | 'dramatic';
+
+export interface UserPreferences {
+  theme?: AppTheme;
+  defaultMediaType?: 'movie' | 'show';
+  tvSelectionMode?: 'show' | 'episode';
+  animationStyle?: AnimationStyle;
+  animationSpeed?: AnimationSpeed;
+  selectedLibraries?: string[];
+  savedFilters?: Record<string, unknown>;
+}
 
 export interface SettingsResponse {
   setupComplete: boolean;
@@ -179,20 +287,28 @@ export interface SettingsResponse {
     syncIntervalMinutes: number;
     lastSync: string | null;
   };
+  overseerr: {
+    url: string | null;
+    filterEnabled: boolean;
+    hasKey: boolean;
+    keyMasked: string | null;
+    lastSyncAt: string | null;
+    lastSyncOk: boolean;
+  };
   syncFrequencyHours: number;
   uiPreferences: {
     theme: AppTheme;
     defaultMediaType: 'movie' | 'show';
     tvSelectionMode: 'show' | 'episode';
+    animationStyle: AnimationStyle;
+    animationSpeed: AnimationSpeed;
   };
 }
 
 export interface SettingsStatusResponse {
   setupComplete: boolean;
-  hasPlexToken: boolean;
   hasPlexServer: boolean;
   hasTmdbKey: boolean;
-  plexUsername: string | null;
 }
 
 export interface PlexTestResponse {
@@ -229,11 +345,14 @@ export const settingsApi = {
     plex?: { token?: string; serverUrl?: string };
     tmdb?: { apiKey?: string };
     tautulli?: { url?: string; apiKey?: string; enabled?: boolean; syncIntervalMinutes?: number };
+    overseerr?: { url?: string; apiKey?: string; filterEnabled?: boolean };
     syncFrequencyHours?: number;
     uiPreferences?: {
       theme?: AppTheme;
       defaultMediaType?: 'movie' | 'show';
       tvSelectionMode?: 'show' | 'episode';
+      animationStyle?: AnimationStyle;
+      animationSpeed?: AnimationSpeed;
     };
   }) =>
     request<{ success: boolean; settings: SettingsResponse }>('/settings', {
@@ -242,7 +361,7 @@ export const settingsApi = {
     }),
 
   // Complete initial setup
-  setup: (data: { plexToken: string; plexServerUrl?: string; tmdbApiKey?: string }) =>
+  setup: (data: { tmdbApiKey?: string }) =>
     request<{
       success: boolean;
       message: string;
@@ -296,4 +415,28 @@ export const tautulliApi = {
       body: { url, apiKey },
     }),
   sync: () => request<TautulliSyncResponse>('/tautulli/sync', { method: 'POST' }),
+};
+
+export interface OverseerrTestResponse {
+  success: boolean;
+  error?: string;
+  version?: string;
+}
+
+export interface OverseerrStatusResponse {
+  configured: boolean;
+  reachable: boolean | null;
+  filterEnabled: boolean;
+  lastSyncAt: string | null;
+  lastSyncOk: boolean;
+  warning: string | null;
+}
+
+export const overseerrApi = {
+  test: (url: string, apiKey: string) =>
+    request<OverseerrTestResponse>('/overseerr/test', {
+      method: 'POST',
+      body: { url, apiKey },
+    }),
+  getStatus: () => request<OverseerrStatusResponse>('/overseerr/status'),
 };

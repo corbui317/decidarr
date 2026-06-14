@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/lib/auth';
+import { requireUser, getAccessibleLibraryIds, isAuthError, authErrorStatus } from '@/lib/auth';
 import { PlexService } from '@/lib/services/plex';
 import { createLogger } from '@/lib/logger';
 
@@ -7,7 +7,7 @@ const logger = createLogger('API:Collections');
 
 export async function GET(request: NextRequest) {
   try {
-    const { plexToken, plexServerUrl, settings } = await requireAuth();
+    const auth = await requireUser();
 
     const libraryIds = request.nextUrl.searchParams.get('libraryIds');
     if (!libraryIds) {
@@ -19,12 +19,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ collections: [] });
     }
 
-    const plexService = new PlexService(plexToken, plexServerUrl, settings.plexMachineId);
+    const allowed = await getAccessibleLibraryIds(auth, ids);
+    const plexService = new PlexService(
+      auth.plexToken,
+      auth.plexServerUrl,
+      auth.settings.plexMachineId
+    );
 
     const allCollections: { ratingKey: string; title: string; childCount: number; libraryId: string }[] = [];
 
     await Promise.all(
-      ids.map(async (libraryId) => {
+      allowed.map(async (libraryId) => {
         try {
           const collections = await plexService.getCollections(libraryId);
           for (const c of collections) {
@@ -48,8 +53,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ collections: allCollections });
   } catch (error) {
     const msg = (error as Error)?.message;
-    if (msg === 'App not configured' || msg === 'Unauthorized') {
-      return NextResponse.json({ error: msg }, { status: 401 });
+    if (isAuthError(error)) {
+      return NextResponse.json({ error: msg }, { status: authErrorStatus(error) });
     }
     logger.error('Get collections error', { error: msg });
     return NextResponse.json({ error: 'Failed to get collections' }, { status: 500 });

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireAuth } from '@/lib/auth';
+import { requireAdmin } from '@/lib/auth';
 import { PlexService } from '@/lib/services/plex';
 import { createLogger } from '@/lib/logger';
 
@@ -9,7 +9,7 @@ const logger = createLogger('API:FetchMachineId');
 // Fetches the machineId from the configured Plex server and stores it
 export async function POST() {
   try {
-    const { plexToken, plexServerUrl, settings } = await requireAuth();
+    const { plexToken, plexServerUrl, settings } = await requireAdmin();
 
     // If we already have a machineId, return it
     if (settings.plexMachineId) {

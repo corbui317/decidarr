@@ -24,6 +24,7 @@ interface Item {
   tmdbRating?: number;
   networks?: string[];
   studios?: string[];
+  overseerrStatus?: 'available' | 'partially_available' | null;
 }
 
 interface PlayLinks {
@@ -162,6 +163,15 @@ export default function MovieCard({ item, tmdb, isWatched = false, onWatchedChan
           >
             <span className="text-yellow-400">★</span>
             <span className="text-white font-semibold">{rating.toFixed(1)}</span>
+          </div>
+        )}
+
+        {item.overseerrStatus === 'partially_available' && (
+          <div
+            className="absolute top-4 left-4 bg-amber-600/90 backdrop-blur px-3 py-1 rounded-full text-xs font-medium text-white cursor-help"
+            title="Some seasons or parts of this title are available in your library, but not everything."
+          >
+            Partially Available on Overseerr
           </div>
         )}
       </div>

@@ -3,16 +3,24 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
-import { selectionApi } from '@/lib/api';
+import { selectionApi, authApi, AnimationStyle, AnimationSpeed } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import Header from '@/components/Header';
-import SlotMachine from '@/components/SlotMachine';
+import SpinControls from '@/components/SpinControls';
+import SpinAnimationPlayer from '@/components/SpinAnimationPlayer';
 import MovieCard from '@/components/MovieCard';
 import LibrarySelector from '@/components/LibrarySelector';
 import FilterPanel from '@/components/FilterPanel';
 import LoadingSpinner from '@/components/LoadingSpinner';
+import {
+  resolveAnimationStyle,
+  ResolvedAnimationStyle,
+  PlexItem,
+} from '@/components/animations';
 
 import { Filters, DEFAULT_FILTERS, PoolCountResult } from '@/types/filters';
+
+type SpinPhase = 'idle' | 'loading' | 'animating' | 'result';
 
 interface SelectionResult {
   selection: {
@@ -41,7 +49,9 @@ export default function Dashboard() {
   const [selectedLibraries, setSelectedLibraries] = useState<string[]>([]);
   const [mediaType, setMediaType] = useState('movie');
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
-  const [spinning, setSpinning] = useState(false);
+  const [phase, setPhase] = useState<SpinPhase>('idle');
+  const [pendingResult, setPendingResult] = useState<SelectionResult | null>(null);
+  const [activeVariant, setActiveVariant] = useState<ResolvedAnimationStyle>('slots');
   const [result, setResult] = useState<SelectionResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<{ totalMatches: number } | null>(null);
@@ -50,21 +60,53 @@ export default function Dashboard() {
   const [emptyReason, setEmptyReason] = useState<string | null>(null);
   const [dataStats, setDataStats] = useState<PoolCountResult['dataStats'] | null>(null);
   const [loadingPoolCount, setLoadingPoolCount] = useState(false);
+  const [overseerrWarning, setOverseerrWarning] = useState<string | null>(null);
+  const [animationStyle, setAnimationStyle] = useState<AnimationStyle>('slots');
+  const [animationSpeed, setAnimationSpeed] = useState<AnimationSpeed>('normal');
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
-      console.log('[Dashboard] Not authenticated, redirecting to home');
       router.replace('/');
     }
   }, [isAuthenticated, authLoading, router]);
 
-  // Fetch pool count when libraries or filters change
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    authApi
+      .getCurrentUser()
+      .then(({ preferences }) => {
+        setAnimationStyle(preferences.animationStyle ?? 'slots');
+        setAnimationSpeed(preferences.animationSpeed ?? 'normal');
+      })
+      .catch(() => {});
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    const handlePreferencesUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        animationStyle?: AnimationStyle;
+        animationSpeed?: AnimationSpeed;
+      }>).detail;
+
+      if (detail?.animationStyle) {
+        setAnimationStyle(detail.animationStyle);
+      }
+      if (detail?.animationSpeed) {
+        setAnimationSpeed(detail.animationSpeed);
+      }
+    };
+
+    window.addEventListener('decidarr:preferences-updated', handlePreferencesUpdated);
+    return () => window.removeEventListener('decidarr:preferences-updated', handlePreferencesUpdated);
+  }, []);
+
   useEffect(() => {
     if (selectedLibraries.length === 0) {
       setPoolCount(null);
       setTotalItems(0);
       setEmptyReason(null);
       setDataStats(null);
+      setOverseerrWarning(null);
       return;
     }
 
@@ -76,6 +118,7 @@ export default function Dashboard() {
         setTotalItems(data.totalItems);
         setEmptyReason(data.emptyReason);
         setDataStats(data.dataStats);
+        setOverseerrWarning(data.overseerrWarning ?? null);
       } catch (err) {
         console.error('Failed to fetch pool count:', err);
         setPoolCount(null);
@@ -84,7 +127,6 @@ export default function Dashboard() {
       }
     };
 
-    // Debounce the fetch to avoid too many requests
     const timeoutId = setTimeout(fetchPoolCount, 300);
     return () => clearTimeout(timeoutId);
   }, [selectedLibraries, mediaType, filters]);
@@ -92,12 +134,13 @@ export default function Dashboard() {
   const handleSpin = useCallback(async () => {
     if (selectedLibraries.length === 0) return;
 
-    setSpinning(true);
+    setPhase('loading');
     setError(null);
     setResult(null);
+    setPendingResult(null);
 
-    const minSpinTime = 2000;
-    const startTime = Date.now();
+    const variant = resolveAnimationStyle(animationStyle);
+    setActiveVariant(variant);
 
     try {
       const data = await selectionApi.getRandom(
@@ -107,41 +150,44 @@ export default function Dashboard() {
         mediaType === 'show' ? 'show' : undefined
       );
 
-      const elapsed = Date.now() - startTime;
-      if (elapsed < minSpinTime) {
-        await new Promise((resolve) => setTimeout(resolve, minSpinTime - elapsed));
-      }
-
-      setResult(data as SelectionResult);
+      setPendingResult(data as SelectionResult);
       setStats(data.stats);
+      setPhase('animating');
     } catch (err) {
-      const elapsed = Date.now() - startTime;
-      if (elapsed < minSpinTime) {
-        await new Promise((resolve) => setTimeout(resolve, minSpinTime - elapsed));
-      }
-
       const errorMessage = err instanceof Error ? err.message : 'Something went wrong';
       if (errorMessage.includes('No items')) {
         setError('No items found matching your criteria');
       } else {
         setError('Something went wrong. Please try again.');
       }
-    } finally {
-      setSpinning(false);
+      setPhase('idle');
     }
-  }, [selectedLibraries, mediaType, filters]);
+  }, [selectedLibraries, mediaType, filters, animationStyle]);
+
+  const handleAnimationComplete = useCallback(() => {
+    if (pendingResult) {
+      setResult(pendingResult);
+      setPendingResult(null);
+    }
+    setPhase('result');
+  }, [pendingResult]);
 
   const handleMediaTypeChange = useCallback((type: string) => {
     setMediaType(type);
     setSelectedLibraries([]);
     setResult(null);
+    setPhase('idle');
     setFilters(DEFAULT_FILTERS);
   }, []);
 
   const handleSpinAgain = useCallback(() => {
     setResult(null);
+    setPhase('idle');
     handleSpin();
   }, [handleSpin]);
+
+  const spinDisabled =
+    selectedLibraries.length === 0 || loadingPoolCount || poolCount === 0;
 
   if (authLoading) {
     return (
@@ -161,7 +207,6 @@ export default function Dashboard() {
       <div className="min-h-screen pb-8">
         <div className="max-w-7xl mx-auto px-4 py-6">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Left sidebar - Controls */}
             <div className="lg:col-span-1 space-y-4">
               <LibrarySelector
                 selectedLibraries={selectedLibraries}
@@ -179,9 +224,9 @@ export default function Dashboard() {
                 emptyReason={emptyReason}
                 dataStats={dataStats}
                 loadingPoolCount={loadingPoolCount}
+                overseerrWarning={overseerrWarning}
               />
 
-              {/* Stats */}
               {stats && (
                 <div className="bg-decidarr-secondary rounded-xl p-4">
                   <h3 className="text-sm font-medium text-gray-400 mb-2">Pool Stats</h3>
@@ -193,10 +238,9 @@ export default function Dashboard() {
               )}
             </div>
 
-            {/* Main content - Slot Machine and Results */}
             <div className="lg:col-span-2">
               <AnimatePresence mode="wait">
-                {result ? (
+                {phase === 'result' && result ? (
                   <motion.div
                     key="result"
                     initial={{ opacity: 0, y: 20 }}
@@ -204,7 +248,6 @@ export default function Dashboard() {
                     exit={{ opacity: 0, y: -20 }}
                     className="space-y-6"
                   >
-                    {/* Result header */}
                     <div className="text-center">
                       <motion.div
                         initial={{ scale: 0 }}
@@ -218,7 +261,6 @@ export default function Dashboard() {
                       </h2>
                     </div>
 
-                    {/* Movie Card */}
                     <MovieCard
                       item={result.selection as Parameters<typeof MovieCard>[0]['item']}
                       tmdb={result.selection.tmdb as Parameters<typeof MovieCard>[0]['tmdb']}
@@ -227,7 +269,6 @@ export default function Dashboard() {
                       playLinks={result.playLinks}
                     />
 
-                    {/* Actions */}
                     <div className="flex justify-center gap-4">
                       <button
                         onClick={handleSpinAgain}
@@ -238,7 +279,10 @@ export default function Dashboard() {
                         Spin Again
                       </button>
                       <button
-                        onClick={() => setResult(null)}
+                        onClick={() => {
+                          setResult(null);
+                          setPhase('idle');
+                        }}
                         className="px-6 py-3 bg-decidarr-secondary text-white
                                font-semibold rounded-lg hover:bg-white/10
                                transition-colors border border-gray-700"
@@ -247,18 +291,33 @@ export default function Dashboard() {
                       </button>
                     </div>
                   </motion.div>
-                ) : (
+                ) : phase === 'animating' && pendingResult ? (
                   <motion.div
-                    key="machine"
+                    key="animating"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                     className="flex flex-col items-center justify-center min-h-[500px]"
                   >
-                    <SlotMachine
+                    <SpinAnimationPlayer
+                      variant={activeVariant}
+                      result={pendingResult.selection as PlexItem}
+                      speed={animationSpeed}
+                      onComplete={handleAnimationComplete}
+                    />
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="controls"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="flex flex-col items-center justify-center min-h-[500px]"
+                  >
+                    <SpinControls
                       onSpin={handleSpin}
-                      spinning={spinning}
-                      disabled={selectedLibraries.length === 0 || loadingPoolCount || poolCount === 0}
+                      loading={phase === 'loading'}
+                      disabled={spinDisabled || phase === 'loading'}
                       disabledReason={
                         selectedLibraries.length === 0
                           ? 'no_library'
@@ -271,7 +330,6 @@ export default function Dashboard() {
                       poolCount={poolCount}
                     />
 
-                    {/* Error message */}
                     <AnimatePresence>
                       {error && (
                         <motion.div
@@ -292,8 +350,7 @@ export default function Dashboard() {
                       )}
                     </AnimatePresence>
 
-                    {/* Helper text */}
-                    {selectedLibraries.length > 0 && !spinning && !error && (
+                    {selectedLibraries.length > 0 && phase === 'idle' && !error && (
                       <p className="mt-6 text-gray-400 text-center max-w-md">
                         {selectedLibraries.length}{' '}
                         {selectedLibraries.length === 1 ? 'library' : 'libraries'} selected. Hit{' '}

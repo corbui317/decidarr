@@ -1,21 +1,17 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
-import { settingsApi, authApi } from '@/lib/api';
-
-interface User {
-  username: string;
-  plexServerUrl: string;
-}
+import { settingsApi, authApi, AuthUser } from '@/lib/api';
 
 interface AuthContextType {
-  user: User | null;
+  user: AuthUser | null;
   loading: boolean;
   error: string | null;
   login: () => Promise<void>;
   logout: () => Promise<void>;
-  setAuthenticatedUser: (username: string, serverUrl: string) => void;
+  setAuthenticatedUser: (user: AuthUser) => void;
   isAuthenticated: boolean;
+  isAdmin: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -25,49 +21,37 @@ interface AuthProviderProps {
 }
 
 export function AuthProvider({ children }: AuthProviderProps) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    checkAuth();
-  }, []);
-
-  const checkAuth = async () => {
+  const checkAuth = useCallback(async () => {
     try {
-      // First check if app is configured
       const status = await settingsApi.getStatus();
-      
+
       if (!status.setupComplete) {
-        console.log('[Auth] Setup not complete');
         setUser(null);
         setLoading(false);
         return;
       }
 
-      // App is configured — verify the session cookie is valid
       try {
         const me = await authApi.getCurrentUser();
-        console.log('[Auth] Session valid, user:', me.user.username);
-        setUser({
-          username: me.user.username,
-          plexServerUrl: me.user.serverUrl || '',
-        });
-      } catch (authErr) {
-        // Session cookie is missing or expired — user must log in
-        console.log('[Auth] Session invalid or missing:', authErr instanceof Error ? authErr.message : 'Unknown');
-        // Do NOT fall back to plexUsername from status — that would bypass authentication
+        setUser(me.user);
+      } catch {
         setUser(null);
       }
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Connection failed';
-      console.error('[Auth] Status check failed:', errorMessage);
-      setError(errorMessage);
+      setError(err instanceof Error ? err.message : 'Connection failed');
       setUser(null);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    checkAuth();
+  }, [checkAuth]);
 
   const login = useCallback(async () => {
     setLoading(true);
@@ -75,33 +59,24 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       await checkAuth();
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Login failed';
-      setError(errorMessage);
+      setError(err instanceof Error ? err.message : 'Login failed');
       throw err;
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [checkAuth]);
 
-  // Directly set the authenticated user — used after a successful login API call
-  // so we don't need a round-trip to /api/auth/me
-  const setAuthenticatedUser = useCallback((username: string, serverUrl: string) => {
-    console.log('[Auth] Setting authenticated user:', username);
-    setUser({ username, plexServerUrl: serverUrl });
+  const setAuthenticatedUser = useCallback((authUser: AuthUser) => {
+    setUser(authUser);
     setError(null);
   }, []);
 
   const logout = useCallback(async () => {
     try {
-      // Call the logout API to clear the server-side session cookie
       await authApi.logout();
-      console.log('[Auth] Logged out successfully');
-    } catch (err) {
-      // Log but don't block - we still want to clear local state
-      console.warn('[Auth] Logout API call failed:', err instanceof Error ? err.message : 'Unknown error');
+    } catch {
+      // still clear local state
     }
-    
-    // Always clear local state and redirect
     setUser(null);
     window.location.href = '/';
   }, []);
@@ -115,6 +90,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       logout,
       setAuthenticatedUser,
       isAuthenticated: !!user,
+      isAdmin: !!user?.isAdmin,
     }),
     [user, loading, error, login, logout, setAuthenticatedUser]
   );

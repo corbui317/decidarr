@@ -1,20 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/lib/auth';
+import { requireUser, getAccessibleLibraryIds, isAuthError, authErrorStatus } from '@/lib/auth';
 import { connectDB } from '@/lib/db';
 import { LibraryCache } from '@/lib/models/LibraryCache';
 import { WatchedItem } from '@/lib/models/WatchedItem';
 import { PlexService } from '@/lib/services/plex';
-import mongoose from 'mongoose';
 import { createLogger } from '@/lib/logger';
+import { getOverseerrConfig } from '@/lib/auth';
+import { applyOverseerrPoolFilter } from '@/lib/selection/filters';
+import type { OverseerrAvailability } from '@/types/overseerr';
+import type { Filters, FilterBreakdown, DataStats } from '@/types/filters';
 
 const logger = createLogger('API:PoolCount');
-const SINGLE_USER_ID = new mongoose.Types.ObjectId('000000000000000000000001');
-
-import type { Filters, FilterBreakdown, DataStats } from '@/types/filters';
 
 export async function POST(request: NextRequest) {
   try {
-    const { plexToken, plexServerUrl, settings } = await requireAuth();
+    const auth = await requireUser();
+    const { plexToken, plexServerUrl, settings, user } = auth;
     const { libraryIds, mediaType, filters = {} } = await request.json();
 
     if (!libraryIds || libraryIds.length === 0) {
@@ -35,10 +36,31 @@ export async function POST(request: NextRequest) {
 
     await connectDB();
 
+    const allowedLibraryIds = await getAccessibleLibraryIds(auth, libraryIds);
+
+    const machineId = settings.plexMachineId;
+    if (!machineId) {
+      return NextResponse.json({
+        totalItems: 0,
+        matchingItems: 0,
+        filterBreakdown: [],
+        emptyReason: 'Plex machine ID not configured',
+        dataStats: {
+          itemsWithRating: 0,
+          itemsWithContentRating: 0,
+          itemsWithStudio: 0,
+          itemsWithYear: 0,
+          itemsWithGenres: 0,
+        },
+      });
+    }
+
+    const overseerrConfig = await getOverseerrConfig();
+
     // Get cached items from selected libraries
     const caches = await LibraryCache.find({
-      userId: SINGLE_USER_ID,
-      libraryId: { $in: libraryIds },
+      plexMachineId: machineId,
+      libraryId: { $in: allowedLibraryIds },
       mediaType: mediaType || 'movie',
     }).lean();
 
@@ -72,7 +94,7 @@ export async function POST(request: NextRequest) {
     // Get watched items for unwatched filter
     let watchedIds = new Set<string>();
     if (filters.unwatchedOnly) {
-      const watchedItems = await WatchedItem.find({ userId: SINGLE_USER_ID }).lean();
+      const watchedItems = await WatchedItem.find({ userId: user._id }).lean();
       watchedIds = new Set(watchedItems.map((w) => w.plexId));
     }
 
@@ -98,7 +120,21 @@ export async function POST(request: NextRequest) {
     }
 
     // Apply filters and track breakdown
-    const result = getPoolCountWithBreakdown(allItems, filters as Filters, watchedIds, dataStats, collectionItemIds);
+    const result = getPoolCountWithBreakdown(
+      allItems,
+      filters as Filters,
+      watchedIds,
+      dataStats,
+      collectionItemIds,
+      settings.overseerrFilterEnabled
+    );
+
+    const overseerrWarning =
+      overseerrConfig.configured &&
+      settings.overseerrFilterEnabled &&
+      !overseerrConfig.lastSyncOk
+        ? 'Overseerr is unavailable. Using the last cached availability data.'
+        : null;
 
     return NextResponse.json({
       totalItems: allItems.length,
@@ -106,6 +142,7 @@ export async function POST(request: NextRequest) {
       filterBreakdown: result.breakdown,
       emptyReason: result.emptyReason,
       dataStats,
+      overseerrWarning,
     });
   } catch (error) {
     const msg = (error as Error)?.message;
@@ -122,7 +159,8 @@ function getPoolCountWithBreakdown(
   filters: Filters,
   watchedIds: Set<string>,
   dataStats: DataStats,
-  collectionItemIds: Set<string> | null
+  collectionItemIds: Set<string> | null,
+  overseerrFilterEnabled: boolean
 ): { matchingCount: number; breakdown: FilterBreakdown[]; emptyReason: string | null } {
   const breakdown: FilterBreakdown[] = [];
   let current = [...items];
@@ -251,6 +289,18 @@ function getPoolCountWithBreakdown(
       active: filters.unwatchedOnly,
       apply: (list: Record<string, unknown>[]) => list.filter((item) => !watchedIds.has(item.plexId as string)),
       emptyMsg: () => 'All matching items have been marked as watched',
+    },
+    {
+      name: 'overseerrAvailable',
+      label: 'Overseerr (exclude available)',
+      active: overseerrFilterEnabled,
+      apply: (list: Record<string, unknown>[]) =>
+        applyOverseerrPoolFilter(
+          list as { overseerrStatus?: OverseerrAvailability }[],
+          true
+        ) as Record<string, unknown>[],
+      emptyMsg: () =>
+        'All matching items are fully available in Overseerr. Disable the Overseerr filter or sync your library.',
     },
   ];
 

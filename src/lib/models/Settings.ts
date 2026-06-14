@@ -1,4 +1,4 @@
-import mongoose, { Document, Model } from 'mongoose';
+import mongoose, { Document, Model, Types } from 'mongoose';
 import CryptoJS from 'crypto-js';
 import crypto from 'crypto';
 import { createLogger } from '../logger';
@@ -6,11 +6,15 @@ import { createLogger } from '../logger';
 const logger = createLogger('Settings');
 
 export type AppTheme = 'dark' | 'light' | 'vegas' | 'macao' | 'poker';
+export type AnimationStyle = 'slots' | 'roulette' | 'wheel' | 'plinko' | 'random';
+export type AnimationSpeed = 'fast' | 'normal' | 'dramatic';
 
 export interface IUIPreferences {
   theme: AppTheme;
   defaultMediaType: 'movie' | 'show';
   tvSelectionMode: 'show' | 'episode';
+  animationStyle: AnimationStyle;
+  animationSpeed: AnimationSpeed;
 }
 
 export interface ISettings extends Omit<Document, '_id'> {
@@ -37,11 +41,23 @@ export interface ISettings extends Omit<Document, '_id'> {
   tautulliSyncIntervalMinutes: number;
   tautulliLastSync?: Date;
 
+  // Overseerr configuration
+  overseerrUrl?: string;
+  overseerrApiKey?: string;
+  overseerrFilterEnabled: boolean;
+  overseerrLastSyncAt?: Date;
+  overseerrLastSyncOk: boolean;
+  overseerrLastSyncError?: string;
+
   // Sync settings
   syncFrequencyHours: number;
 
   // UI Preferences
   uiPreferences: IUIPreferences;
+
+  // Multi-user
+  adminUserId?: Types.ObjectId;
+  approvedPlexUserIds: string[];
 
   // Setup status
   setupComplete: boolean;
@@ -53,6 +69,7 @@ export interface ISettings extends Omit<Document, '_id'> {
   getDecryptedPlexToken(): string | null;
   getDecryptedTmdbKey(): string | null;
   getDecryptedTautulliKey(): string | null;
+  getDecryptedOverseerrKey(): string | null;
   getJwtSecret(): string;
   getEncryptionKey(): string;
 }
@@ -90,6 +107,14 @@ const settingsSchema = new mongoose.Schema<ISettings>(
     tautulliSyncIntervalMinutes: { type: Number, default: 30 },
     tautulliLastSync: { type: Date },
 
+    // Overseerr configuration
+    overseerrUrl: { type: String },
+    overseerrApiKey: { type: String },
+    overseerrFilterEnabled: { type: Boolean, default: false },
+    overseerrLastSyncAt: { type: Date },
+    overseerrLastSyncOk: { type: Boolean, default: true },
+    overseerrLastSyncError: { type: String },
+
     // Sync settings
     syncFrequencyHours: { type: Number, default: 24 },
 
@@ -98,7 +123,20 @@ const settingsSchema = new mongoose.Schema<ISettings>(
       theme: { type: String, enum: ['dark', 'light', 'vegas', 'macao', 'poker'], default: 'dark' },
       defaultMediaType: { type: String, enum: ['movie', 'show'], default: 'movie' },
       tvSelectionMode: { type: String, enum: ['show', 'episode'], default: 'show' },
+      animationStyle: {
+        type: String,
+        enum: ['slots', 'roulette', 'wheel', 'plinko', 'random'],
+        default: 'slots',
+      },
+      animationSpeed: {
+        type: String,
+        enum: ['fast', 'normal', 'dramatic'],
+        default: 'normal',
+      },
     },
+
+    adminUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    approvedPlexUserIds: { type: [String], default: [] },
 
     // Setup status
     setupComplete: { type: Boolean, default: false },
@@ -158,6 +196,17 @@ settingsSchema.methods.getDecryptedTautulliKey = function(): string | null {
   }
 };
 
+settingsSchema.methods.getDecryptedOverseerrKey = function(): string | null {
+  if (!this.overseerrApiKey) return null;
+  try {
+    const encryptionKey = this.getEncryptionKey();
+    const bytes = CryptoJS.AES.decrypt(this.overseerrApiKey, encryptionKey);
+    return bytes.toString(CryptoJS.enc.Utf8);
+  } catch {
+    return null;
+  }
+};
+
 settingsSchema.methods.getJwtSecret = function(): string {
   const secret = decryptWithMaster(this.jwtSecret);
   if (!secret) throw new Error('JWT secret could not be decrypted');
@@ -189,6 +238,11 @@ settingsSchema.pre('save', function(next) {
     this.tautulliApiKey = CryptoJS.AES.encrypt(this.tautulliApiKey, encryptionKey).toString();
   }
 
+  // Encrypt Overseerr API key if modified and not already encrypted
+  if (this.isModified('overseerrApiKey') && this.overseerrApiKey && !this.overseerrApiKey.startsWith('U2F')) {
+    this.overseerrApiKey = CryptoJS.AES.encrypt(this.overseerrApiKey, encryptionKey).toString();
+  }
+
   next();
 });
 
@@ -213,9 +267,16 @@ export async function getOrCreateSettings(): Promise<ISettings> {
         theme: 'dark',
         defaultMediaType: 'movie',
         tvSelectionMode: 'show',
+        animationStyle: 'slots',
+        animationSpeed: 'normal',
       },
+      approvedPlexUserIds: [],
       setupComplete: false,
     });
+  }
+
+  if (!settings.approvedPlexUserIds) {
+    settings.approvedPlexUserIds = [];
   }
 
   return settings;
