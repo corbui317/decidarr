@@ -6,6 +6,12 @@
 
 # testing
 /coverage
+.e2e-mongo-uri
+.e2e-mongo-pid
+/test-results/
+/playwright-report/
+.cache/
+tests/.mongo-uri
 
 # next.js
 /.next/

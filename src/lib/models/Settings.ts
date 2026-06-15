@@ -219,23 +219,35 @@ export async function getOrCreateSettings(): Promise<ISettings> {
     const jwtSecret = generateSecureKey(64);
     const encryptionKey = generateSecureKey(32);
 
-    settings = await Settings.create({
-      _id: 'app-settings',
-      jwtSecret: encryptWithMaster(jwtSecret),
-      encryptionKey: encryptWithMaster(encryptionKey),
-      syncFrequencyHours: 24,
-      uiPreferences: {
-        theme: 'dark',
-        defaultMediaType: 'movie',
-        tvSelectionMode: 'show',
-      },
-      spinHistoryPreferences: {
-        enabled: true,
-        retentionLimit: 50,
-        storeFilterSnapshot: true,
-      },
-      setupComplete: false,
-    });
+    try {
+      settings = await Settings.create({
+        _id: 'app-settings',
+        jwtSecret: encryptWithMaster(jwtSecret),
+        encryptionKey: encryptWithMaster(encryptionKey),
+        syncFrequencyHours: 24,
+        uiPreferences: {
+          theme: 'dark',
+          defaultMediaType: 'movie',
+          tvSelectionMode: 'show',
+        },
+        spinHistoryPreferences: {
+          enabled: true,
+          retentionLimit: 50,
+          storeFilterSnapshot: true,
+        },
+        setupComplete: false,
+      });
+    } catch (err) {
+      const duplicate =
+        (err as { code?: number })?.code === 11000 ||
+        String((err as Error).message).includes('E11000');
+      if (duplicate) {
+        settings = await Settings.findById('app-settings');
+        if (!settings) throw err;
+      } else {
+        throw err;
+      }
+    }
   }
 
   return settings;

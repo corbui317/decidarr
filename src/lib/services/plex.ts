@@ -4,6 +4,28 @@ const logger = createLogger('PlexService');
 const PLEX_TV_BASE = 'https://plex.tv';
 const FETCH_TIMEOUT_MS = 15_000;
 
+const E2E_MOCK_USER: PlexUser = {
+  id: 'e2e-user',
+  username: 'e2euser',
+  email: 'e2e@example.com',
+};
+
+function isE2eMockMode(): boolean {
+  return process.env.E2E_MOCK_PLEX === 'true';
+}
+
+function e2eMockServers(): PlexServer[] {
+  return [
+    {
+      name: 'E2E Server',
+      clientIdentifier: 'e2e-machine',
+      connections: [
+        { uri: 'http://192.168.1.10:32400', local: true, relay: false },
+      ],
+    },
+  ];
+}
+
 export interface PlexUser {
   id: string;
   username: string;
@@ -81,6 +103,10 @@ export class PlexService {
   }
 
   async validateToken(): Promise<{ valid: boolean; user?: PlexUser; error?: string }> {
+    if (isE2eMockMode()) {
+      return { valid: true, user: E2E_MOCK_USER };
+    }
+
     try {
       const response = await this.fetchWithTimeout(`${PLEX_TV_BASE}/api/v2/user`, {
         headers: {
@@ -112,6 +138,10 @@ export class PlexService {
   }
 
   async getServers(): Promise<PlexServer[]> {
+    if (isE2eMockMode()) {
+      return e2eMockServers();
+    }
+
     const response = await this.fetchWithTimeout(`${PLEX_TV_BASE}/api/v2/resources?includeHttps=1&includeRelay=1`, {
       headers: this.headers,
     });
@@ -181,6 +211,20 @@ export class PlexService {
 
   async getLibrarySections(): Promise<PlexLibrary[]> {
     if (!this.serverUrl) throw new Error('Server URL not set');
+
+    if (isE2eMockMode()) {
+      return [
+        {
+          id: '1',
+          title: 'Movies',
+          type: 'movie',
+          agent: 'com.plexapp.agents.themoviedb',
+          scanner: 'Plex Movie',
+          language: 'en',
+          uuid: 'e2e-library-uuid',
+        },
+      ];
+    }
 
     logger.debug('Fetching library sections', { serverUrl: this.serverUrl });
     const response = await this.fetchWithTimeout(`${this.serverUrl}/library/sections`, {

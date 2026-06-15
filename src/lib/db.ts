@@ -1,7 +1,5 @@
 import mongoose from 'mongoose';
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/decidarr';
-
 interface MongooseCache {
   conn: typeof mongoose | null;
   promise: Promise<typeof mongoose> | null;
@@ -18,6 +16,8 @@ if (!global.mongoose) {
 }
 
 export async function connectDB() {
+  const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/decidarr';
+
   if (cached.conn) {
     return cached.conn;
   }

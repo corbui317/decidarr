@@ -12,6 +12,7 @@ const logger = createLogger('API:Random');
 const SINGLE_USER_ID = new mongoose.Types.ObjectId('000000000000000000000001');
 
 import type { Filters } from '@/types/filters';
+import { applyFullFilters } from '@/lib/selection/filters';
 
 export async function POST(request: NextRequest) {
   try {
@@ -57,34 +58,34 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Filter by collections if specified
+    let collectionItemIds: Set<string> | null = null;
     if (filters.collections && filters.collections.length > 0) {
-      const collectionItemIds = new Set<string>();
+      collectionItemIds = new Set<string>();
       await Promise.all(
         (filters.collections as string[]).map(async (collectionKey: string) => {
           try {
             const items = await plexService.getCollectionItems(collectionKey);
             for (const item of items) {
-              collectionItemIds.add(item.plexId);
+              collectionItemIds!.add(item.plexId);
             }
           } catch (err) {
             logger.warn('Failed to fetch collection items', { collectionKey, error: (err as Error).message });
           }
         })
       );
-      allItems = allItems.filter((item) => collectionItemIds.has(item.plexId));
-      logger.debug('Filtered by collections', { before: caches.flatMap(c => c.items).length, after: allItems.length });
+      logger.debug('Filtered by collections', {
+        before: caches.flatMap((c) => c.items).length,
+        collectionItemCount: collectionItemIds.size,
+      });
     }
 
-    // Apply filters
-    allItems = applyFilters(allItems, filters as Filters);
-
-    // Filter out watched items if requested
+    let watchedIds = new Set<string>();
     if (filters.unwatchedOnly) {
       const watchedItems = await WatchedItem.find({ userId: SINGLE_USER_ID }).lean();
-      const watchedIds = new Set(watchedItems.map((w) => w.plexId));
-      allItems = allItems.filter((item) => !watchedIds.has(item.plexId));
+      watchedIds = new Set(watchedItems.map((w) => w.plexId));
     }
+
+    allItems = applyFullFilters(allItems, filters as Filters, watchedIds, collectionItemIds);
 
     if (allItems.length === 0) {
       return NextResponse.json(
@@ -136,69 +137,3 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function applyFilters(items: any[], filters: Filters): any[] {
-  let filtered = [...items];
-
-  // Genre filter
-  if (filters.genres && filters.genres.length > 0) {
-    filtered = filtered.filter(
-      (item) => item.genres && item.genres.some((g: string) => filters.genres!.includes(g))
-    );
-  }
-
-  // Year range filter
-  if (filters.yearRange) {
-    if (filters.yearRange.start) {
-      filtered = filtered.filter((item) => item.year && item.year >= filters.yearRange!.start!);
-    }
-    if (filters.yearRange.end) {
-      filtered = filtered.filter((item) => item.year && item.year <= filters.yearRange!.end!);
-    }
-  }
-
-  // Content rating filter (age ratings like PG-13, R, TV-MA)
-  if (filters.contentRatings && filters.contentRatings.length > 0) {
-    filtered = filtered.filter((item) => {
-      if (!item.contentRating) return false;
-      return filters.contentRatings!.includes(item.contentRating);
-    });
-  }
-
-  // Studio filter
-  if (filters.studios && filters.studios.length > 0) {
-    filtered = filtered.filter((item) => {
-      if (!item.studio) return false;
-      const itemStudio = item.studio.toLowerCase();
-      return filters.studios!.some((studio) =>
-        itemStudio.includes(studio.toLowerCase())
-      );
-    });
-  }
-
-  // Rating range filter (min/max score)
-  if (filters.ratingRange) {
-    if (filters.ratingRange.min !== undefined && filters.ratingRange.min !== null) {
-      filtered = filtered.filter((item) => item.rating && item.rating >= filters.ratingRange!.min!);
-    }
-    if (filters.ratingRange.max !== undefined && filters.ratingRange.max !== null) {
-      filtered = filtered.filter((item) => item.rating && item.rating <= filters.ratingRange!.max!);
-    }
-  }
-
-  // Rating preset filters
-  if (filters.ratingFilter) {
-    switch (filters.ratingFilter) {
-      case 'critically_acclaimed':
-        filtered = filtered.filter((item) => item.rating && item.rating >= 7.5);
-        break;
-      case 'hidden_gems':
-        filtered = filtered.filter((item) => item.rating && item.rating >= 6.5 && item.rating <= 8.0);
-        break;
-      case 'top_rated':
-        filtered = filtered.filter((item) => item.rating && item.rating >= 8.0);
-        break;
-    }
-  }
-
-  return filtered;
-}
