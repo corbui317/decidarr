@@ -55,12 +55,9 @@ export default function Home() {
   if (!isAuthenticated) {
     return (
       <LoginScreen
-        username={status?.plexUsername ?? null}
-        onLoginSuccess={(username, serverUrl) => {
-          console.log('[Home] Login successful for:', username);
-          // Directly update auth state — no extra round-trip needed since
-          // the login API already validated the token and set the cookie
-          setAuthenticatedUser(username, serverUrl);
+        onLoginSuccess={(authUser) => {
+          console.log('[Home] Login successful for:', authUser.username);
+          setAuthenticatedUser(authUser);
           router.replace('/dashboard');
         }}
         onReconfigure={() => {

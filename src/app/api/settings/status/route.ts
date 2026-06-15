@@ -18,7 +18,6 @@ export async function GET() {
       hasPlexToken,
       hasPlexServer,
       hasTmdbKey: !!settings.getDecryptedTmdbKey(),
-      plexUsername: settings.plexUsername || null,
     });
   } catch (error) {
     console.error('Settings status error:', error);

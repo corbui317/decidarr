@@ -1,15 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/lib/auth';
+import { requireUser, isAuthError, authErrorStatus } from '@/lib/auth';
 import { connectDB } from '@/lib/db';
 import { WatchedItem } from '@/lib/models/WatchedItem';
-import mongoose from 'mongoose';
-
-// Use a constant ObjectId for single-user mode
-const SINGLE_USER_ID = new mongoose.Types.ObjectId('000000000000000000000001');
 
 export async function GET(request: NextRequest) {
   try {
-    await requireAuth();
+    const auth = await requireUser();
     const mediaType = request.nextUrl.searchParams.get('mediaType');
     const rawPage = parseInt(request.nextUrl.searchParams.get('page') || '1');
     const rawLimit = parseInt(request.nextUrl.searchParams.get('limit') || '50');
@@ -18,7 +14,7 @@ export async function GET(request: NextRequest) {
 
     await connectDB();
 
-    const query: any = { userId: SINGLE_USER_ID };
+    const query: Record<string, unknown> = { userId: auth.user._id };
     if (mediaType) {
       query.mediaType = mediaType;
     }
@@ -40,8 +36,8 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     const msg = (error as Error)?.message;
-    if (msg === 'App not configured' || msg === 'Unauthorized') {
-      return NextResponse.json({ error: msg }, { status: 401 });
+    if (isAuthError(error)) {
+      return NextResponse.json({ error: msg }, { status: authErrorStatus(error) });
     }
     console.error('Get watched error:', error);
     return NextResponse.json({ error: 'Failed to get watched items' }, { status: 500 });

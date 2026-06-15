@@ -1,9 +1,7 @@
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
+import { clearSessionCookie } from '@/lib/auth-login';
 
 export async function DELETE() {
-  const cookieStore = await cookies();
-  cookieStore.delete('decidarr_session');
-
+  await clearSessionCookie();
   return NextResponse.json({ message: 'Logged out successfully' });
 }

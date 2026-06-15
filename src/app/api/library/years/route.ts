@@ -1,15 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/lib/auth';
+import { requireUser, getAccessibleLibraryIds, isAuthError, authErrorStatus } from '@/lib/auth';
 import { connectDB } from '@/lib/db';
 import { LibraryCache } from '@/lib/models/LibraryCache';
-import mongoose from 'mongoose';
-
-// Use a constant ObjectId for single-user mode cache
-const SINGLE_USER_ID = new mongoose.Types.ObjectId('000000000000000000000001');
 
 export async function GET(request: NextRequest) {
   try {
-    await requireAuth();
+    const auth = await requireUser();
     const libraryIds = request.nextUrl.searchParams.get('libraryIds');
 
     const ids = libraryIds
@@ -20,11 +16,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ min: 1900, max: new Date().getFullYear() });
     }
 
+    const allowed = await getAccessibleLibraryIds(auth, ids);
+    const machineId = auth.settings.plexMachineId || 'unknown';
+
     await connectDB();
 
     const caches = await LibraryCache.find({
-      userId: SINGLE_USER_ID,
-      libraryId: { $in: ids },
+      plexMachineId: machineId,
+      libraryId: { $in: allowed },
     }).lean();
 
     const years: number[] = [];
@@ -43,13 +42,10 @@ export async function GET(request: NextRequest) {
       max: Math.max(...years),
     });
   } catch (error) {
-    if ((error as Error).message === 'App not configured') {
-      return NextResponse.json({ error: 'App not configured' }, { status: 401 });
+    if (isAuthError(error)) {
+      return NextResponse.json({ error: (error as Error).message }, { status: authErrorStatus(error) });
     }
     console.error('Get years error:', error);
-    return NextResponse.json(
-      { error: 'Failed to get years' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to get years' }, { status: 500 });
   }
 }

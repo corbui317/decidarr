@@ -1,4 +1,5 @@
 import { createLogger } from '../logger';
+import { getPlexClientHeaders } from './plex-oauth';
 
 const logger = createLogger('PlexService');
 const PLEX_TV_BASE = 'https://plex.tv';
@@ -19,6 +20,7 @@ function e2eMockServers(): PlexServer[] {
     {
       name: 'E2E Server',
       clientIdentifier: 'e2e-machine',
+      owned: true,
       connections: [
         { uri: 'http://192.168.1.10:32400', local: true, relay: false },
       ],
@@ -36,6 +38,7 @@ export interface PlexUser {
 export interface PlexServer {
   name: string;
   clientIdentifier: string;
+  owned: boolean;
   connections: { uri: string; local: boolean; relay: boolean }[];
 }
 
@@ -57,9 +60,19 @@ export interface PlexCollection {
   addedAt?: Date;
 }
 
+export function parseTmdbIdFromPlexGuid(guid: unknown): string | undefined {
+  if (typeof guid !== 'string') return undefined;
+  const match = guid.match(/themoviedb:\/\/(movie|show|tv)\?.*[?&]id=(\d+)/i);
+  if (match) return match[2];
+  const alt = guid.match(/themoviedb:\/\/(movie|show|tv)\/(\d+)/i);
+  if (alt) return alt[2];
+  return undefined;
+}
+
 export interface PlexItem {
   plexId: string;
   title: string;
+  tmdbId?: string;
   year?: number;
   posterUrl?: string;
   art?: string;
@@ -90,8 +103,8 @@ export class PlexService {
     this.serverUrl = serverUrl;
     this.machineId = machineId;
     this.headers = {
+      ...getPlexClientHeaders(),
       'X-Plex-Token': token,
-      Accept: 'application/json',
     };
   }
 
@@ -142,7 +155,8 @@ export class PlexService {
       return e2eMockServers();
     }
 
-    const response = await this.fetchWithTimeout(`${PLEX_TV_BASE}/api/v2/resources?includeHttps=1&includeRelay=1`, {
+    const resourcesUrl = `${PLEX_TV_BASE}/api/v2/resources?includeHttps=1&includeRelay=1`;
+    const response = await this.fetchWithTimeout(resourcesUrl, {
       headers: this.headers,
     });
 
@@ -157,6 +171,7 @@ export class PlexService {
     return servers.map((server: Record<string, unknown>) => ({
       name: server.name as string,
       clientIdentifier: server.clientIdentifier as string,
+      owned: Boolean(server.owned),
       connections: (server.connections as Record<string, unknown>[]).map((c) => ({
         uri: c.uri as string,
         local: c.local as boolean,
@@ -321,9 +336,13 @@ export class PlexService {
   }
 
   private mapPlexItem(item: Record<string, unknown>, detailed = false): PlexItem {
+    const guid = item.guid as string | undefined;
+    const tmdbId = parseTmdbIdFromPlexGuid(guid);
+
     const base: PlexItem = {
       plexId: item.ratingKey as string,
       title: item.title as string,
+      tmdbId,
       year: item.year as number | undefined,
       posterUrl: item.thumb ? `${this.serverUrl}${item.thumb}?X-Plex-Token=${this.token}` : undefined,
       genres: item.Genre ? (item.Genre as { tag: string }[]).map((g) => g.tag) : [],

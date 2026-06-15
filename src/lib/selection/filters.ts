@@ -1,10 +1,19 @@
 import type { Filters, FilterBreakdown, DataStats } from '@/types/filters';
 import type { ILibraryItem } from '@/lib/models/LibraryCache';
+import type { OverseerrAvailability } from '@/types/overseerr';
 
 export type FilterableItem = Pick<
   ILibraryItem,
-  'plexId' | 'genres' | 'year' | 'contentRating' | 'studio' | 'rating'
+  'plexId' | 'genres' | 'year' | 'contentRating' | 'studio' | 'rating' | 'overseerrStatus'
 >;
+
+export function applyOverseerrPoolFilter<T extends { overseerrStatus?: OverseerrAvailability }>(
+  items: T[],
+  filterEnabled: boolean
+): T[] {
+  if (!filterEnabled) return items;
+  return items.filter((item) => item.overseerrStatus !== 'available');
+}
 
 export function applyItemFilters<T extends FilterableItem>(
   items: T[],
@@ -74,6 +83,8 @@ export function applyItemFilters<T extends FilterableItem>(
   return filtered;
 }
 
+export const applyFilters = applyItemFilters;
+
 export function filterByCollections<T extends FilterableItem>(
   items: T[],
   collectionItemIds: Set<string>
@@ -103,7 +114,8 @@ export function getPoolCountWithBreakdown(
   filters: Filters,
   watchedIds: Set<string>,
   dataStats: DataStats,
-  collectionItemIds: Set<string> | null
+  collectionItemIds: Set<string> | null,
+  overseerrFilterEnabled = false
 ): { matchingCount: number; breakdown: FilterBreakdown[]; emptyReason: string | null } {
   const breakdown: FilterBreakdown[] = [];
   let current: FilterableItem[] = [...items];
@@ -122,7 +134,16 @@ export function getPoolCountWithBreakdown(
       label: 'Genres',
       active: filters.genres && filters.genres.length > 0,
       apply: (list: FilterableItem[]) =>
-        applyItemFilters(list, { ...filters, yearRange: null, contentRatings: [], studios: [], ratingRange: null, ratingFilter: null, unwatchedOnly: false, collections: [] }),
+        applyItemFilters(list, {
+          ...filters,
+          yearRange: null,
+          contentRatings: [],
+          studios: [],
+          ratingRange: null,
+          ratingFilter: null,
+          unwatchedOnly: false,
+          collections: [],
+        }),
       emptyMsg: () => `No items have the selected genres: ${filters.genres!.join(', ')}`,
     },
     {
@@ -243,6 +264,14 @@ export function getPoolCountWithBreakdown(
       apply: (list: FilterableItem[]) => filterUnwatched(list, watchedIds),
       emptyMsg: () => 'All matching items have been marked as watched',
     },
+    {
+      name: 'overseerrAvailable',
+      label: 'Overseerr (exclude available)',
+      active: overseerrFilterEnabled,
+      apply: (list: FilterableItem[]) => applyOverseerrPoolFilter(list, true),
+      emptyMsg: () =>
+        'All matching items are fully available in Overseerr. Disable the Overseerr filter or sync your library.',
+    },
   ];
 
   for (const step of filterSteps) {
@@ -278,7 +307,8 @@ export function applyFullFilters<T extends FilterableItem>(
   items: T[],
   filters: Filters,
   watchedIds: Set<string>,
-  collectionItemIds: Set<string> | null
+  collectionItemIds: Set<string> | null,
+  overseerrFilterEnabled = false
 ): T[] {
   let result = [...items];
 
@@ -292,5 +322,5 @@ export function applyFullFilters<T extends FilterableItem>(
     result = filterUnwatched(result, watchedIds);
   }
 
-  return result;
+  return applyOverseerrPoolFilter(result, overseerrFilterEnabled);
 }

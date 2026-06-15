@@ -11,6 +11,7 @@ export interface TMDbMatch {
 }
 
 export interface TMDbEnrichmentData {
+  tmdbId?: number;
   rating?: number;
   certification?: string;
   networks?: string[];
@@ -225,7 +226,7 @@ export class TMDbService {
         : Promise.resolve<TMDbEnrichmentData>({}),
     ]);
 
-    const result: TMDbEnrichmentData = {};
+    const result: TMDbEnrichmentData = { tmdbId: match.tmdbId };
 
     if (certResult) result.certification = certResult;
 

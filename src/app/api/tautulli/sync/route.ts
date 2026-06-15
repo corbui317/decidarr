@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireAuth } from '@/lib/auth';
+import { requireUser, isAuthError, authErrorStatus } from '@/lib/auth';
 import { connectDB } from '@/lib/db';
 import { WatchedItem } from '@/lib/models/WatchedItem';
 import { TautulliService } from '@/lib/services/tautulli';
@@ -7,11 +7,10 @@ import { createLogger } from '@/lib/logger';
 import mongoose from 'mongoose';
 
 const logger = createLogger('API:TautulliSync');
-const SINGLE_USER_ID = new mongoose.Types.ObjectId('000000000000000000000001');
 
 export async function POST() {
   try {
-    const { settings } = await requireAuth();
+    const { settings, user } = await requireUser();
 
     if (!settings.tautulliEnabled) {
       return NextResponse.json(
@@ -38,7 +37,6 @@ export async function POST() {
     await connectDB();
 
     const service = new TautulliService(settings.tautulliUrl, apiKey);
-
     const connectionTest = await service.testConnection();
     if (!connectionTest.success) {
       return NextResponse.json(
@@ -47,21 +45,30 @@ export async function POST() {
       );
     }
 
-    const plexUsername = settings.plexUsername;
-
-    let userId: number | undefined;
-    if (plexUsername) {
+    const plexUsername = user.plexUsername || settings.plexUsername;
+    let tautulliUserId: number | undefined = user.tautulliUserId;
+    if (!tautulliUserId && plexUsername) {
       const foundId = await service.getUserIdByPlexUsername(plexUsername);
       if (foundId !== null) {
-        userId = foundId;
-        logger.info('Found Plex user in Tautulli', { plexUsername, userId });
+        tautulliUserId = foundId;
+        user.tautulliUserId = foundId;
+        await user.save();
+        logger.info('Found Plex user in Tautulli', { plexUsername, userId: foundId });
       }
     }
 
-    const movieHistory = await service.getWatchHistory(userId, 'movie', 1000, true);
-    const showHistory = await service.getWatchHistory(userId, undefined, 1000, true);
+    if (!tautulliUserId) {
+      return NextResponse.json(
+        { error: 'Could not find your Plex user in Tautulli history' },
+        { status: 404 }
+      );
+    }
 
-    const episodeHistory = showHistory.filter(h => h.media_type === 'episode');
+    const decidarrUserId = user._id;
+    const movieHistory = await service.getWatchHistory(tautulliUserId, 'movie', 1000, true);
+    const showHistory = await service.getWatchHistory(tautulliUserId, undefined, 1000, true);
+
+    const episodeHistory = showHistory.filter((h) => h.media_type === 'episode');
 
     const showsWatched = new Map<string, { title: string; watchedAt: Date; userId: number; username: string }>();
     for (const ep of episodeHistory) {
@@ -85,7 +92,7 @@ export async function POST() {
     for (const item of movieHistory) {
       bulkOps.push({
         updateOne: {
-          filter: { userId: SINGLE_USER_ID, plexId: item.rating_key },
+          filter: { userId: decidarrUserId, plexId: item.rating_key },
           update: {
             $set: {
               mediaType: 'movie',
@@ -96,7 +103,7 @@ export async function POST() {
               plexUsername: item.user,
             },
             $setOnInsert: {
-              userId: SINGLE_USER_ID,
+              userId: decidarrUserId,
               plexId: item.rating_key,
               markedManually: false,
             },
@@ -110,7 +117,7 @@ export async function POST() {
     for (const [ratingKey, data] of Array.from(showsWatched.entries())) {
       bulkOps.push({
         updateOne: {
-          filter: { userId: SINGLE_USER_ID, plexId: ratingKey },
+          filter: { userId: decidarrUserId, plexId: ratingKey },
           update: {
             $set: {
               mediaType: 'show',
@@ -121,7 +128,7 @@ export async function POST() {
               plexUsername: data.username,
             },
             $setOnInsert: {
-              userId: SINGLE_USER_ID,
+              userId: decidarrUserId,
               plexId: ratingKey,
               markedManually: false,
             },
@@ -150,8 +157,8 @@ export async function POST() {
     });
   } catch (error) {
     const msg = (error as Error)?.message;
-    if (msg === 'App not configured' || msg === 'Unauthorized') {
-      return NextResponse.json({ error: msg }, { status: 401 });
+    if (isAuthError(error)) {
+      return NextResponse.json({ error: msg }, { status: authErrorStatus(error) });
     }
     logger.error('Tautulli sync error', { error: msg });
     return NextResponse.json(

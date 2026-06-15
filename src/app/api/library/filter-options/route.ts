@@ -1,15 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/lib/auth';
+import { requireUser, getAccessibleLibraryIds, isAuthError, authErrorStatus } from '@/lib/auth';
 import { connectDB } from '@/lib/db';
 import { LibraryCache } from '@/lib/models/LibraryCache';
-import mongoose from 'mongoose';
-
-// Use a constant ObjectId for single-user mode cache
-const SINGLE_USER_ID = new mongoose.Types.ObjectId('000000000000000000000001');
 
 export async function GET(request: NextRequest) {
   try {
-    await requireAuth();
+    const auth = await requireUser();
     const libraryIds = request.nextUrl.searchParams.get('libraryIds')?.split(',') || [];
 
     if (libraryIds.length === 0) {
@@ -21,16 +17,18 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    const allowed = await getAccessibleLibraryIds(auth, libraryIds);
+    const machineId = auth.settings.plexMachineId || 'unknown';
+
     await connectDB();
 
     const caches = await LibraryCache.find({
-      userId: SINGLE_USER_ID,
-      libraryId: { $in: libraryIds },
+      plexMachineId: machineId,
+      libraryId: { $in: allowed },
     }).lean();
 
     const allItems = caches.flatMap((cache) => cache.items);
 
-    // Get unique content ratings
     const contentRatings = new Set<string>();
     const studios = new Set<string>();
     let minRating = 10;
@@ -51,7 +49,6 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Sort content ratings by common order
     const ratingOrder = [
       'G', 'TV-G', 'TV-Y', 'TV-Y7',
       'PG', 'TV-PG',
@@ -61,8 +58,8 @@ export async function GET(request: NextRequest) {
     ];
 
     const sortedRatings = Array.from(contentRatings).sort((a, b) => {
-      const aIndex = ratingOrder.findIndex(r => a.toUpperCase().includes(r.toUpperCase()));
-      const bIndex = ratingOrder.findIndex(r => b.toUpperCase().includes(r.toUpperCase()));
+      const aIndex = ratingOrder.findIndex((r) => a.toUpperCase().includes(r.toUpperCase()));
+      const bIndex = ratingOrder.findIndex((r) => b.toUpperCase().includes(r.toUpperCase()));
       if (aIndex === -1 && bIndex === -1) return a.localeCompare(b);
       if (aIndex === -1) return 1;
       if (bIndex === -1) return -1;
@@ -79,13 +76,10 @@ export async function GET(request: NextRequest) {
       studios: Array.from(studios).sort(),
     });
   } catch (error) {
-    if ((error as Error).message === 'App not configured') {
-      return NextResponse.json({ error: 'App not configured' }, { status: 401 });
+    if (isAuthError(error)) {
+      return NextResponse.json({ error: (error as Error).message }, { status: authErrorStatus(error) });
     }
     console.error('Get filter options error:', error);
-    return NextResponse.json(
-      { error: 'Failed to get filter options' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to get filter options' }, { status: 500 });
   }
 }

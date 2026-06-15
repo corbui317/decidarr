@@ -1,64 +1,144 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth, isAuthError } from '@/lib/auth';
+import { connectDB } from '@/lib/db';
+import { requireUser, isAuthError, authErrorStatus } from '@/lib/auth';
+import { AppTheme, AnimationStyle, AnimationSpeed } from '@/lib/models/User';
 import {
-  getSpinHistoryPreferences,
-  saveSpinHistoryPreferences,
+  getDefaultSpinHistoryPreferences,
   normalizeRetentionLimit,
 } from '@/lib/spin-history';
 import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('API:UserPreferences');
 
+const validThemes: AppTheme[] = ['dark', 'light', 'vegas', 'macao', 'poker'];
+const validAnimationStyles: AnimationStyle[] = ['slots', 'roulette', 'wheel', 'plinko', 'random'];
+const validAnimationSpeeds: AnimationSpeed[] = ['fast', 'normal', 'dramatic'];
+const validMediaTypes = ['movie', 'show'];
+const validTvSelectionModes = ['show', 'episode'];
+
+function normalizeSpinHistoryPreferences(spinHistory: unknown) {
+  const defaults = getDefaultSpinHistoryPreferences();
+  const prefs = spinHistory as Partial<typeof defaults> | undefined;
+  return {
+    enabled: prefs?.enabled ?? defaults.enabled,
+    retentionLimit: normalizeRetentionLimit(prefs?.retentionLimit ?? defaults.retentionLimit),
+    storeFilterSnapshot: prefs?.storeFilterSnapshot ?? defaults.storeFilterSnapshot,
+  };
+}
+
 export async function GET() {
   try {
-    await requireAuth();
-    const spinHistory = await getSpinHistoryPreferences();
-    return NextResponse.json({ spinHistory });
+    await connectDB();
+    const { user } = await requireUser();
+    const spinHistory = normalizeSpinHistoryPreferences(user.preferences?.spinHistory);
+    return NextResponse.json({
+      preferences: {
+        ...user.preferences,
+        spinHistory,
+      },
+      spinHistory,
+    });
   } catch (error) {
-    const msg = (error as Error)?.message;
     if (isAuthError(error)) {
-      return NextResponse.json({ error: msg }, { status: 401 });
+      return NextResponse.json(
+        { error: (error as Error).message },
+        { status: authErrorStatus(error) }
+      );
     }
-    logger.error('Get preferences failed', { error: msg });
+    logger.error('Get preferences failed', { error: (error as Error).message });
     return NextResponse.json({ error: 'Failed to get preferences' }, { status: 500 });
+  }
+}
+
+export async function PUT(request: NextRequest) {
+  try {
+    await connectDB();
+    const { user } = await requireUser();
+    const body = await request.json();
+
+    if (body.theme && validThemes.includes(body.theme)) {
+      user.preferences.theme = body.theme;
+    }
+    if (body.defaultMediaType && validMediaTypes.includes(body.defaultMediaType)) {
+      user.preferences.defaultMediaType = body.defaultMediaType;
+    }
+    if (body.tvSelectionMode && validTvSelectionModes.includes(body.tvSelectionMode)) {
+      user.preferences.tvSelectionMode = body.tvSelectionMode;
+    }
+    if (body.savedFilters) {
+      user.preferences.savedFilters = {
+        ...user.preferences.savedFilters,
+        ...body.savedFilters,
+      };
+    }
+    if (Array.isArray(body.selectedLibraries)) {
+      user.preferences.selectedLibraries = body.selectedLibraries;
+    }
+    if (body.animationStyle && validAnimationStyles.includes(body.animationStyle)) {
+      user.preferences.animationStyle = body.animationStyle;
+    }
+    if (body.animationSpeed && validAnimationSpeeds.includes(body.animationSpeed)) {
+      user.preferences.animationSpeed = body.animationSpeed;
+    }
+    if (body.spinHistory) {
+      const current = normalizeSpinHistoryPreferences(user.preferences.spinHistory);
+      user.preferences.spinHistory = {
+        enabled: body.spinHistory.enabled ?? current.enabled,
+        retentionLimit:
+          body.spinHistory.retentionLimit !== undefined
+            ? normalizeRetentionLimit(body.spinHistory.retentionLimit)
+            : current.retentionLimit,
+        storeFilterSnapshot:
+          body.spinHistory.storeFilterSnapshot ?? current.storeFilterSnapshot,
+      };
+    }
+
+    await user.save();
+    logger.debug('Preferences updated', { userId: user._id.toString() });
+    return NextResponse.json({ success: true, preferences: user.preferences });
+  } catch (error) {
+    if (isAuthError(error)) {
+      return NextResponse.json(
+        { error: (error as Error).message },
+        { status: authErrorStatus(error) }
+      );
+    }
+    logger.error('Update preferences failed', { error: (error as Error).message });
+    return NextResponse.json({ error: 'Failed to update preferences' }, { status: 500 });
   }
 }
 
 export async function PATCH(request: NextRequest) {
   try {
-    await requireAuth();
+    await connectDB();
+    const { user } = await requireUser();
     const body = await request.json();
 
-    const patch: {
-      enabled?: boolean;
-      retentionLimit?: number;
-      storeFilterSnapshot?: boolean;
-    } = {};
-
-    if (body.spinHistory) {
-      if (typeof body.spinHistory.enabled === 'boolean') {
-        patch.enabled = body.spinHistory.enabled;
-      }
-      if (body.spinHistory.retentionLimit !== undefined) {
-        patch.retentionLimit = normalizeRetentionLimit(body.spinHistory.retentionLimit);
-      }
-      if (typeof body.spinHistory.storeFilterSnapshot === 'boolean') {
-        patch.storeFilterSnapshot = body.spinHistory.storeFilterSnapshot;
-      }
-    }
-
-    if (Object.keys(patch).length === 0) {
+    if (!body.spinHistory) {
       return NextResponse.json({ error: 'No valid preference fields provided' }, { status: 400 });
     }
 
-    const spinHistory = await saveSpinHistoryPreferences(patch);
-    return NextResponse.json({ spinHistory });
+    const current = normalizeSpinHistoryPreferences(user.preferences.spinHistory);
+    user.preferences.spinHistory = {
+      enabled: body.spinHistory.enabled ?? current.enabled,
+      retentionLimit:
+        body.spinHistory.retentionLimit !== undefined
+          ? normalizeRetentionLimit(body.spinHistory.retentionLimit)
+          : current.retentionLimit,
+      storeFilterSnapshot:
+        body.spinHistory.storeFilterSnapshot ?? current.storeFilterSnapshot,
+    };
+
+    await user.save();
+    return NextResponse.json({ spinHistory: user.preferences.spinHistory });
   } catch (error) {
-    const msg = (error as Error)?.message;
     if (isAuthError(error)) {
-      return NextResponse.json({ error: msg }, { status: 401 });
+      return NextResponse.json(
+        { error: (error as Error).message },
+        { status: authErrorStatus(error) }
+      );
     }
-    logger.error('Update preferences failed', { error: msg });
+    logger.error('Update preferences failed', { error: (error as Error).message });
     return NextResponse.json({ error: 'Failed to update preferences' }, { status: 500 });
   }
 }

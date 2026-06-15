@@ -1,21 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/lib/auth';
+import {
+  requireUser,
+  getAccessibleLibraryIds,
+  isAuthError,
+  authErrorStatus,
+  getOverseerrConfig,
+} from '@/lib/auth';
 import { connectDB } from '@/lib/db';
 import { LibraryCache } from '@/lib/models/LibraryCache';
 import { WatchedItem } from '@/lib/models/WatchedItem';
 import { PlexService } from '@/lib/services/plex';
-import mongoose from 'mongoose';
 import { createLogger } from '@/lib/logger';
+import { computeDataStats, getPoolCountWithBreakdown } from '@/lib/selection/filters';
+import type { Filters } from '@/types/filters';
 
 const logger = createLogger('API:PoolCount');
-const SINGLE_USER_ID = new mongoose.Types.ObjectId('000000000000000000000001');
-
-import type { Filters } from '@/types/filters';
-import { computeDataStats, getPoolCountWithBreakdown } from '@/lib/selection/filters';
 
 export async function POST(request: NextRequest) {
   try {
-    const { plexToken, plexServerUrl, settings } = await requireAuth();
+    const auth = await requireUser();
+    const { plexToken, plexServerUrl, settings, user } = auth;
     const { libraryIds, mediaType, filters = {} } = await request.json();
 
     if (!libraryIds || libraryIds.length === 0) {
@@ -36,10 +40,30 @@ export async function POST(request: NextRequest) {
 
     await connectDB();
 
-    // Get cached items from selected libraries
+    const allowedLibraryIds = await getAccessibleLibraryIds(auth, libraryIds);
+
+    const machineId = settings.plexMachineId;
+    if (!machineId) {
+      return NextResponse.json({
+        totalItems: 0,
+        matchingItems: 0,
+        filterBreakdown: [],
+        emptyReason: 'Plex machine ID not configured',
+        dataStats: {
+          itemsWithRating: 0,
+          itemsWithContentRating: 0,
+          itemsWithStudio: 0,
+          itemsWithYear: 0,
+          itemsWithGenres: 0,
+        },
+      });
+    }
+
+    const overseerrConfig = await getOverseerrConfig();
+
     const caches = await LibraryCache.find({
-      userId: SINGLE_USER_ID,
-      libraryId: { $in: libraryIds },
+      plexMachineId: machineId,
+      libraryId: { $in: allowedLibraryIds },
       mediaType: mediaType || 'movie',
     }).lean();
 
@@ -61,17 +85,14 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Calculate data availability stats
     const dataStats = computeDataStats(allItems);
 
-    // Get watched items for unwatched filter
     let watchedIds = new Set<string>();
     if (filters.unwatchedOnly) {
-      const watchedItems = await WatchedItem.find({ userId: SINGLE_USER_ID }).lean();
+      const watchedItems = await WatchedItem.find({ userId: user._id }).lean();
       watchedIds = new Set(watchedItems.map((w) => w.plexId));
     }
 
-    // Get collection item IDs if collections filter is active
     let collectionItemIds: Set<string> | null = null;
     if (filters.collections && filters.collections.length > 0) {
       collectionItemIds = new Set<string>();
@@ -85,15 +106,34 @@ export async function POST(request: NextRequest) {
               collectionItemIds!.add(item.plexId);
             }
           } catch (err) {
-            logger.warn('Failed to fetch collection items', { collectionKey, error: (err as Error).message });
+            logger.warn('Failed to fetch collection items', {
+              collectionKey,
+              error: (err as Error).message,
+            });
           }
         })
       );
-      logger.debug('Collection filter active', { collectionCount: filters.collections.length, itemCount: collectionItemIds.size });
+      logger.debug('Collection filter active', {
+        collectionCount: filters.collections.length,
+        itemCount: collectionItemIds.size,
+      });
     }
 
-    // Apply filters and track breakdown
-    const result = getPoolCountWithBreakdown(allItems, filters as Filters, watchedIds, dataStats, collectionItemIds);
+    const result = getPoolCountWithBreakdown(
+      allItems,
+      filters as Filters,
+      watchedIds,
+      dataStats,
+      collectionItemIds,
+      settings.overseerrFilterEnabled
+    );
+
+    const overseerrWarning =
+      overseerrConfig.configured &&
+      settings.overseerrFilterEnabled &&
+      !overseerrConfig.lastSyncOk
+        ? 'Overseerr is unavailable. Using the last cached availability data.'
+        : null;
 
     return NextResponse.json({
       totalItems: allItems.length,
@@ -101,14 +141,16 @@ export async function POST(request: NextRequest) {
       filterBreakdown: result.breakdown,
       emptyReason: result.emptyReason,
       dataStats,
+      overseerrWarning,
     });
   } catch (error) {
-    const msg = (error as Error)?.message;
-    if (msg === 'App not configured' || msg === 'Unauthorized') {
-      return NextResponse.json({ error: msg }, { status: 401 });
+    if (isAuthError(error)) {
+      return NextResponse.json(
+        { error: (error as Error).message },
+        { status: authErrorStatus(error) }
+      );
     }
     console.error('Pool count error:', error);
     return NextResponse.json({ error: 'Failed to get pool count' }, { status: 500 });
   }
 }
-

@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { runMigrations } from './migrate';
 
 interface MongooseCache {
   conn: typeof mongoose | null;
@@ -27,9 +28,10 @@ export async function connectDB() {
       bufferCommands: false,
     };
 
-    cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongoose) => {
+    cached.promise = mongoose.connect(MONGODB_URI, opts).then(async (conn) => {
       console.log('Connected to MongoDB');
-      return mongoose;
+      await runMigrations();
+      return conn;
     });
   }
 

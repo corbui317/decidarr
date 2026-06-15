@@ -43,4 +43,5 @@ export interface PoolCountResult {
   filterBreakdown: FilterBreakdown[];
   emptyReason: string | null;
   dataStats: DataStats;
+  overseerrWarning?: string | null;
 }

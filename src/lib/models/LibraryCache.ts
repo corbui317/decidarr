@@ -1,4 +1,5 @@
-import mongoose, { Document, Model, Types } from 'mongoose';
+import mongoose, { Document, Model } from 'mongoose';
+import type { OverseerrAvailability } from '@/types/overseerr';
 
 export interface ILibraryItem {
   plexId: string;
@@ -17,15 +18,16 @@ export interface ILibraryItem {
   studio?: string;
   addedAt?: Date;
   type?: string;
-  // TMDb enrichment fields
   tmdbRating?: number;
   networks?: string[];
   studios?: string[];
   enrichedAt?: Date;
+  overseerrStatus?: OverseerrAvailability;
+  overseerrSyncedAt?: Date;
 }
 
 export interface ILibraryCache extends Document {
-  userId: Types.ObjectId;
+  plexMachineId: string;
   libraryId: string;
   libraryName: string;
   mediaType: 'movie' | 'show';
@@ -55,18 +57,19 @@ const libraryItemSchema = new mongoose.Schema<ILibraryItem>(
     studio: String,
     addedAt: Date,
     type: String,
-    // TMDb enrichment fields
     tmdbRating: Number,
     networks: [String],
     studios: [String],
     enrichedAt: Date,
+    overseerrStatus: { type: String, enum: ['available', 'partially_available'] },
+    overseerrSyncedAt: Date,
   },
   { _id: false }
 );
 
 const libraryCacheSchema = new mongoose.Schema<ILibraryCache>(
   {
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    plexMachineId: { type: String, required: true },
     libraryId: { type: String, required: true },
     libraryName: { type: String, required: true },
     mediaType: { type: String, enum: ['movie', 'show'], required: true },
@@ -80,7 +83,7 @@ const libraryCacheSchema = new mongoose.Schema<ILibraryCache>(
   { timestamps: true }
 );
 
-libraryCacheSchema.index({ userId: 1, libraryId: 1 }, { unique: true });
+libraryCacheSchema.index({ plexMachineId: 1, libraryId: 1 }, { unique: true });
 libraryCacheSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 libraryCacheSchema.methods.isExpired = function (): boolean {
