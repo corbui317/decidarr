@@ -26,6 +26,20 @@ export async function seedConfiguredSettings(overrides?: {
   return settings;
 }
 
+/** Settings marked complete but missing Plex token (stale/partial local DB state). */
+export async function seedPartialSettings() {
+  await connectDB();
+  const settings = await getOrCreateSettings();
+
+  settings.plexToken = undefined;
+  settings.plexServerUrl = 'http://192.168.1.10:32400';
+  settings.plexUsername = 'testuser';
+  settings.setupComplete = true;
+  await settings.save();
+
+  return settings;
+}
+
 export async function createSessionToken(username = 'testuser'): Promise<string> {
   const settings = await getOrCreateSettings();
   return jwt.sign(

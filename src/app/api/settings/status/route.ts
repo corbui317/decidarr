@@ -9,11 +9,14 @@ export async function GET() {
     const settings = await getOrCreateSettings();
 
     const plexToken = settings.getDecryptedPlexToken();
+    const hasPlexToken = !!plexToken;
+    const hasPlexServer = !!settings.plexServerUrl;
+    const setupComplete = settings.setupComplete && hasPlexToken && hasPlexServer;
 
     return NextResponse.json({
-      setupComplete: settings.setupComplete,
-      hasPlexToken: !!plexToken,
-      hasPlexServer: !!settings.plexServerUrl,
+      setupComplete,
+      hasPlexToken,
+      hasPlexServer,
       hasTmdbKey: !!settings.getDecryptedTmdbKey(),
       plexUsername: settings.plexUsername || null,
     });

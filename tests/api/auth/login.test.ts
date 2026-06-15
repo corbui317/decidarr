@@ -2,6 +2,7 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { clearDatabase } from '../../helpers/mongo';
 import {
   seedConfiguredSettings,
+  seedPartialSettings,
   authenticateTestSession,
   clearTestCookies,
   createJsonRequest,
@@ -64,6 +65,17 @@ describe('Auth and setup API routes', () => {
       expect(body.hasPlexToken).toBe(true);
       expect(body.plexUsername).toBe('testuser');
     });
+
+    it('returns setupComplete false when DB flag is set but Plex token is missing', async () => {
+      await seedPartialSettings();
+      const res = await statusGet();
+      const body = await res.json();
+      expect(res.status).toBe(200);
+      expect(body.setupComplete).toBe(false);
+      expect(body.hasPlexToken).toBe(false);
+      expect(body.hasPlexServer).toBe(true);
+      expect(body.plexUsername).toBe('testuser');
+    });
   });
 
   describe('POST /api/settings/setup', () => {
@@ -113,6 +125,15 @@ describe('Auth and setup API routes', () => {
     it('returns 400 when app not configured', async () => {
       const res = await loginPost();
       expect(res.status).toBe(400);
+    });
+
+    it('returns 401 with requiresSetup when Plex token missing', async () => {
+      await seedPartialSettings();
+      const res = await loginPost();
+      expect(res.status).toBe(401);
+      const body = await res.json();
+      expect(body.requiresSetup).toBe(true);
+      expect(body.error).toMatch(/reconfigure/i);
     });
 
     it('returns 401 when Plex token expired', async () => {

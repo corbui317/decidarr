@@ -127,6 +127,22 @@ export async function PUT(request: NextRequest) {
       if (body.tautulli.syncIntervalMinutes !== undefined) {
         settings.tautulliSyncIntervalMinutes = Math.max(5, Math.min(1440, body.tautulli.syncIntervalMinutes));
       }
+
+      if (settings.tautulliEnabled) {
+        const tautulliKey = settings.getDecryptedTautulliKey();
+        if (!settings.tautulliUrl) {
+          return NextResponse.json(
+            { error: 'Tautulli URL is required when sync is enabled' },
+            { status: 400 }
+          );
+        }
+        if (!tautulliKey) {
+          return NextResponse.json(
+            { error: 'Tautulli API key is required when sync is enabled' },
+            { status: 400 }
+          );
+        }
+      }
     }
 
     // Update UI preferences if provided

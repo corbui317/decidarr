@@ -270,15 +270,24 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   };
 
   const handleSaveTautulli = async () => {
+    if (tautulliEnabled && !tautulliUrl.trim()) {
+      setError('Tautulli URL is required when sync is enabled');
+      return;
+    }
+    if (tautulliEnabled && !tautulliApiKey.trim() && !settings?.tautulli?.hasKey) {
+      setError('Tautulli API key is required when sync is enabled');
+      return;
+    }
+
     setSaving(true);
     setError(null);
     setSuccess(null);
     try {
       await settingsApi.updateSettings({
         tautulli: {
-          url: tautulliUrl.trim() || undefined,
-          apiKey: tautulliApiKey.trim() || undefined,
+          url: tautulliUrl.trim(),
           enabled: tautulliEnabled,
+          ...(tautulliApiKey.trim() ? { apiKey: tautulliApiKey.trim() } : {}),
         },
       });
       setSuccess('Tautulli settings saved');
@@ -293,6 +302,11 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   };
 
   const handleSyncTautulli = async () => {
+    if (!settings?.tautulli?.url || !settings?.tautulli?.hasKey) {
+      setError('Save your Tautulli URL and API key before syncing watch history');
+      return;
+    }
+
     setSyncingTautulli(true);
     setError(null);
     setSuccess(null);
@@ -633,7 +647,11 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                     <p className="text-decidarr-text text-sm">
                       <span className="text-decidarr-text-muted">Status: </span>
                       {settings?.tautulli?.enabled ? (
-                        <span className="text-green-400">Enabled</span>
+                        settings?.tautulli?.url && settings?.tautulli?.hasKey ? (
+                          <span className="text-green-400">Enabled</span>
+                        ) : (
+                          <span className="text-yellow-400">Enabled (incomplete — save URL and API key)</span>
+                        )
                       ) : settings?.tautulli?.hasKey ? (
                         <span className="text-yellow-400">Configured (disabled)</span>
                       ) : (
@@ -731,7 +749,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                     </button>
                   </div>
 
-                  {settings?.tautulli?.enabled && (
+                  {settings?.tautulli?.enabled && settings?.tautulli?.url && settings?.tautulli?.hasKey && (
                     <button
                       onClick={handleSyncTautulli}
                       disabled={syncingTautulli}

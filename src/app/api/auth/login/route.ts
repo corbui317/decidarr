@@ -29,8 +29,11 @@ export async function POST() {
     if (!plexToken) {
       logger.warn('Login attempted but no Plex token stored');
       return NextResponse.json(
-        { error: 'No Plex credentials found. Please reconfigure the app.' },
-        { status: 400 }
+        {
+          error: 'No Plex credentials found. Please reconfigure the app.',
+          requiresSetup: true,
+        },
+        { status: 401 }
       );
     }
 

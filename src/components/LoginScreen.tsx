@@ -29,7 +29,11 @@ export default function LoginScreen({ username, onLoginSuccess, onReconfigure }:
       console.error('[LoginScreen] Login failed:', message);
       setError(message);
 
-      if (message.includes('expired') || message.includes('requiresSetup')) {
+      if (
+        message.includes('expired') ||
+        message.includes('requiresSetup') ||
+        message.includes('reconfigure')
+      ) {
         setRequiresSetup(true);
       }
     } finally {

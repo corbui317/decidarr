@@ -6,6 +6,7 @@ import {
   clearTestCookies,
   createJsonRequest,
 } from '../../helpers/auth';
+import { getOrCreateSettings } from '@/lib/models/Settings';
 import { GET as settingsGet, PUT as settingsPut } from '@/app/api/settings/route';
 
 describe('Settings API routes', () => {
@@ -58,6 +59,43 @@ describe('Settings API routes', () => {
       });
       const putRes = await settingsPut(putReq as never);
       expect(putRes.status).toBe(400);
+    });
+
+    it('persists Tautulli URL and enabled flag when saving with existing API key', async () => {
+      const settings = await getOrCreateSettings();
+      settings.tautulliApiKey = 'existing-tautulli-key-abcdefgh';
+      settings.tautulliEnabled = false;
+      settings.tautulliUrl = undefined;
+      await settings.save();
+
+      const putReq = createJsonRequest('http://localhost/api/settings', 'PUT', {
+        tautulli: {
+          url: 'http://192.168.1.100:8181',
+          enabled: true,
+        },
+      });
+      const putRes = await settingsPut(putReq as never);
+      expect(putRes.status).toBe(200);
+
+      const updated = await getOrCreateSettings();
+      expect(updated.tautulliUrl).toBe('http://192.168.1.100:8181');
+      expect(updated.tautulliEnabled).toBe(true);
+      expect(updated.getDecryptedTautulliKey()).toBeTruthy();
+    });
+
+    it('rejects enabling Tautulli without URL', async () => {
+      const settings = await getOrCreateSettings();
+      settings.tautulliApiKey = 'existing-tautulli-key-abcdefgh';
+      settings.tautulliUrl = undefined;
+      await settings.save();
+
+      const putReq = createJsonRequest('http://localhost/api/settings', 'PUT', {
+        tautulli: { enabled: true },
+      });
+      const putRes = await settingsPut(putReq as never);
+      expect(putRes.status).toBe(400);
+      const body = await putRes.json();
+      expect(body.error).toMatch(/URL is required/i);
     });
   });
 });

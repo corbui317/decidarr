@@ -110,7 +110,8 @@ export class TautulliService {
   async getWatchHistory(
     userId?: number,
     mediaType?: 'movie' | 'show' | 'episode',
-    length: number = 500
+    length: number = 500,
+    strict: boolean = false
   ): Promise<TautulliHistoryItem[]> {
     try {
       const params: Record<string, string | number> = { length };
@@ -147,6 +148,7 @@ export class TautulliService {
       return history;
     } catch (err) {
       logger.error('Failed to get watch history', { error: (err as Error).message });
+      if (strict) throw err;
       return [];
     }
   }

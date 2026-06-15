@@ -13,9 +13,16 @@ export async function POST() {
   try {
     const { settings } = await requireAuth();
 
-    if (!settings.tautulliEnabled || !settings.tautulliUrl) {
+    if (!settings.tautulliEnabled) {
       return NextResponse.json(
-        { error: 'Tautulli is not configured' },
+        { error: 'Tautulli sync is not enabled' },
+        { status: 400 }
+      );
+    }
+
+    if (!settings.tautulliUrl) {
+      return NextResponse.json(
+        { error: 'Tautulli URL is not configured. Save your Tautulli URL in settings first.' },
         { status: 400 }
       );
     }
@@ -31,6 +38,15 @@ export async function POST() {
     await connectDB();
 
     const service = new TautulliService(settings.tautulliUrl, apiKey);
+
+    const connectionTest = await service.testConnection();
+    if (!connectionTest.success) {
+      return NextResponse.json(
+        { error: `Cannot reach Tautulli at ${settings.tautulliUrl}: ${connectionTest.error}` },
+        { status: 502 }
+      );
+    }
+
     const plexUsername = settings.plexUsername;
 
     let userId: number | undefined;
@@ -42,8 +58,8 @@ export async function POST() {
       }
     }
 
-    const movieHistory = await service.getWatchHistory(userId, 'movie', 1000);
-    const showHistory = await service.getWatchHistory(userId, undefined, 1000);
+    const movieHistory = await service.getWatchHistory(userId, 'movie', 1000, true);
+    const showHistory = await service.getWatchHistory(userId, undefined, 1000, true);
 
     const episodeHistory = showHistory.filter(h => h.media_type === 'episode');
 
@@ -139,7 +155,7 @@ export async function POST() {
     }
     logger.error('Tautulli sync error', { error: msg });
     return NextResponse.json(
-      { error: 'Failed to sync with Tautulli' },
+      { error: msg || 'Failed to sync with Tautulli' },
       { status: 500 }
     );
   }
