@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import mongoose from 'mongoose';
 import { connectDB } from '@/lib/db';
 import { requireUser, isAuthError, authErrorStatus } from '@/lib/auth';
 import { AppTheme, AnimationStyle, AnimationSpeed } from '@/lib/models/User';
 import {
   getDefaultSpinHistoryPreferences,
   normalizeRetentionLimit,
+  trimSpinHistoryToRetention,
 } from '@/lib/spin-history';
 import { createLogger } from '@/lib/logger';
 
@@ -80,8 +82,10 @@ export async function PUT(request: NextRequest) {
     if (body.animationSpeed && validAnimationSpeeds.includes(body.animationSpeed)) {
       user.preferences.animationSpeed = body.animationSpeed;
     }
+    let previousRetention: number | undefined;
     if (body.spinHistory) {
       const current = normalizeSpinHistoryPreferences(user.preferences.spinHistory);
+      previousRetention = current.retentionLimit;
       user.preferences.spinHistory = {
         enabled: body.spinHistory.enabled ?? current.enabled,
         retentionLimit:
@@ -94,6 +98,19 @@ export async function PUT(request: NextRequest) {
     }
 
     await user.save();
+
+    const nextSpinHistory = user.preferences.spinHistory;
+    if (
+      body.spinHistory?.retentionLimit !== undefined &&
+      previousRetention !== undefined &&
+      nextSpinHistory &&
+      nextSpinHistory.retentionLimit < previousRetention
+    ) {
+      await trimSpinHistoryToRetention(
+        user._id as mongoose.Types.ObjectId,
+        nextSpinHistory.retentionLimit
+      );
+    }
     logger.debug('Preferences updated', { userId: user._id.toString() });
     return NextResponse.json({ success: true, preferences: user.preferences });
   } catch (error) {
@@ -119,6 +136,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const current = normalizeSpinHistoryPreferences(user.preferences.spinHistory);
+    const previousRetention = current.retentionLimit;
     user.preferences.spinHistory = {
       enabled: body.spinHistory.enabled ?? current.enabled,
       retentionLimit:
@@ -130,7 +148,20 @@ export async function PATCH(request: NextRequest) {
     };
 
     await user.save();
-    return NextResponse.json({ spinHistory: user.preferences.spinHistory });
+
+    const nextSpinHistory = user.preferences.spinHistory;
+    if (
+      body.spinHistory.retentionLimit !== undefined &&
+      nextSpinHistory &&
+      nextSpinHistory.retentionLimit < previousRetention
+    ) {
+      await trimSpinHistoryToRetention(
+        user._id as mongoose.Types.ObjectId,
+        nextSpinHistory.retentionLimit
+      );
+    }
+
+    return NextResponse.json({ spinHistory: nextSpinHistory });
   } catch (error) {
     if (isAuthError(error)) {
       return NextResponse.json(

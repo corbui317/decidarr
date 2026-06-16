@@ -77,11 +77,11 @@ Task backlog for the beta spec set. Keep tasks small enough for one branch and o
 
 | ID | Status | Spec | Task | Lead | Verification |
 |----|--------|------|------|------|--------------|
-| `DECIDARR-09-DATA-01` | TODO | 09 | Define `SpinHistoryEntry` model, indexes, retention rules, and user scope. | Database Optimizer | Model review and retention trim smoke. |
-| `DECIDARR-09-API-01` | TODO | 09 | Add list/create/delete/clear spin history endpoints. | Backend Architect | API samples for CRUD and clear-all. |
-| `DECIDARR-09-SETTINGS-01` | TODO | 09 | Add enablement, retention limit, and filter snapshot preference controls. | Frontend Developer | Settings screenshots and preference persistence. |
-| `DECIDARR-09-UI-01` | TODO | 09 | Add recent spins module and result-card history feedback. | Frontend Developer | Dashboard screenshots and re-spin smoke. |
-| `DECIDARR-09-PRIVACY-01` | TODO | 09 | Verify user isolation, clear history, and no secret leakage in stored payloads. | Security Engineer | Cross-user negative test and payload review. |
+| `DECIDARR-09-DATA-01` | DONE | 09 | Define `SpinHistoryEntry` model, indexes, retention rules, and user scope. | Database Optimizer | Model review and retention trim smoke. |
+| `DECIDARR-09-API-01` | DONE | 09 | Add list/create/delete/clear spin history endpoints. | Backend Architect | API samples for CRUD and clear-all. |
+| `DECIDARR-09-SETTINGS-01` | DONE | 09 | Add enablement, retention limit, and filter snapshot preference controls. | Frontend Developer | Settings screenshots and preference persistence. |
+| `DECIDARR-09-UI-01` | DONE | 09 | Add recent spins module and result-card history feedback. | Frontend Developer | Dashboard screenshots and re-spin smoke. |
+| `DECIDARR-09-PRIVACY-01` | DONE | 09 | Verify user isolation, clear history, and no secret leakage in stored payloads. | Security Engineer | Cross-user negative test and payload review. |
 
 ## Deferred - Mobile/PWA
 

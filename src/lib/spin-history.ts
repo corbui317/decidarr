@@ -50,6 +50,13 @@ export function sanitizeFilterSnapshot(
   return sanitized;
 }
 
+type SessionPayload = {
+  sub?: string;
+  plexUserId?: string;
+  sessionVersion?: number;
+  username?: string;
+};
+
 export async function getCurrentUserId(): Promise<mongoose.Types.ObjectId> {
   await connectDB();
   const settings = await getOrCreateSettings();
@@ -57,13 +64,25 @@ export async function getCurrentUserId(): Promise<mongoose.Types.ObjectId> {
   try {
     const cookieStore = await cookies();
     const token = cookieStore.get('decidarr_session')?.value;
-    if (token) {
-      const payload = jwt.verify(token, settings.getJwtSecret()) as { username?: string };
-      if (payload.username) {
-        const user = await User.findOne({ plexUsername: payload.username });
-        if (user?._id) {
+    if (!token) {
+      return SINGLE_USER_ID;
+    }
+
+    const payload = jwt.verify(token, settings.getJwtSecret()) as SessionPayload;
+
+    if (payload.sub && payload.sessionVersion !== undefined) {
+      if (mongoose.Types.ObjectId.isValid(payload.sub)) {
+        const user = await User.findById(payload.sub);
+        if (user && user.sessionVersion === payload.sessionVersion) {
           return user._id as mongoose.Types.ObjectId;
         }
+      }
+    }
+
+    if (payload.username) {
+      const user = await User.findOne({ plexUsername: payload.username });
+      if (user?._id) {
+        return user._id as mongoose.Types.ObjectId;
       }
     }
   } catch {

@@ -22,7 +22,7 @@
 
 **Model** (`SpinHistoryEntry`): `userId`, `plexId`, `title`, `mediaType`, `posterUrl`, `year`, `libraryIds`, `filtersSnapshot`, `tvSelectionMode`, `poolSizeAtSpin`, `spunAt`.
 
-**User resolution:** `getCurrentUserId()` in `src/lib/spin-history.ts` — JWT username → `User` lookup, else `SINGLE_USER_ID`.
+**User resolution:** `getCurrentUserId()` in `src/lib/spin-history.ts` — modern JWT `sub` + `sessionVersion` → `User` lookup, legacy `username` fallback, else `SINGLE_USER_ID`.
 
 **Preferences storage:** `Settings.spinHistoryPreferences` for single-user; `User.preferences.spinHistory` when real user found.
 
@@ -167,9 +167,11 @@ interface CreateSpinHistoryBody {
 
 **Automated:**
 
-- `tests/unit/lib/spin-history.test.ts` (sanitization, retention, preferences)
+- `tests/unit/lib/spin-history.test.ts` (sanitization, retention, preferences, user resolution)
+- `tests/api/spin-history.test.ts` (CRUD, isolation, retention trim, preferences PATCH)
+- `tests/components/RecentSpins.test.tsx` (list, reapply, delete)
 
-**Gaps:** API route integration tests for spin-history CRUD; RecentSpins component tests.
+**Gaps:** None for closeout scope. Optional later: full history page beyond recent-10 module.
 
 **Manual:**
 

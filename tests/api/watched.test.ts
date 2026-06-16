@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import mongoose from 'mongoose';
 import { clearDatabase } from '../helpers/mongo';
 import {
   seedConfiguredSettings,
@@ -9,7 +8,7 @@ import {
 } from '../helpers/auth';
 import { WatchedItem } from '@/lib/models/WatchedItem';
 import { SpinHistoryEntry } from '@/lib/models/SpinHistoryEntry';
-import { SINGLE_USER_ID } from '@/lib/spin-history';
+import { IUser } from '@/lib/models/User';
 
 import { NextRequest } from 'next/server';
 import { GET as watchedGet } from '@/app/api/watched/route';
@@ -20,11 +19,14 @@ import {
 } from '@/app/api/spin-history/route';
 
 describe('Watched and spin-history API routes', () => {
+  let testUser: IUser;
+
   beforeEach(async () => {
     await clearDatabase();
     clearTestCookies();
     await seedConfiguredSettings();
-    await authenticateTestSession();
+    const auth = await authenticateTestSession();
+    testUser = auth.user;
   });
 
   describe('GET /api/watched', () => {
@@ -36,7 +38,7 @@ describe('Watched and spin-history API routes', () => {
     });
 
     it('paginates watched items', async () => {
-      const userId = new mongoose.Types.ObjectId('000000000000000000000001');
+      const userId = testUser._id;
       await WatchedItem.create([
         {
           userId,
@@ -84,14 +86,14 @@ describe('Watched and spin-history API routes', () => {
       expect(body.items[0].filtersSnapshot?.plexToken).toBeUndefined();
     });
 
-    it('skips recording when disabled', async () => {
-      const settings = await seedConfiguredSettings();
-      settings.spinHistoryPreferences = {
+    it('skips recording when disabled via user preferences', async () => {
+      testUser.preferences = testUser.preferences || {};
+      testUser.preferences.spinHistory = {
         enabled: false,
         retentionLimit: 50,
         storeFilterSnapshot: true,
       };
-      await settings.save();
+      await testUser.save();
 
       const postReq = createJsonRequest('http://localhost/api/spin-history', 'POST', {
         plexId: '99',
@@ -105,7 +107,7 @@ describe('Watched and spin-history API routes', () => {
 
     it('clears user spin history', async () => {
       await SpinHistoryEntry.create({
-        userId: SINGLE_USER_ID,
+        userId: testUser._id,
         plexId: '1',
         title: 'Old Spin',
         mediaType: 'movie',
@@ -117,7 +119,7 @@ describe('Watched and spin-history API routes', () => {
       const body = await res.json();
       expect(body.deleted).toBe(1);
 
-      const count = await SpinHistoryEntry.countDocuments({ userId: SINGLE_USER_ID });
+      const count = await SpinHistoryEntry.countDocuments({ userId: testUser._id });
       expect(count).toBe(0);
     });
   });

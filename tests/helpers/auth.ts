@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { getOrCreateSettings } from '@/lib/models/Settings';
+import { User, IUser } from '@/lib/models/User';
 import { connectDB } from '@/lib/db';
 import { setTestCookie, clearTestCookies } from './cookies';
 
@@ -40,6 +41,65 @@ export async function seedPartialSettings() {
   return settings;
 }
 
+export async function seedTestUser(overrides?: {
+  plexUserId?: string;
+  plexUsername?: string;
+  isAdmin?: boolean;
+  isApproved?: boolean;
+  spinHistory?: {
+    enabled?: boolean;
+    retentionLimit?: number;
+    storeFilterSnapshot?: boolean;
+  };
+}): Promise<IUser> {
+  await connectDB();
+  const settings = await getOrCreateSettings();
+  const encryptionKey = settings.getEncryptionKey();
+  const plexUserId = overrides?.plexUserId ?? 'plex-user-test-1';
+  const plexToken = settings.getDecryptedPlexToken() ?? 'test-plex-token-abcdefghijklmnop';
+
+  let user = await User.findOne({ plexUserId });
+  if (!user) {
+    user = new User({
+      plexUserId,
+      plexUsername: overrides?.plexUsername ?? 'testuser',
+      isAdmin: overrides?.isAdmin ?? true,
+      isApproved: overrides?.isApproved ?? true,
+      sessionVersion: 0,
+      preferences: {},
+    });
+    user.setEncryptedToken(plexToken, encryptionKey);
+    await user.save();
+  }
+
+  if (overrides?.spinHistory) {
+    user.preferences = user.preferences || {};
+    user.preferences.spinHistory = {
+      enabled: overrides.spinHistory.enabled ?? true,
+      retentionLimit: overrides.spinHistory.retentionLimit ?? 50,
+      storeFilterSnapshot: overrides.spinHistory.storeFilterSnapshot ?? true,
+    };
+    await user.save();
+  }
+
+  return user;
+}
+
+export async function createModernSessionToken(user: IUser): Promise<string> {
+  const settings = await getOrCreateSettings();
+  return jwt.sign(
+    {
+      sub: user._id.toString(),
+      plexUserId: user.plexUserId,
+      isAdmin: user.isAdmin,
+      sessionVersion: user.sessionVersion,
+    },
+    settings.getJwtSecret(),
+    { expiresIn: '7d' }
+  );
+}
+
+/** @deprecated Legacy username-only JWT for backward-compat tests */
 export async function createSessionToken(username = 'testuser'): Promise<string> {
   const settings = await getOrCreateSettings();
   return jwt.sign(
@@ -49,10 +109,14 @@ export async function createSessionToken(username = 'testuser'): Promise<string>
   );
 }
 
-export async function authenticateTestSession(username = 'testuser'): Promise<string> {
-  const token = await createSessionToken(username);
+export async function authenticateTestSession(options?: {
+  user?: IUser;
+  username?: string;
+}): Promise<{ token: string; user: IUser }> {
+  const user = options?.user ?? (await seedTestUser({ plexUsername: options?.username }));
+  const token = await createModernSessionToken(user);
   setTestCookie('decidarr_session', token);
-  return token;
+  return { token, user };
 }
 
 export function createJsonRequest(

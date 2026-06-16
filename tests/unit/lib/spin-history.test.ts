@@ -1,5 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { setTestCookie, clearTestCookies } from '../../helpers/cookies';
+import { seedConfiguredSettings, seedTestUser, createModernSessionToken } from '../../helpers/auth';
 import {
+  getCurrentUserId,
+  SINGLE_USER_ID,
   normalizeRetentionLimit,
   sanitizeFilterSnapshot,
   getDefaultSpinHistoryPreferences,
@@ -7,6 +11,29 @@ import {
   SPIN_HISTORY_MAX_RETENTION,
   SPIN_HISTORY_DEFAULT_RETENTION,
 } from '@/lib/spin-history';
+import { clearDatabase } from '../../helpers/mongo';
+
+describe('getCurrentUserId', () => {
+  beforeEach(async () => {
+    await clearDatabase();
+    clearTestCookies();
+    await seedConfiguredSettings();
+  });
+
+  it('resolves modern session sub to user id', async () => {
+    const user = await seedTestUser();
+    const token = await createModernSessionToken(user);
+    setTestCookie('decidarr_session', token);
+
+    const userId = await getCurrentUserId();
+    expect(userId.toString()).toBe(user._id.toString());
+  });
+
+  it('falls back to SINGLE_USER_ID when no session cookie', async () => {
+    const userId = await getCurrentUserId();
+    expect(userId.equals(SINGLE_USER_ID)).toBe(true);
+  });
+});
 
 describe('normalizeRetentionLimit', () => {
   it('returns default for invalid input', () => {
