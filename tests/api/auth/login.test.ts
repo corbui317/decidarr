@@ -63,7 +63,7 @@ describe('Auth and setup API routes', () => {
       const body = await res.json();
       expect(body.setupComplete).toBe(true);
       expect(body.hasPlexToken).toBe(true);
-      expect(body.plexUsername).toBe('testuser');
+      expect(body.hasPlexServer).toBe(true);
     });
 
     it('returns setupComplete false when DB flag is set but Plex token is missing', async () => {
@@ -74,84 +74,62 @@ describe('Auth and setup API routes', () => {
       expect(body.setupComplete).toBe(false);
       expect(body.hasPlexToken).toBe(false);
       expect(body.hasPlexServer).toBe(true);
-      expect(body.plexUsername).toBe('testuser');
     });
   });
 
   describe('POST /api/settings/setup', () => {
-    it('rejects missing Plex token', async () => {
+    it('directs fresh installs to Plex OAuth', async () => {
       const req = createJsonRequest('http://localhost/api/settings/setup', 'POST', {});
       const res = await setupPost(req as never);
       expect(res.status).toBe(400);
-    });
-
-    it('rejects invalid Plex token', async () => {
-      plexMock.validateToken.mockResolvedValue({ valid: false, error: 'Invalid' });
-      const req = createJsonRequest('http://localhost/api/settings/setup', 'POST', {
-        plexToken: 'bad-token',
-      });
-      const res = await setupPost(req as never);
-      expect(res.status).toBe(401);
-    });
-
-    it('rejects SSRF server URLs', async () => {
-      const req = createJsonRequest('http://localhost/api/settings/setup', 'POST', {
-        plexToken: 'valid-token',
-        plexServerUrl: 'http://169.254.169.254',
-      });
-      const res = await setupPost(req as never);
-      expect(res.status).toBe(400);
       const body = await res.json();
-      expect(body.error).toMatch(/Invalid server URL/i);
+      expect(body.useOAuth).toBe(true);
+      expect(body.error).toMatch(/signing in with Plex/i);
     });
 
-    it('completes setup with valid token and server', async () => {
+    it('rejects token-based setup on fresh install even with a valid token', async () => {
       const req = createJsonRequest('http://localhost/api/settings/setup', 'POST', {
         plexToken: 'valid-token',
         plexServerUrl: 'http://192.168.1.10:32400',
       });
       const res = await setupPost(req as never);
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.useOAuth).toBe(true);
+    });
+
+    it('allows admin to update TMDB key after setup is complete', async () => {
+      await seedConfiguredSettings();
+      await authenticateTestSession();
+
+      const req = createJsonRequest('http://localhost/api/settings/setup', 'POST', {
+        tmdbApiKey: 'new-tmdb-key-abcdefgh',
+      });
+      const res = await setupPost(req as never);
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.success).toBe(true);
-      expect(body.plex.username).toBe('testuser');
 
       const settings = await getOrCreateSettings();
-      expect(settings.setupComplete).toBe(true);
+      expect(settings.getDecryptedTmdbKey()).toBe('new-tmdb-key-abcdefgh');
     });
   });
 
   describe('POST /api/auth/login', () => {
-    it('returns 400 when app not configured', async () => {
+    it('returns 410 directing clients to Plex OAuth', async () => {
       const res = await loginPost();
-      expect(res.status).toBe(400);
-    });
-
-    it('returns 401 with requiresSetup when Plex token missing', async () => {
-      await seedPartialSettings();
-      const res = await loginPost();
-      expect(res.status).toBe(401);
+      expect(res.status).toBe(410);
       const body = await res.json();
-      expect(body.requiresSetup).toBe(true);
-      expect(body.error).toMatch(/reconfigure/i);
+      expect(body.useOAuth).toBe(true);
+      expect(body.error).toMatch(/Plex OAuth/i);
     });
 
-    it('returns 401 when Plex token expired', async () => {
-      await seedConfiguredSettings();
-      plexMock.validateToken.mockResolvedValue({ valid: false, error: 'Expired' });
-      const res = await loginPost();
-      expect(res.status).toBe(401);
-      const body = await res.json();
-      expect(body.requiresSetup).toBe(true);
-    });
-
-    it('issues session on successful login', async () => {
+    it('returns 410 even when app is configured', async () => {
       await seedConfiguredSettings();
       const res = await loginPost();
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(410);
       const body = await res.json();
-      expect(body.success).toBe(true);
-      expect(body.user.username).toBe('testuser');
+      expect(body.useOAuth).toBe(true);
     });
   });
 

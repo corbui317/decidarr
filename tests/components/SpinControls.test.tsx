@@ -1,13 +1,10 @@
 import { vi, describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import SlotMachine from '@/components/SlotMachine';
+import SpinControls from '@/components/SpinControls';
 
 vi.mock('framer-motion', () => ({
   motion: {
-    span: ({ children, ...props }: React.PropsWithChildren<Record<string, unknown>>) => (
-      <span {...props}>{children}</span>
-    ),
     button: ({
       children,
       onClick,
@@ -24,12 +21,12 @@ vi.mock('framer-motion', () => ({
   },
 }));
 
-describe('SlotMachine', () => {
+describe('SpinControls', () => {
   it('shows empty pool message when disabled with empty_pool reason', () => {
     render(
-      <SlotMachine
+      <SpinControls
         onSpin={vi.fn()}
-        spinning={false}
+        loading={false}
         disabled
         disabledReason="empty_pool"
       />
@@ -39,7 +36,7 @@ describe('SlotMachine', () => {
 
   it('shows library selection hint when no library selected', () => {
     render(
-      <SlotMachine onSpin={vi.fn()} spinning={false} disabled disabledReason="no_library" />
+      <SpinControls onSpin={vi.fn()} loading={false} disabled disabledReason="no_library" />
     );
     expect(screen.getByText(/Select at least one library/i)).toBeInTheDocument();
   });
@@ -48,7 +45,7 @@ describe('SlotMachine', () => {
     const onSpin = vi.fn();
     const user = userEvent.setup();
     render(
-      <SlotMachine onSpin={onSpin} spinning={false} disabled={false} poolCount={42} />
+      <SpinControls onSpin={onSpin} loading={false} disabled={false} poolCount={42} />
     );
     await user.click(screen.getByRole('button', { name: /SPIN!/i }));
     expect(onSpin).toHaveBeenCalledOnce();
@@ -56,7 +53,7 @@ describe('SlotMachine', () => {
 
   it('shows pool count when enabled', () => {
     render(
-      <SlotMachine onSpin={vi.fn()} spinning={false} disabled={false} poolCount={42} />
+      <SpinControls onSpin={vi.fn()} loading={false} disabled={false} poolCount={42} />
     );
     expect(screen.getByText('42')).toBeInTheDocument();
     expect(screen.getByText(/items in pool/i)).toBeInTheDocument();

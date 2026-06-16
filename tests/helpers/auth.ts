@@ -10,6 +10,7 @@ export async function seedConfiguredSettings(overrides?: {
   plexToken?: string;
   plexServerUrl?: string;
   plexUsername?: string;
+  plexMachineId?: string;
   tmdbApiKey?: string;
 }) {
   await connectDB();
@@ -18,6 +19,7 @@ export async function seedConfiguredSettings(overrides?: {
   settings.plexToken = overrides?.plexToken ?? 'test-plex-token-abcdefghijklmnop';
   settings.plexServerUrl = overrides?.plexServerUrl ?? 'http://192.168.1.10:32400';
   settings.plexUsername = overrides?.plexUsername ?? 'testuser';
+  settings.plexMachineId = overrides?.plexMachineId ?? 'machine-1';
   if (overrides?.tmdbApiKey) {
     settings.tmdbApiKey = overrides.tmdbApiKey;
   }

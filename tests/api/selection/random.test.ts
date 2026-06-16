@@ -42,7 +42,7 @@ import { POST as poolCountPost } from '@/app/api/selection/pool-count/route';
 
 async function seedLibraryCache() {
   await LibraryCache.create({
-    userId: SINGLE_USER_ID,
+    plexMachineId: 'machine-1',
     libraryId: 'lib-1',
     libraryName: 'Movies',
     mediaType: 'movie',
@@ -59,6 +59,17 @@ describe('Selection API routes', () => {
     await seedConfiguredSettings();
     await authenticateTestSession();
     vi.clearAllMocks();
+    plexMock.getLibrarySections.mockResolvedValue([
+      {
+        id: 'lib-1',
+        title: 'Movies',
+        type: 'movie',
+        agent: 'com.plexapp.agents.themoviedb',
+        scanner: 'Plex Movie Scanner',
+        language: 'en',
+        uuid: 'lib-uuid-1',
+      },
+    ]);
     plexMock.getItemMetadata.mockResolvedValue({
       plexId: '1',
       title: 'Inception',
