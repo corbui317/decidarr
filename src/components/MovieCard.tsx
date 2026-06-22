@@ -67,6 +67,7 @@ interface MovieCardProps {
 export default function MovieCard({ item, tmdb, isWatched = false, onWatchedChange, playLinks }: MovieCardProps) {
   const [watched, setWatched] = useState(isWatched);
   const [updating, setUpdating] = useState(false);
+  const [watchedError, setWatchedError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [showDevicePicker, setShowDevicePicker] = useState(false);
   const [selectedDevice, setSelectedDevice] = useState<PlayDevice['id']>('web');
@@ -113,6 +114,7 @@ export default function MovieCard({ item, tmdb, isWatched = false, onWatchedChan
 
   const handleWatchedToggle = async () => {
     setUpdating(true);
+    setWatchedError(null);
     try {
       if (watched) {
         await watchedApi.markUnwatched(item.plexId);
@@ -123,6 +125,8 @@ export default function MovieCard({ item, tmdb, isWatched = false, onWatchedChan
       }
       onWatchedChange?.(!watched);
     } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to update watched status';
+      setWatchedError(message);
       console.error('Failed to update watched status:', err);
     } finally {
       setUpdating(false);
@@ -293,6 +297,12 @@ export default function MovieCard({ item, tmdb, isWatched = false, onWatchedChan
             </button>
           </div>
         </div>
+
+        {watchedError && (
+          <p className="text-red-400 text-sm mb-2" role="alert">
+            {watchedError}
+          </p>
+        )}
 
         {/* Tagline */}
         {(tmdb?.tagline || item.tagline) && (

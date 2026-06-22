@@ -118,17 +118,22 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     console.log('[SettingsModal] Loading settings...');
     
     try {
-      const data = await settingsApi.getSettings();
-      setSettings(data);
-      setPlexServerUrl(data.plex.serverUrl || '');
-      setSyncFrequencyHours(data.syncFrequencyHours);
-      setTautulliUrl(data.tautulli?.url || '');
-      setTautulliEnabled(data.tautulli?.enabled || false);
-      setOverseerrUrl(data.overseerr?.url || '');
-      setOverseerrFilterEnabled(data.overseerr?.filterEnabled || false);
-      setSelectedTheme(data.uiPreferences.theme as AppTheme);
-      setDefaultMediaType(data.uiPreferences.defaultMediaType);
-      setTvSelectionMode(data.uiPreferences.tvSelectionMode);
+      let adminUiDefaults: SettingsResponse['uiPreferences'] | null = null;
+
+      if (isAdmin) {
+        const data = await settingsApi.getSettings();
+        setSettings(data);
+        adminUiDefaults = data.uiPreferences;
+        setPlexServerUrl(data.plex.serverUrl || '');
+        setSyncFrequencyHours(data.syncFrequencyHours);
+        setTautulliUrl(data.tautulli?.url || '');
+        setTautulliEnabled(data.tautulli?.enabled || false);
+        setOverseerrUrl(data.overseerr?.url || '');
+        setOverseerrFilterEnabled(data.overseerr?.filterEnabled || false);
+        setSelectedTheme(data.uiPreferences.theme as AppTheme);
+        setDefaultMediaType(data.uiPreferences.defaultMediaType);
+        setTvSelectionMode(data.uiPreferences.tvSelectionMode);
+      }
 
       try {
         const prefs = await userPreferencesApi.get();
@@ -138,12 +143,27 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           setSpinHistoryRetention(spinHistory.retentionLimit);
           setSpinHistoryStoreSnapshots(spinHistory.storeFilterSnapshot);
         }
-        setAnimationStyle(prefs.preferences.animationStyle ?? data.uiPreferences.animationStyle ?? 'slots');
-        setAnimationSpeed(prefs.preferences.animationSpeed ?? data.uiPreferences.animationSpeed ?? 'normal');
+        if (prefs.preferences.theme) {
+          setSelectedTheme(prefs.preferences.theme as AppTheme);
+        }
+        if (prefs.preferences.defaultMediaType) {
+          setDefaultMediaType(prefs.preferences.defaultMediaType);
+        }
+        if (prefs.preferences.tvSelectionMode) {
+          setTvSelectionMode(prefs.preferences.tvSelectionMode);
+        }
+        setAnimationStyle(
+          prefs.preferences.animationStyle ?? adminUiDefaults?.animationStyle ?? 'slots'
+        );
+        setAnimationSpeed(
+          prefs.preferences.animationSpeed ?? adminUiDefaults?.animationSpeed ?? 'normal'
+        );
       } catch (prefsErr) {
         console.warn('[SettingsModal] Could not load user preferences:', prefsErr);
-        setAnimationStyle(data.uiPreferences.animationStyle ?? 'slots');
-        setAnimationSpeed(data.uiPreferences.animationSpeed ?? 'normal');
+        if (adminUiDefaults) {
+          setAnimationStyle(adminUiDefaults.animationStyle ?? 'slots');
+          setAnimationSpeed(adminUiDefaults.animationSpeed ?? 'normal');
+        }
       }
 
       console.log('[SettingsModal] Settings loaded successfully');
@@ -158,7 +178,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isAdmin]);
 
   useEffect(() => {
     if (isOpen && !isAdmin && activeTab !== 'preferences') {
@@ -499,7 +519,12 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         storeFilterSnapshot: spinHistoryStoreSnapshots,
       });
       window.dispatchEvent(new CustomEvent('decidarr:preferences-updated', {
-        detail: { animationStyle, animationSpeed },
+        detail: {
+          animationStyle,
+          animationSpeed,
+          defaultMediaType,
+          tvSelectionMode,
+        },
       }));
       setSuccess('Preferences saved');
     } catch (err) {

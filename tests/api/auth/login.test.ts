@@ -3,6 +3,7 @@ import { clearDatabase } from '../../helpers/mongo';
 import {
   seedConfiguredSettings,
   seedPartialSettings,
+  seedTestUser,
   authenticateTestSession,
   clearTestCookies,
   createJsonRequest,
@@ -73,6 +74,26 @@ describe('Auth and setup API routes', () => {
       expect(res.status).toBe(200);
       expect(body.setupComplete).toBe(false);
       expect(body.hasPlexToken).toBe(false);
+      expect(body.hasPlexServer).toBe(true);
+    });
+
+    it('returns setupComplete true for OAuth-style setup with admin user token only', async () => {
+      const settings = await getOrCreateSettings();
+      settings.plexToken = undefined;
+      settings.plexServerUrl = 'http://192.168.1.10:32400';
+      settings.plexMachineId = 'machine-1';
+      settings.setupComplete = true;
+      await settings.save();
+
+      const adminUser = await seedTestUser({ isAdmin: true, plexUserId: 'oauth-admin-1' });
+      settings.adminUserId = adminUser._id;
+      await settings.save();
+
+      const res = await statusGet();
+      const body = await res.json();
+      expect(res.status).toBe(200);
+      expect(body.setupComplete).toBe(true);
+      expect(body.hasPlexToken).toBe(true);
       expect(body.hasPlexServer).toBe(true);
     });
   });

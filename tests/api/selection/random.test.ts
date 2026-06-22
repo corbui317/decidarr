@@ -11,7 +11,7 @@ import { SAMPLE_LIBRARY_ITEMS } from '../../fixtures/library-items';
 import { LibraryCache } from '@/lib/models/LibraryCache';
 import { WatchedItem } from '@/lib/models/WatchedItem';
 
-const SINGLE_USER_ID = new mongoose.Types.ObjectId('000000000000000000000001');
+let authenticatedUserId: mongoose.Types.ObjectId;
 
 const plexMock = {
   validateToken: vi.fn(),
@@ -57,7 +57,8 @@ describe('Selection API routes', () => {
     await clearDatabase();
     clearTestCookies();
     await seedConfiguredSettings();
-    await authenticateTestSession();
+    const auth = await authenticateTestSession();
+    authenticatedUserId = auth.user._id as mongoose.Types.ObjectId;
     vi.clearAllMocks();
     plexMock.getLibrarySections.mockResolvedValue([
       {
@@ -176,7 +177,7 @@ describe('Selection API routes', () => {
     it('parity: pool count matches random eligibility with unwatched filter', async () => {
       await seedLibraryCache();
       await WatchedItem.create({
-        userId: SINGLE_USER_ID,
+        userId: authenticatedUserId,
         plexId: '1',
         title: 'Inception',
         mediaType: 'movie',

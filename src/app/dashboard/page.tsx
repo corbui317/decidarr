@@ -88,6 +88,9 @@ export default function Dashboard() {
         setAnimationStyle(preferences.animationStyle ?? 'slots');
         setAnimationSpeed(preferences.animationSpeed ?? 'normal');
         setTvSelectionMode(preferences.tvSelectionMode ?? 'show');
+        if (preferences.defaultMediaType) {
+          setMediaType(preferences.defaultMediaType);
+        }
       })
       .catch(() => {});
   }, [isAuthenticated]);
@@ -97,6 +100,8 @@ export default function Dashboard() {
       const detail = (event as CustomEvent<{
         animationStyle?: AnimationStyle;
         animationSpeed?: AnimationSpeed;
+        defaultMediaType?: 'movie' | 'show';
+        tvSelectionMode?: 'show' | 'episode';
       }>).detail;
 
       if (detail?.animationStyle) {
@@ -104,6 +109,12 @@ export default function Dashboard() {
       }
       if (detail?.animationSpeed) {
         setAnimationSpeed(detail.animationSpeed);
+      }
+      if (detail?.defaultMediaType) {
+        setMediaType(detail.defaultMediaType);
+      }
+      if (detail?.tvSelectionMode) {
+        setTvSelectionMode(detail.tvSelectionMode);
       }
     };
 

@@ -9,7 +9,7 @@ import {
   useMemo,
   ReactNode,
 } from 'react';
-import { settingsApi } from '@/lib/api';
+import { settingsApi, authApi, userPreferencesApi } from '@/lib/api';
 
 export type AppTheme = 'dark' | 'light' | 'vegas' | 'macao' | 'poker';
 
@@ -49,15 +49,25 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   // On mount, sync theme from server settings (may update from localStorage default)
   useEffect(() => {
     settingsApi.getStatus().then(status => {
-      if (status.setupComplete) {
-        settingsApi.getSettings().then(settings => {
-          const serverTheme = settings.uiPreferences.theme as AppTheme;
-          if (serverTheme && serverTheme !== theme) {
-            setThemeState(serverTheme);
-            localStorage.setItem(STORAGE_KEY, serverTheme);
+      if (!status.setupComplete) return;
+
+      authApi.getCurrentUser()
+        .then(({ preferences }) => {
+          const userTheme = preferences.theme as AppTheme;
+          if (userTheme && userTheme !== theme) {
+            setThemeState(userTheme);
+            localStorage.setItem(STORAGE_KEY, userTheme);
           }
-        }).catch(() => {/* settings not available yet */});
-      }
+        })
+        .catch(() => {
+          settingsApi.getSettings().then(settings => {
+            const serverTheme = settings.uiPreferences.theme as AppTheme;
+            if (serverTheme && serverTheme !== theme) {
+              setThemeState(serverTheme);
+              localStorage.setItem(STORAGE_KEY, serverTheme);
+            }
+          }).catch(() => {/* settings not available yet */});
+        });
     }).catch(() => {/* status not available yet */});
   // Only run once on mount
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -68,12 +78,14 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     localStorage.setItem(STORAGE_KEY, newTheme);
   }, []);
 
-  // Persist theme to server settings
+  // Persist theme to user preferences (admin defaults updated separately in SettingsModal)
   const saveTheme = useCallback(async (newTheme: AppTheme) => {
     setTheme(newTheme);
-    await settingsApi.updateSettings({
-      uiPreferences: { theme: newTheme },
-    });
+    try {
+      await userPreferencesApi.update({ theme: newTheme });
+    } catch {
+      // Local theme still applied; server sync is best-effort
+    }
   }, [setTheme]);
 
   const value = useMemo(

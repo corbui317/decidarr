@@ -5,13 +5,17 @@ import {
   authenticateTestSession,
   clearTestCookies,
   createJsonRequest,
+  seedTestUser,
+  createModernSessionToken,
 } from '../helpers/auth';
+import { setTestCookie } from '../helpers/cookies';
 import { WatchedItem } from '@/lib/models/WatchedItem';
 import { SpinHistoryEntry } from '@/lib/models/SpinHistoryEntry';
 import { IUser } from '@/lib/models/User';
 
 import { NextRequest } from 'next/server';
 import { GET as watchedGet } from '@/app/api/watched/route';
+import { POST as watchedPost, DELETE as watchedDelete } from '@/app/api/watched/[plexId]/route';
 import {
   GET as spinHistoryGet,
   POST as spinHistoryPost,
@@ -64,6 +68,46 @@ describe('Watched and spin-history API routes', () => {
       const body = await res.json();
       expect(body.items).toHaveLength(1);
       expect(body.pagination.total).toBe(2);
+    });
+  });
+
+  describe('POST/DELETE /api/watched/[plexId]', () => {
+    it('allows approved non-admin user to mark and unmark watched', async () => {
+      const nonAdmin = await seedTestUser({
+        plexUserId: 'plex-friend-1',
+        plexUsername: 'friend',
+        isAdmin: false,
+        isApproved: true,
+      });
+      const token = await createModernSessionToken(nonAdmin);
+      setTestCookie('decidarr_session', token);
+
+      const postReq = createJsonRequest('http://localhost/api/watched/plex-99', 'POST', {
+        mediaType: 'movie',
+        title: 'Friend Movie',
+      });
+      const postRes = await watchedPost(postReq as never, {
+        params: Promise.resolve({ plexId: 'plex-99' }),
+      });
+      expect(postRes.status).toBe(200);
+
+      const count = await WatchedItem.countDocuments({
+        userId: nonAdmin._id,
+        plexId: 'plex-99',
+      });
+      expect(count).toBe(1);
+
+      const deleteReq = createJsonRequest('http://localhost/api/watched/plex-99', 'DELETE');
+      const deleteRes = await watchedDelete(deleteReq as never, {
+        params: Promise.resolve({ plexId: 'plex-99' }),
+      });
+      expect(deleteRes.status).toBe(200);
+
+      const afterCount = await WatchedItem.countDocuments({
+        userId: nonAdmin._id,
+        plexId: 'plex-99',
+      });
+      expect(afterCount).toBe(0);
     });
   });
 

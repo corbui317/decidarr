@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin, isAuthError, authErrorStatus } from '@/lib/auth';
+import { requireUser, isAuthError, authErrorStatus } from '@/lib/auth';
 import { connectDB } from '@/lib/db';
 import { WatchedItem } from '@/lib/models/WatchedItem';
 
@@ -8,7 +8,7 @@ export async function POST(
   { params }: { params: Promise<{ plexId: string }> }
 ) {
   try {
-    const auth = await requireAdmin();
+    const auth = await requireUser();
     const { plexId } = await params;
     const { mediaType, title } = await request.json();
 
@@ -42,7 +42,7 @@ export async function DELETE(
   { params }: { params: Promise<{ plexId: string }> }
 ) {
   try {
-    const auth = await requireAdmin();
+    const auth = await requireUser();
     const { plexId } = await params;
 
     await connectDB();

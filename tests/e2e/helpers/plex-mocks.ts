@@ -9,9 +9,8 @@ export async function resetE2eDatabase(request: APIRequestContext) {
 
 export async function completeSetupWizard(page: Page) {
   await page.getByRole('button', { name: /Get Started/i }).click();
-  await page.getByPlaceholder('Enter your Plex token').fill('e2e-test-plex-token-valid');
-  await page.getByRole('button', { name: 'Validate' }).click();
-  await page.getByRole('button', { name: 'Next' }).click({ timeout: 15000 });
+  await page.getByRole('button', { name: /Sign in with Plex/i }).click();
+  await page.getByRole('heading', { name: 'TMDB Integration' }).waitFor({ timeout: 15000 });
   await page.getByRole('button', { name: /Skip|Complete Setup/i }).click();
   await page.getByRole('button', { name: 'Start Exploring' }).click();
   await page.waitForURL(/\/dashboard/, { timeout: 30000 });
