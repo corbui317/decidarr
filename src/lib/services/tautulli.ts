@@ -111,10 +111,11 @@ export class TautulliService {
     userId?: number,
     mediaType?: 'movie' | 'show' | 'episode',
     length: number = 500,
-    strict: boolean = false
+    strict: boolean = false,
+    start: number = 0
   ): Promise<TautulliHistoryItem[]> {
     try {
-      const params: Record<string, string | number> = { length };
+      const params: Record<string, string | number> = { length, start };
       if (userId !== undefined) params.user_id = userId;
       if (mediaType) params.media_type = mediaType;
 
@@ -144,7 +145,7 @@ export class TautulliService {
           user: h.user as string,
         }));
 
-      logger.debug('Fetched watch history', { count: history.length, userId, mediaType });
+      logger.debug('Fetched watch history', { count: history.length, userId, mediaType, start });
       return history;
     } catch (err) {
       logger.error('Failed to get watch history', { error: (err as Error).message });
@@ -153,14 +154,28 @@ export class TautulliService {
     }
   }
 
-  async getWatchedItemsForUser(
+  async getWatchHistoryPaged(
     userId: number,
-    mediaType?: 'movie' | 'show'
-  ): Promise<Map<string, TautulliHistoryItem>> {
-    const history = await this.getWatchHistory(userId, mediaType, 1000);
+    mediaType: 'movie' | 'episode',
+    pageSize: number = 500
+  ): Promise<TautulliHistoryItem[]> {
+    const all: TautulliHistoryItem[] = [];
+    let start = 0;
+
+    while (true) {
+      const page = await this.getWatchHistory(userId, mediaType, pageSize, true, start);
+      all.push(...page);
+      if (page.length < pageSize) break;
+      start += pageSize;
+    }
+
+    return all;
+  }
+
+  dedupeWatchHistory(items: TautulliHistoryItem[]): Map<string, TautulliHistoryItem> {
     const watchedMap = new Map<string, TautulliHistoryItem>();
 
-    for (const item of history) {
+    for (const item of items) {
       if (item.media_type === 'movie') {
         const existing = watchedMap.get(item.rating_key);
         if (!existing || item.stopped > existing.stopped) {
@@ -174,6 +189,21 @@ export class TautulliService {
       }
     }
 
+    return watchedMap;
+  }
+
+  async getWatchedItemsForUser(
+    userId: number,
+    mediaType?: 'movie' | 'show'
+  ): Promise<Map<string, TautulliHistoryItem>> {
+    const movieHistory = mediaType === 'show'
+      ? []
+      : await this.getWatchHistoryPaged(userId, 'movie');
+    const episodeHistory = mediaType === 'movie'
+      ? []
+      : await this.getWatchHistoryPaged(userId, 'episode');
+
+    const watchedMap = this.dedupeWatchHistory([...movieHistory, ...episodeHistory]);
     logger.debug('Built watched map', { userId, uniqueItems: watchedMap.size });
     return watchedMap;
   }

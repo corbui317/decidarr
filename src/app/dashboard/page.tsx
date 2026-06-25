@@ -132,25 +132,42 @@ export default function Dashboard() {
       return;
     }
 
+    const controller = new AbortController();
+    let requestId = 0;
+
     const fetchPoolCount = async () => {
+      const id = ++requestId;
       setLoadingPoolCount(true);
       try {
-        const data = await selectionApi.getPoolCount(selectedLibraries, mediaType, filters);
+        const data = await selectionApi.getPoolCount(
+          selectedLibraries,
+          mediaType,
+          filters,
+          controller.signal
+        );
+        if (id !== requestId) return;
         setPoolCount(data.matchingItems);
         setTotalItems(data.totalItems);
         setEmptyReason(data.emptyReason);
         setDataStats(data.dataStats);
         setOverseerrWarning(data.overseerrWarning ?? null);
       } catch (err) {
+        if (id !== requestId) return;
+        if (err instanceof DOMException && err.name === 'AbortError') return;
         console.error('Failed to fetch pool count:', err);
         setPoolCount(null);
       } finally {
-        setLoadingPoolCount(false);
+        if (id === requestId) {
+          setLoadingPoolCount(false);
+        }
       }
     };
 
     const timeoutId = setTimeout(fetchPoolCount, 300);
-    return () => clearTimeout(timeoutId);
+    return () => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
   }, [selectedLibraries, mediaType, filters]);
 
   const handleSpin = useCallback(async () => {
@@ -181,7 +198,8 @@ export default function Dashboard() {
           plexId: selection.plexId,
           title: selection.title,
           mediaType: (selection.type as 'movie' | 'show' | 'episode') || 'movie',
-          posterUrl: typeof selection.posterUrl === 'string' ? selection.posterUrl : undefined,
+          thumbPath:
+            typeof selection.thumbPath === 'string' ? selection.thumbPath : undefined,
           year: typeof selection.year === 'number' ? selection.year : undefined,
           libraryIds: selectedLibraries,
           filtersSnapshot: filters,
@@ -227,6 +245,7 @@ export default function Dashboard() {
         type: entry.mediaType,
         year: entry.year,
         posterUrl: entry.posterUrl,
+        thumbPath: entry.thumbPath,
       },
       playLinks: null,
       stats: { totalMatches: entry.poolSizeAtSpin ?? 0 },

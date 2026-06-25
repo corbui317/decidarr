@@ -56,16 +56,41 @@ export interface PlexCollection {
   ratingKey: string;
   title: string;
   thumb?: string;
+  thumbPath?: string;
   childCount: number;
   addedAt?: Date;
 }
 
+function extractTmdbIdFromGuidString(guid: string): string | undefined {
+  const pathMatch = guid.match(/(?:themoviedb|tmdb):\/\/(?:movie|show|tv)\/(\d+)/i);
+  if (pathMatch) return pathMatch[1];
+
+  const queryMatch = guid.match(/(?:themoviedb|tmdb):\/\/(?:movie|show|tv)\?[^#]*\bid=(\d+)/i);
+  if (queryMatch) return queryMatch[1];
+
+  return undefined;
+}
+
 export function parseTmdbIdFromPlexGuid(guid: unknown): string | undefined {
-  if (typeof guid !== 'string') return undefined;
-  const match = guid.match(/themoviedb:\/\/(movie|show|tv)\?.*[?&]id=(\d+)/i);
-  if (match) return match[2];
-  const alt = guid.match(/themoviedb:\/\/(movie|show|tv)\/(\d+)/i);
-  if (alt) return alt[2];
+  if (typeof guid === 'string') {
+    return extractTmdbIdFromGuidString(guid);
+  }
+
+  if (Array.isArray(guid)) {
+    for (const entry of guid) {
+      if (typeof entry === 'string') {
+        const id = extractTmdbIdFromGuidString(entry);
+        if (id) return id;
+      } else if (entry && typeof entry === 'object') {
+        const idField = (entry as { id?: unknown }).id;
+        if (typeof idField === 'string') {
+          const id = extractTmdbIdFromGuidString(idField);
+          if (id) return id;
+        }
+      }
+    }
+  }
+
   return undefined;
 }
 
@@ -74,8 +99,13 @@ export interface PlexItem {
   title: string;
   tmdbId?: string;
   year?: number;
+  /** @deprecated Use thumbPath with /api/plex/image proxy */
   posterUrl?: string;
+  /** Plex-relative thumb path, e.g. /library/metadata/123/thumb/abc */
+  thumbPath?: string;
+  /** @deprecated Use artPath with /api/plex/image proxy */
   art?: string;
+  artPath?: string;
   genres?: string[];
   summary?: string;
   rating?: number;
@@ -270,10 +300,10 @@ export class PlexService {
     if (!this.serverUrl) throw new Error('Server URL not set');
 
     logger.debug('Fetching library items', { sectionId });
-    const url = `${this.serverUrl}/library/sections/${sectionId}/all?X-Plex-Token=${this.token}`;
-    const response = await this.fetchWithTimeout(url, {
-      headers: { Accept: 'application/json' },
-    });
+    const response = await this.fetchWithTimeout(
+      `${this.serverUrl}/library/sections/${sectionId}/all`,
+      { headers: { ...this.headers, Accept: 'application/json' } }
+    );
 
     if (!response.ok) {
       logger.warn('Failed to get library items', { sectionId, status: response.status });
@@ -292,8 +322,8 @@ export class PlexService {
 
     logger.debug('Fetching item metadata', { ratingKey });
     const response = await this.fetchWithTimeout(
-      `${this.serverUrl}/library/metadata/${ratingKey}?X-Plex-Token=${this.token}`,
-      { headers: { Accept: 'application/json' } }
+      `${this.serverUrl}/library/metadata/${ratingKey}`,
+      { headers: { ...this.headers, Accept: 'application/json' } }
     );
 
     if (!response.ok) {
@@ -311,8 +341,8 @@ export class PlexService {
 
     logger.debug('Fetching show episodes', { showRatingKey });
     const response = await this.fetchWithTimeout(
-      `${this.serverUrl}/library/metadata/${showRatingKey}/allLeaves?X-Plex-Token=${this.token}`,
-      { headers: { Accept: 'application/json' } }
+      `${this.serverUrl}/library/metadata/${showRatingKey}/allLeaves`,
+      { headers: { ...this.headers, Accept: 'application/json' } }
     );
 
     if (!response.ok) {
@@ -331,20 +361,27 @@ export class PlexService {
       summary: ep.summary as string,
       duration: ep.duration as number,
       rating: ep.rating as number,
-      thumb: ep.thumb ? `${this.serverUrl}${ep.thumb}?X-Plex-Token=${this.token}` : null,
+      thumb: ep.thumb ? `${ep.thumb}` : null,
+      thumbPath: ep.thumb ? String(ep.thumb) : null,
     }));
   }
 
   private mapPlexItem(item: Record<string, unknown>, detailed = false): PlexItem {
     const guid = item.guid as string | undefined;
-    const tmdbId = parseTmdbIdFromPlexGuid(guid);
+    const guidArray = item.Guid as { id?: string }[] | undefined;
+    const tmdbId =
+      parseTmdbIdFromPlexGuid(guid) ??
+      parseTmdbIdFromPlexGuid(guidArray);
+
+    const thumb = item.thumb as string | undefined;
+    const art = item.art as string | undefined;
 
     const base: PlexItem = {
       plexId: item.ratingKey as string,
       title: item.title as string,
       tmdbId,
       year: item.year as number | undefined,
-      posterUrl: item.thumb ? `${this.serverUrl}${item.thumb}?X-Plex-Token=${this.token}` : undefined,
+      thumbPath: thumb || undefined,
       genres: item.Genre ? (item.Genre as { tag: string }[]).map((g) => g.tag) : [],
       summary: item.summary as string | undefined,
       rating: item.rating as number | undefined,
@@ -361,7 +398,7 @@ export class PlexService {
     }
 
     if (detailed) {
-      base.art = item.art ? `${this.serverUrl}${item.art}?X-Plex-Token=${this.token}` : undefined;
+      base.artPath = art || undefined;
       base.tagline = item.tagline as string | undefined;
       base.directors = item.Director ? (item.Director as { tag: string }[]).map((d) => d.tag) : [];
       base.actors = item.Role ? (item.Role as { tag: string }[]).slice(0, 10).map((r) => r.tag) : [];
@@ -375,10 +412,10 @@ export class PlexService {
     if (!this.serverUrl) throw new Error('Server URL not set');
 
     try {
-      const url = `${this.serverUrl}/library/sections/${sectionId}/collections?X-Plex-Token=${this.token}`;
-      const response = await this.fetchWithTimeout(url, {
-        headers: { Accept: 'application/json' },
-      });
+      const response = await this.fetchWithTimeout(
+        `${this.serverUrl}/library/sections/${sectionId}/collections`,
+        { headers: { ...this.headers, Accept: 'application/json' } }
+      );
 
       if (!response.ok) {
         logger.warn('Failed to get collections', { sectionId, status: response.status });
@@ -392,7 +429,7 @@ export class PlexService {
       return collections.map((c: Record<string, unknown>) => ({
         ratingKey: c.ratingKey as string,
         title: c.title as string,
-        thumb: c.thumb ? `${this.serverUrl}${c.thumb}?X-Plex-Token=${this.token}` : undefined,
+        thumbPath: c.thumb ? String(c.thumb) : undefined,
         childCount: (c.childCount as number) || 0,
         addedAt: c.addedAt ? new Date((c.addedAt as number) * 1000) : undefined,
       }));
@@ -406,10 +443,10 @@ export class PlexService {
     if (!this.serverUrl) throw new Error('Server URL not set');
 
     try {
-      const url = `${this.serverUrl}/library/collections/${collectionRatingKey}/children?X-Plex-Token=${this.token}`;
-      const response = await this.fetchWithTimeout(url, {
-        headers: { Accept: 'application/json' },
-      });
+      const response = await this.fetchWithTimeout(
+        `${this.serverUrl}/library/collections/${collectionRatingKey}/children`,
+        { headers: { ...this.headers, Accept: 'application/json' } }
+      );
 
       if (!response.ok) {
         logger.warn('Failed to get collection items', { collectionRatingKey, status: response.status });

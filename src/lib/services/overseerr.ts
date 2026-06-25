@@ -63,7 +63,7 @@ export class OverseerrService {
 
     while (page < totalPages) {
       const response = await this.fetchWithTimeout(
-        `/media?take=${PAGE_SIZE}&skip=${page}&filter=all&sort=added`
+        `/media?take=${PAGE_SIZE}&skip=${page * PAGE_SIZE}&filter=all&sort=added`
       );
 
       if (!response.ok) {

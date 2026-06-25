@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
-import { settingsApi, authApi, formatPlexLoginError } from '@/lib/api';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { settingsApi, authApi, formatPlexLoginError, setStoredSetupSecret } from '@/lib/api';
 import LoadingSpinner from './LoadingSpinner';
 
 interface SetupWizardProps {
@@ -23,6 +23,7 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
 
   const [tmdbApiKey, setTmdbApiKey] = useState('');
   const [tmdbValid, setTmdbValid] = useState<boolean | null>(null);
+  const [setupSecret, setSetupSecret] = useState('');
 
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
@@ -31,13 +32,19 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
     }
   }, []);
 
+  useEffect(() => stopPolling, [stopPolling]);
+
   const handlePlexOAuth = async () => {
     setLoading(true);
     setError(null);
     stopPolling();
 
+    if (setupSecret.trim()) {
+      setStoredSetupSecret(setupSecret.trim());
+    }
+
     try {
-      const { authUrl, pinId } = await authApi.startPlexLogin();
+      const { authUrl, state } = await authApi.startPlexLogin();
       window.open(authUrl, '_blank', 'noopener,noreferrer');
 
       const startedAt = Date.now();
@@ -50,7 +57,7 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
         }
 
         try {
-          const result = await authApi.pollPlexLogin(pinId);
+          const result = await authApi.pollPlexLogin(state);
           if (!result.authorized) return;
 
           stopPolling();
@@ -166,6 +173,20 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
               </div>
             )}
 
+            <div className="mb-4">
+              <label htmlFor="setup-secret" className="block text-sm text-gray-400 mb-1">
+                Setup key (required on public production installs)
+              </label>
+              <input
+                id="setup-secret"
+                type="password"
+                value={setupSecret}
+                onChange={(e) => setSetupSecret(e.target.value)}
+                placeholder="Optional for local development"
+                className="w-full bg-decidarr-dark border border-gray-600 rounded-lg px-3 py-2 text-white text-sm"
+              />
+            </div>
+
             {plexConnected && plexUsername && (
               <div className="bg-green-500/10 border border-green-500/50 rounded-lg p-3 mb-4">
                 <p className="text-green-400 text-sm">
@@ -245,7 +266,7 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
                 >
                   Back
                 </button>
-                {tmdbApiKey.trim() && tmdbValid === null ? (
+                {tmdbApiKey.trim() && tmdbValid !== true ? (
                   <button
                     onClick={handleTestTmdb}
                     disabled={loading}

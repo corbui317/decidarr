@@ -6,6 +6,50 @@ import { PlexService } from '@/lib/services/plex';
 import { TMDbService } from '@/lib/services/tmdb';
 import { enrichWithOverseerr } from '@/lib/services/overseerr-sync';
 import type { ILibraryItem } from '@/lib/models/LibraryCache';
+import { sanitizeLibraryItemForClient } from '@/lib/plex-image';
+
+const ENRICHMENT_FIELDS = [
+  'tmdbId',
+  'contentRating',
+  'rating',
+  'tmdbRating',
+  'studio',
+  'networks',
+  'studios',
+  'enrichedAt',
+  'overseerrStatus',
+  'overseerrSyncedAt',
+] as const;
+
+function mergeExistingEnrichment(
+  items: ILibraryItem[],
+  existingItems?: ILibraryItem[]
+): void {
+  if (!existingItems?.length) return;
+
+  const byPlexId = new Map(existingItems.map((item) => [item.plexId, item]));
+  for (const item of items) {
+    const existing = byPlexId.get(item.plexId);
+    if (!existing) continue;
+
+    for (const field of ENRICHMENT_FIELDS) {
+      const freshValue = item[field];
+      const existingValue = existing[field];
+      const freshMissing =
+        freshValue == null ||
+        freshValue === '' ||
+        (Array.isArray(freshValue) && freshValue.length === 0);
+
+      if (freshMissing && existingValue != null) {
+        (item as Record<string, unknown>)[field] = existingValue;
+      }
+    }
+  }
+}
+
+function isItemUnenriched(item: ILibraryItem): boolean {
+  return !item.enrichedAt || !item.tmdbId;
+}
 
 export async function GET(
   request: NextRequest,
@@ -34,7 +78,7 @@ export async function GET(
 
       if (cache && !cache.isExpired()) {
         return NextResponse.json({
-          items: cache.items,
+          items: cache.items.map((item) => sanitizeLibraryItemForClient(item as unknown as Record<string, unknown>)),
           fromCache: true,
           lastSyncedAt: cache.lastSyncedAt,
         });
@@ -60,56 +104,83 @@ export async function GET(
       libraryId: id,
     }).lean();
 
+    mergeExistingEnrichment(items, existingCache?.items);
+
     const tmdbApiKey = await getTmdbApiKey();
     if (tmdbApiKey) {
       const tmdbService = new TMDbService(tmdbApiKey);
-      const enrichLimit = Math.min(items.length, 50);
-      const itemsToEnrich = items.slice(0, enrichLimit) as unknown as Record<string, unknown>[];
+      const unenrichedItems = items.filter(isItemUnenriched);
+      const itemsToEnrich = unenrichedItems.slice(0, 50) as unknown as Record<string, unknown>[];
 
-      try {
-        const enrichments = await tmdbService.enrichBatch(
-          itemsToEnrich.map((item) => ({
-            title: item.title as string,
-            year: item.year as number | undefined,
-            contentRating: item.contentRating as string | undefined,
-            rating: item.rating as number | undefined,
-            studio: item.studio as string | undefined,
-          })),
-          section.type as 'movie' | 'show'
-        );
+      if (itemsToEnrich.length > 0) {
+        try {
+          const enrichments = await tmdbService.enrichBatch(
+            itemsToEnrich.map((item) => ({
+              title: item.title as string,
+              year: item.year as number | undefined,
+              contentRating: item.contentRating as string | undefined,
+              rating: item.rating as number | undefined,
+              studio: item.studio as string | undefined,
+            })),
+            section.type as 'movie' | 'show'
+          );
 
-        enrichments.forEach((enrichment, i) => {
-          const item = itemsToEnrich[i];
-          if (enrichment.tmdbId && !item.tmdbId) {
-            item.tmdbId = String(enrichment.tmdbId);
-          }
-          if (enrichment.certification && !item.contentRating) {
-            item.contentRating = enrichment.certification;
-          }
-          if (enrichment.rating && !item.rating) {
-            item.rating = enrichment.rating;
-            item.tmdbRating = enrichment.rating;
-          }
-          if (!item.studio) {
-            if (section.type === 'show' && enrichment.networks?.length) {
-              item.studio = enrichment.networks[0];
-              item.networks = enrichment.networks;
-            } else if (enrichment.studios?.length) {
-              item.studio = enrichment.studios[0];
-              item.studios = enrichment.studios;
+          enrichments.forEach((enrichment, i) => {
+            const item = itemsToEnrich[i];
+            if (enrichment.tmdbId && !item.tmdbId) {
+              item.tmdbId = String(enrichment.tmdbId);
+            }
+            if (enrichment.certification && !item.contentRating) {
+              item.contentRating = enrichment.certification;
+            }
+            if (enrichment.rating && !item.rating) {
+              item.rating = enrichment.rating;
+              item.tmdbRating = enrichment.rating;
+            }
+            if (!item.studio) {
+              if (section.type === 'show' && enrichment.networks?.length) {
+                item.studio = enrichment.networks[0];
+                item.networks = enrichment.networks;
+              } else if (enrichment.studios?.length) {
+                item.studio = enrichment.studios[0];
+                item.studios = enrichment.studios;
+              }
+            }
+            item.enrichedAt = new Date();
+          });
+
+          for (let i = 0; i < items.length; i++) {
+            const enrichIndex = itemsToEnrich.findIndex(
+              (candidate) => candidate.plexId === items[i].plexId
+            );
+            if (enrichIndex === -1) continue;
+            const source = itemsToEnrich[enrichIndex] as unknown as ILibraryItem;
+            if (source.tmdbId && !items[i].tmdbId) {
+              items[i].tmdbId = source.tmdbId;
+            }
+            if (source.contentRating && !items[i].contentRating) {
+              items[i].contentRating = source.contentRating;
+            }
+            if (source.rating && !items[i].rating) {
+              items[i].rating = source.rating;
+              items[i].tmdbRating = source.tmdbRating;
+            }
+            if (source.studio && !items[i].studio) {
+              items[i].studio = source.studio;
+            }
+            if (source.networks?.length && !items[i].networks?.length) {
+              items[i].networks = source.networks;
+            }
+            if (source.studios?.length && !items[i].studios?.length) {
+              items[i].studios = source.studios;
+            }
+            if (source.enrichedAt) {
+              items[i].enrichedAt = source.enrichedAt;
             }
           }
-          item.enrichedAt = new Date();
-        });
-
-        for (let i = 0; i < items.length; i++) {
-          const source = itemsToEnrich[i] as unknown as ILibraryItem | undefined;
-          if (source?.tmdbId && !items[i].tmdbId) {
-            items[i].tmdbId = source.tmdbId;
-          }
+        } catch (err) {
+          console.error('Batch enrichment error:', err);
         }
-      } catch (err) {
-        console.error('Batch enrichment error:', err);
       }
     }
 
@@ -135,7 +206,7 @@ export async function GET(
     );
 
     return NextResponse.json({
-      items,
+      items: items.map((item) => sanitizeLibraryItemForClient(item as unknown as Record<string, unknown>)),
       fromCache: false,
       lastSyncedAt: new Date(),
     });

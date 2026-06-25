@@ -3,11 +3,28 @@
 import type { Filters } from '@/types/filters';
 
 const API_BASE = '/api';
+const SETUP_SECRET_STORAGE_KEY = 'decidarr_setup_secret';
+
+export function getStoredSetupSecret(): string | null {
+  if (typeof sessionStorage === 'undefined') return null;
+  return sessionStorage.getItem(SETUP_SECRET_STORAGE_KEY);
+}
+
+export function setStoredSetupSecret(secret: string): void {
+  if (typeof sessionStorage === 'undefined') return;
+  sessionStorage.setItem(SETUP_SECRET_STORAGE_KEY, secret);
+}
+
+function setupSecretHeaders(): Record<string, string> {
+  const secret = getStoredSetupSecret();
+  return secret ? { 'X-Decidarr-Setup-Secret': secret } : {};
+}
 
 interface RequestOptions {
   method?: string;
   body?: unknown;
   headers?: Record<string, string>;
+  signal?: AbortSignal;
 }
 
 // Custom error class for authentication errors
@@ -73,6 +90,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
       ...headers,
     },
     credentials: 'include',
+    signal: options.signal,
   };
 
   if (body) {
@@ -112,10 +130,11 @@ export const authApi = {
   startPlexLogin: () =>
     request<{ authUrl: string; pinId: number; state: string }>('/auth/plex/start', {
       method: 'POST',
+      headers: setupSecretHeaders(),
     }),
-  pollPlexLogin: async (pinId?: number) => {
+  pollPlexLogin: async (state: string) => {
     const response = await fetch(
-      `${API_BASE}/auth/plex/poll${pinId ? `?pinId=${pinId}` : ''}`,
+      `${API_BASE}/auth/plex/poll?state=${encodeURIComponent(state)}`,
       { credentials: 'include' }
     );
     const data = await response.json().catch(() => ({}));
@@ -219,7 +238,12 @@ export const selectionApi = {
     request<{ categories: { id: string; name: string; icon: string }[] }>(
       '/selection/awards/categories'
     ),
-  getPoolCount: (libraryIds: string[], mediaType: string, filters: unknown) =>
+  getPoolCount: (
+    libraryIds: string[],
+    mediaType: string,
+    filters: unknown,
+    signal?: AbortSignal
+  ) =>
     request<{
       totalItems: number;
       matchingItems: number;
@@ -243,6 +267,7 @@ export const selectionApi = {
     }>('/selection/pool-count', {
       method: 'POST',
       body: { libraryIds, mediaType, filters },
+      signal,
     }),
 };
 
@@ -443,6 +468,7 @@ export interface SpinHistoryEntry {
   title: string;
   mediaType: 'movie' | 'show' | 'episode';
   posterUrl?: string;
+  thumbPath?: string;
   year?: number;
   libraryIds: string[];
   filtersSnapshot?: Filters;
@@ -457,7 +483,7 @@ export interface CreateSpinHistoryPayload {
   plexId: string;
   title: string;
   mediaType: 'movie' | 'show' | 'episode';
-  posterUrl?: string;
+  thumbPath?: string;
   year?: number;
   libraryIds: string[];
   filtersSnapshot?: Filters;

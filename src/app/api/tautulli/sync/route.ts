@@ -65,10 +65,8 @@ export async function POST() {
     }
 
     const decidarrUserId = user._id;
-    const movieHistory = await service.getWatchHistory(tautulliUserId, 'movie', 1000, true);
-    const showHistory = await service.getWatchHistory(tautulliUserId, undefined, 1000, true);
-
-    const episodeHistory = showHistory.filter((h) => h.media_type === 'episode');
+    const movieHistory = await service.getWatchHistoryPaged(tautulliUserId, 'movie');
+    const episodeHistory = await service.getWatchHistoryPaged(tautulliUserId, 'episode');
 
     const showsWatched = new Map<string, { title: string; watchedAt: Date; userId: number; username: string }>();
     for (const ep of episodeHistory) {
