@@ -1,7 +1,13 @@
 import type { Page, APIRequestContext } from '@playwright/test';
 
 export async function resetE2eDatabase(request: APIRequestContext) {
-  const res = await request.post('/api/test/reset');
+  const headers: Record<string, string> = {};
+  const secret = process.env.E2E_TEST_RESET_SECRET;
+  if (secret) {
+    headers['X-E2E-Reset-Secret'] = secret;
+  }
+
+  const res = await request.post('/api/test/reset', { headers });
   if (!res.ok()) {
     throw new Error(`Failed to reset E2E database: ${res.status()}`);
   }

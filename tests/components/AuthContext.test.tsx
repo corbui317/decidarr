@@ -37,7 +37,6 @@ describe('AuthContext', () => {
       hasPlexToken: false,
       hasPlexServer: false,
       hasTmdbKey: false,
-      plexUsername: null,
     });
 
     render(
@@ -58,10 +57,14 @@ describe('AuthContext', () => {
       hasPlexToken: true,
       hasPlexServer: true,
       hasTmdbKey: false,
-      plexUsername: 'testuser',
     });
     vi.mocked(authApi.getCurrentUser).mockResolvedValue({
-      user: { username: 'testuser', serverUrl: 'http://192.168.1.10:32400' },
+      user: {
+        id: 'user-1',
+        username: 'testuser',
+        serverUrl: 'http://192.168.1.10:32400',
+        isAdmin: false,
+      },
       preferences: { theme: 'dark', defaultMediaType: 'movie', tvSelectionMode: 'show' },
     });
 
@@ -83,7 +86,6 @@ describe('AuthContext', () => {
       hasPlexToken: true,
       hasPlexServer: true,
       hasTmdbKey: false,
-      plexUsername: 'testuser',
     });
     vi.mocked(authApi.getCurrentUser).mockRejectedValue(new Error('Unauthorized'));
 

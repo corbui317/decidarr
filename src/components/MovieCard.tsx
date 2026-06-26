@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { watchedApi } from '@/lib/api';
+import type { WatchedMediaType } from '@/lib/validation/watched';
 import { resolveItemImageUrls } from '@/lib/plex-image';
 
 interface Item {
@@ -127,7 +128,7 @@ export default function MovieCard({ item, tmdb, isWatched = false, onWatchedChan
         await watchedApi.markUnwatched(item.plexId);
         setWatched(false);
       } else {
-        await watchedApi.markWatched(item.plexId, item.type, item.title);
+        await watchedApi.markWatched(item.plexId, item.type as WatchedMediaType, item.title);
         setWatched(true);
       }
       onWatchedChange?.(!watched);

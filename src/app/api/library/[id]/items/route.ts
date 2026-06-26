@@ -41,7 +41,7 @@ function mergeExistingEnrichment(
         (Array.isArray(freshValue) && freshValue.length === 0);
 
       if (freshMissing && existingValue != null) {
-        (item as Record<string, unknown>)[field] = existingValue;
+        (item as unknown as Record<string, unknown>)[field] = existingValue;
       }
     }
   }
