@@ -1,17 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PlexService } from '@/lib/services/plex';
-import { validatePlexUrl } from '@/lib/auth';
+import { requireAdmin, isAuthError, authErrorStatus } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
+import { assertSetupSecretAllowed } from '@/lib/security/setup-secret';
+import { assertSafeServiceUrl, allowPrivateServiceUrls } from '@/lib/security/service-url';
+import { getOrCreateSettings } from '@/lib/models/Settings';
+import { connectDB } from '@/lib/db';
 
 const logger = createLogger('API:TestPlex');
 
-// POST /api/settings/test-plex - Test Plex connection
-// This endpoint is intentionally open (no session required) because:
-// - During initial setup, there is no session yet
-// - During reconfiguration, the Plex token itself IS the credential being tested
-// The token is provided in the request body and validated against plex.tv
 export async function POST(request: NextRequest) {
   try {
+    await connectDB();
+    const settings = await getOrCreateSettings();
+
+    if (!settings.setupComplete) {
+      const setupCheck = await assertSetupSecretAllowed(request);
+      if (!setupCheck.ok) {
+        return NextResponse.json(
+          { valid: false, error: setupCheck.error, code: setupCheck.code },
+          { status: setupCheck.status }
+        );
+      }
+    } else {
+      await requireAdmin();
+    }
+
     logger.debug('Test Plex request received');
 
     const body = await request.json();
@@ -24,18 +38,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate plexServerUrl if provided
     if (plexServerUrl) {
-      const urlCheck = validatePlexUrl(plexServerUrl);
+      const urlCheck = await assertSafeServiceUrl(plexServerUrl, {
+        allowPrivateNetworks: allowPrivateServiceUrls(),
+      });
       if (!urlCheck.valid) {
         return NextResponse.json(
-          { valid: false, error: `Invalid server URL: ${urlCheck.error}` },
+          { valid: false, error: urlCheck.error || 'Invalid or disallowed service URL' },
           { status: 400 }
         );
       }
     }
 
-    // Validate Plex token against plex.tv
     logger.debug('Validating Plex token');
     const plexService = new PlexService(plexToken);
     const validation = await plexService.validateToken();
@@ -50,7 +64,6 @@ export async function POST(request: NextRequest) {
 
     logger.info('Plex token valid', { username: validation.user.username });
 
-    // Discover available servers
     let servers: Array<{ name: string; uri: string }> = [];
     try {
       const serverList = await plexService.getServers();
@@ -67,19 +80,22 @@ export async function POST(request: NextRequest) {
       logger.warn('Server discovery error', { error: (err as Error).message });
     }
 
-    // If server URL provided, test direct connection
     let serverValid = false;
     let libraryCount = 0;
     if (plexServerUrl) {
       try {
-        logger.debug('Testing server connection', { plexServerUrl });
-        const serverPlexService = new PlexService(plexToken, plexServerUrl);
+        const safeUrl = await assertSafeServiceUrl(plexServerUrl, {
+          allowPrivateNetworks: allowPrivateServiceUrls(),
+        });
+        const normalizedUrl = safeUrl.normalized || plexServerUrl;
+        logger.debug('Testing server connection', { plexServerUrl: normalizedUrl });
+        const serverPlexService = new PlexService(plexToken, normalizedUrl);
         const sections = await serverPlexService.getLibrarySections();
         serverValid = true;
         libraryCount = sections.length;
-        logger.info('Server connection successful', { plexServerUrl, libraryCount });
+        logger.info('Server connection successful', { libraryCount });
       } catch (err) {
-        logger.warn('Server connection failed', { plexServerUrl, error: (err as Error).message });
+        logger.warn('Server connection failed', { error: (err as Error).message });
         serverValid = false;
       }
     }
@@ -98,6 +114,12 @@ export async function POST(request: NextRequest) {
       } : null,
     });
   } catch (error) {
+    if (isAuthError(error)) {
+      return NextResponse.json(
+        { error: (error as Error).message },
+        { status: authErrorStatus(error) }
+      );
+    }
     logger.error('Test Plex error', { error: (error as Error).message });
     return NextResponse.json(
       { valid: false, error: 'Failed to test Plex connection' },

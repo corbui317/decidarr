@@ -16,27 +16,27 @@ import {
   AnimationStyle,
   AnimationSpeed,
 } from '@/lib/api';
-import {
-  ANIMATION_STYLE_LABELS,
-  ANIMATION_SPEED_LABELS,
-} from '@/components/animations';
-import { useTheme, THEME_CONFIG, AppTheme } from '@/context/ThemeContext';
+import { useTheme, AppTheme } from '@/context/ThemeContext';
 import { useAuth } from '@/context/AuthContext';
 import LoadingSpinner from './LoadingSpinner';
+import GeneralTab from './settings/GeneralTab';
+import IntegrationsTab from './settings/IntegrationsTab';
+import AppearanceTab from './settings/AppearanceTab';
+import AdminTab from './settings/AdminTab';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-type Tab = 'plex' | 'tmdb' | 'tautulli' | 'overseerr' | 'sync' | 'users' | 'preferences';
+type Tab = 'general' | 'integrations' | 'appearance' | 'admin';
 
 const LOAD_TIMEOUT_MS = 15000;
 
 export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const { theme: currentTheme, saveTheme } = useTheme();
   const { isAdmin } = useAuth();
-  const [activeTab, setActiveTab] = useState<Tab>('preferences');
+  const [activeTab, setActiveTab] = useState<Tab>('appearance');
   const [plexFriends, setPlexFriends] = useState<PlexFriendUser[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -47,20 +47,16 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [success, setSuccess] = useState<string | null>(null);
   const [settings, setSettings] = useState<SettingsResponse | null>(null);
 
-  // Plex tab
   const [plexToken, setPlexToken] = useState('');
   const [plexServerUrl, setPlexServerUrl] = useState('');
   const [plexValidation, setPlexValidation] = useState<PlexTestResponse | null>(null);
   const [availableServers, setAvailableServers] = useState<Array<{ name: string; uri: string }>>([]);
 
-  // TMDB tab
   const [tmdbApiKey, setTmdbApiKey] = useState('');
   const [tmdbValid, setTmdbValid] = useState<boolean | null>(null);
 
-  // Sync tab
   const [syncFrequencyHours, setSyncFrequencyHours] = useState(24);
 
-  // Tautulli tab
   const [tautulliUrl, setTautulliUrl] = useState('');
   const [tautulliApiKey, setTautulliApiKey] = useState('');
   const [tautulliEnabled, setTautulliEnabled] = useState(false);
@@ -68,21 +64,18 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [tautulliValid, setTautulliValid] = useState<boolean | null>(null);
   const [syncingTautulli, setSyncingTautulli] = useState(false);
 
-  // Overseerr tab
   const [overseerrUrl, setOverseerrUrl] = useState('');
   const [overseerrApiKey, setOverseerrApiKey] = useState('');
   const [overseerrFilterEnabled, setOverseerrFilterEnabled] = useState(false);
   const [overseerrValid, setOverseerrValid] = useState<boolean | null>(null);
   const [overseerrVersion, setOverseerrVersion] = useState<string | null>(null);
 
-  // Preferences tab
   const [selectedTheme, setSelectedTheme] = useState<AppTheme>(currentTheme);
   const [defaultMediaType, setDefaultMediaType] = useState<'movie' | 'show'>('movie');
   const [tvSelectionMode, setTvSelectionMode] = useState<'show' | 'episode'>('show');
   const [animationStyle, setAnimationStyle] = useState<AnimationStyle>('slots');
   const [animationSpeed, setAnimationSpeed] = useState<AnimationSpeed>('normal');
 
-  // Spin history preferences
   const [spinHistoryEnabled, setSpinHistoryEnabled] = useState(true);
   const [spinHistoryRetention, setSpinHistoryRetention] = useState(50);
   const [spinHistoryStoreSnapshots, setSpinHistoryStoreSnapshots] = useState(true);
@@ -92,31 +85,64 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
 
-  // Trap focus inside modal
+  const clearMessages = useCallback(() => {
+    setError(null);
+    setSuccess(null);
+  }, []);
+
+  const switchTab = useCallback((tab: Tab) => {
+    if (saving) return;
+    setActiveTab(tab);
+    clearMessages();
+  }, [saving, clearMessages]);
+
   useEffect(() => {
     if (!isOpen) return;
     const timer = setTimeout(() => closeButtonRef.current?.focus(), 50);
     return () => clearTimeout(timer);
   }, [isOpen]);
 
-  // Close on Escape key
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || !modalRef.current) return;
+
+    const modal = modalRef.current;
+    const focusableSelector =
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        onClose();
+        return;
+      }
+      if (e.key !== 'Tab') return;
+
+      const focusable = Array.from(modal.querySelectorAll<HTMLElement>(focusableSelector)).filter(
+        (el) => el.offsetParent !== null
+      );
+      if (focusable.length === 0) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
+
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, activeTab, loading]);
 
   const loadSettings = useCallback(async () => {
     setLoading(true);
     setError(null);
     setLoadingTimedOut(false);
     setIsAuthErrorState(false);
-    
-    console.log('[SettingsModal] Loading settings...');
-    
+
     try {
       let adminUiDefaults: SettingsResponse['uiPreferences'] | null = null;
 
@@ -165,13 +191,11 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           setAnimationSpeed(adminUiDefaults.animationSpeed ?? 'normal');
         }
       }
-
-      console.log('[SettingsModal] Settings loaded successfully');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load settings';
       console.error('[SettingsModal] Load error:', message);
       setError(message);
-      
+
       if (isAuthError(err)) {
         setIsAuthErrorState(true);
       }
@@ -181,8 +205,8 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   }, [isAdmin]);
 
   useEffect(() => {
-    if (isOpen && !isAdmin && activeTab !== 'preferences') {
-      setActiveTab('preferences');
+    if (isOpen && !isAdmin && activeTab !== 'appearance') {
+      setActiveTab('appearance');
     }
   }, [isOpen, isAdmin, activeTab]);
 
@@ -200,17 +224,15 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     if (isOpen) {
       loadSettings();
       loadUserAnimationPrefs();
-      
-      // Set a timeout to show a message if loading takes too long
+
       const timeoutId = setTimeout(() => {
         setLoadingTimedOut(true);
       }, LOAD_TIMEOUT_MS);
-      
+
       return () => clearTimeout(timeoutId);
     }
   }, [isOpen, loadSettings, loadUserAnimationPrefs]);
 
-  // Keep selectedTheme in sync when currentTheme changes externally
   useEffect(() => {
     setSelectedTheme(currentTheme);
   }, [currentTheme]);
@@ -221,8 +243,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       return;
     }
     setSaving(true);
-    setError(null);
-    setSuccess(null);
+    clearMessages();
     try {
       const result = await settingsApi.testPlex(plexToken.trim(), plexServerUrl.trim() || undefined);
       setPlexValidation(result);
@@ -244,8 +265,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
   const handleSavePlex = async () => {
     setSaving(true);
-    setError(null);
-    setSuccess(null);
+    clearMessages();
     try {
       await settingsApi.updateSettings({
         plex: {
@@ -270,8 +290,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       return;
     }
     setSaving(true);
-    setError(null);
-    setSuccess(null);
+    clearMessages();
     try {
       const result = await settingsApi.testTmdb(tmdbApiKey.trim());
       setTmdbValid(result.valid);
@@ -290,8 +309,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
   const handleSaveTmdb = async () => {
     setSaving(true);
-    setError(null);
-    setSuccess(null);
+    clearMessages();
     try {
       await settingsApi.updateSettings({
         tmdb: { apiKey: tmdbApiKey.trim() || '' },
@@ -309,8 +327,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
   const handleSaveSync = async () => {
     setSaving(true);
-    setError(null);
-    setSuccess(null);
+    clearMessages();
     try {
       await settingsApi.updateSettings({ syncFrequencyHours });
       setSuccess('Sync settings saved');
@@ -327,8 +344,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       return;
     }
     setSaving(true);
-    setError(null);
-    setSuccess(null);
+    clearMessages();
     try {
       const result = await tautulliApi.test(tautulliUrl.trim(), tautulliApiKey.trim());
       setTautulliValid(result.success);
@@ -357,8 +373,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     }
 
     setSaving(true);
-    setError(null);
-    setSuccess(null);
+    clearMessages();
     try {
       await settingsApi.updateSettings({
         tautulli: {
@@ -385,8 +400,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     }
 
     setSyncingTautulli(true);
-    setError(null);
-    setSuccess(null);
+    clearMessages();
     try {
       const result = await tautulliApi.sync();
       if (result.success) {
@@ -408,8 +422,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       return;
     }
     setSaving(true);
-    setError(null);
-    setSuccess(null);
+    clearMessages();
     try {
       const result = await overseerrApi.test(overseerrUrl.trim(), overseerrApiKey.trim());
       setOverseerrValid(result.success);
@@ -433,8 +446,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
   const handleSaveOverseerr = async () => {
     setSaving(true);
-    setError(null);
-    setSuccess(null);
+    clearMessages();
     try {
       await settingsApi.updateSettings({
         overseerr: {
@@ -468,14 +480,14 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   }, [isAdmin]);
 
   useEffect(() => {
-    if (isOpen && activeTab === 'users' && isAdmin) {
+    if (isOpen && activeTab === 'admin' && isAdmin) {
       loadUsers();
     }
   }, [isOpen, activeTab, isAdmin, loadUsers]);
 
   const handleToggleUser = async (plexUserId: string, approved: boolean) => {
     setSaving(true);
-    setError(null);
+    clearMessages();
     try {
       await adminUsersApi.setApproved(plexUserId, approved);
       setPlexFriends((prev) =>
@@ -491,8 +503,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
   const handleSavePreferences = async () => {
     setSaving(true);
-    setError(null);
-    setSuccess(null);
+    clearMessages();
     try {
       await saveTheme(selectedTheme);
       if (isAdmin) {
@@ -536,8 +547,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
   const handleClearSpinHistory = async () => {
     setClearingHistory(true);
-    setError(null);
-    setSuccess(null);
+    clearMessages();
     try {
       const result = await spinHistoryApi.clearAll();
       setSuccess(`Cleared ${result.deleted} spin history ${result.deleted === 1 ? 'entry' : 'entries'}`);
@@ -551,21 +561,14 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
   const visibleTabs: { id: Tab; label: string }[] = isAdmin
     ? [
-        { id: 'plex', label: 'Plex' },
-        { id: 'tmdb', label: 'TMDB' },
-        { id: 'tautulli', label: 'Tautulli' },
-        { id: 'overseerr', label: 'Overseerr' },
-        { id: 'sync', label: 'Sync' },
-        { id: 'users', label: 'Users' },
-        { id: 'preferences', label: 'Prefs' },
+        { id: 'appearance', label: 'Appearance' },
+        { id: 'integrations', label: 'Integrations' },
+        { id: 'general', label: 'General' },
+        { id: 'admin', label: 'Users' },
       ]
-    : [{ id: 'preferences', label: 'Preferences' }];
+    : [{ id: 'appearance', label: 'Preferences' }];
 
   if (!isOpen) return null;
-
-  const inputClass =
-    'w-full bg-decidarr-input border border-decidarr-border rounded-lg px-4 py-3 text-decidarr-text placeholder-decidarr-text-muted focus:outline-none focus:border-decidarr-primary transition-colors';
-  const labelClass = 'block text-decidarr-text-muted text-sm font-medium mb-2';
 
   return (
     <div
@@ -578,13 +581,13 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         ref={modalRef}
         className="bg-decidarr-secondary border border-decidarr-border rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
       >
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-decidarr-border">
           <h2 id="settings-modal-title" className="text-xl font-bold text-decidarr-text">
             Settings
           </h2>
           <button
             ref={closeButtonRef}
+            type="button"
             onClick={onClose}
             aria-label="Close settings"
             className="text-decidarr-text-muted hover:text-decidarr-text transition-colors rounded-lg p-1 focus:outline-none focus:ring-2 focus:ring-decidarr-primary"
@@ -595,20 +598,17 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           </button>
         </div>
 
-        {/* Tabs */}
         <div className="flex border-b border-decidarr-border overflow-x-auto" role="tablist" aria-label="Settings sections">
-          {visibleTabs.map(tab => (
+          {visibleTabs.map((tab) => (
             <button
               key={tab.id}
+              type="button"
               role="tab"
               aria-selected={activeTab === tab.id}
               aria-controls={`tab-panel-${tab.id}`}
-              onClick={() => {
-                setActiveTab(tab.id);
-                setError(null);
-                setSuccess(null);
-              }}
-              className={`flex-1 py-3 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-inset focus:ring-decidarr-primary ${
+              disabled={saving}
+              onClick={() => switchTab(tab.id)}
+              className={`flex-1 py-3 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-inset focus:ring-decidarr-primary disabled:opacity-50 ${
                 activeTab === tab.id
                   ? 'text-decidarr-primary border-b-2 border-decidarr-primary'
                   : 'text-decidarr-text-muted hover:text-decidarr-text'
@@ -619,17 +619,15 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           ))}
         </div>
 
-        {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
           {loading ? (
             <div className="flex flex-col items-center justify-center py-12" role="status" aria-label="Loading settings">
               <LoadingSpinner size="lg" />
               {loadingTimedOut && (
                 <div className="mt-4 text-center">
-                  <p className="text-decidarr-text-muted text-sm">
-                    Taking longer than expected...
-                  </p>
+                  <p className="text-decidarr-text-muted text-sm">Taking longer than expected...</p>
                   <button
+                    type="button"
                     onClick={onClose}
                     className="mt-2 text-decidarr-primary hover:underline text-sm"
                   >
@@ -646,6 +644,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 Your session has expired. Please log in again.
               </p>
               <button
+                type="button"
                 onClick={() => { window.location.href = '/'; }}
                 className="px-4 py-2 bg-decidarr-primary text-decidarr-dark font-medium rounded-lg hover:opacity-90 transition-opacity"
               >
@@ -665,704 +664,94 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 </div>
               )}
 
-              {/* Plex Tab */}
-              {activeTab === 'plex' && (
-                <div id="tab-panel-plex" role="tabpanel" className="space-y-5">
-                  {settings?.plex.hasToken && (
-                    <div className="bg-decidarr-dark/50 rounded-lg p-4 border border-decidarr-border">
-                      <p className="text-decidarr-text text-sm">
-                        <span className="text-decidarr-text-muted">Connected as: </span>
-                        <strong>{settings.plex.username || 'Unknown'}</strong>
-                      </p>
-                      <p className="text-decidarr-text-muted text-sm mt-1">
-                        <span>Server: </span>{settings.plex.serverUrl || 'Not set'}
-                      </p>
-                      <p className="text-decidarr-text-muted text-sm mt-1">
-                        <span>Token: </span>{settings.plex.tokenMasked}
-                      </p>
-                    </div>
-                  )}
-
-                  <div>
-                    <label htmlFor="plex-token" className={labelClass}>
-                      {settings?.plex.hasToken ? 'Update Plex Token' : 'Plex Token'}
-                    </label>
-                    <input
-                      id="plex-token"
-                      type="password"
-                      value={plexToken}
-                      onChange={e => {
-                        setPlexToken(e.target.value);
-                        setPlexValidation(null);
-                        setError(null);
-                        setSuccess(null);
-                      }}
-                      placeholder="Enter new Plex token"
-                      className={inputClass}
-                      style={{ background: 'var(--decidarr-input-bg)' }}
-                    />
-                  </div>
-
-                  {plexValidation?.valid && (
-                    <div role="status" className="bg-green-500/10 border border-green-500/50 rounded-lg p-3">
-                      <p className="text-green-400 text-sm">
-                        Validated as <strong>{plexValidation.user?.username}</strong>
-                      </p>
-                    </div>
-                  )}
-
-                  <div>
-                    <label htmlFor="plex-server-url" className={labelClass}>Server URL</label>
-                    {availableServers.length > 0 ? (
-                      <select
-                        id="plex-server-url"
-                        value={plexServerUrl}
-                        onChange={e => setPlexServerUrl(e.target.value)}
-                        className={inputClass}
-                        style={{ background: 'var(--decidarr-input-bg)' }}
-                      >
-                        {availableServers.map(server => (
-                          <option key={server.uri} value={server.uri}>{server.name}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        id="plex-server-url"
-                        type="url"
-                        value={plexServerUrl}
-                        onChange={e => setPlexServerUrl(e.target.value)}
-                        placeholder="http://192.168.1.100:32400"
-                        className={inputClass}
-                        style={{ background: 'var(--decidarr-input-bg)' }}
-                      />
-                    )}
-                  </div>
-
-                  <div className="flex gap-3">
-                    <button
-                      onClick={handleTestPlex}
-                      disabled={saving || !plexToken.trim()}
-                      aria-busy={saving}
-                      className="flex-1 bg-decidarr-surface text-decidarr-text font-medium py-2 px-4 rounded-lg border border-decidarr-border hover:border-decidarr-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {saving ? <LoadingSpinner size="sm" /> : 'Test Connection'}
-                    </button>
-                    <button
-                      onClick={handleSavePlex}
-                      disabled={saving || (!plexToken.trim() && !plexServerUrl.trim())}
-                      aria-busy={saving}
-                      className="flex-1 bg-decidarr-primary text-black font-medium py-2 px-4 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                    >
-                      {saving ? <LoadingSpinner size="sm" /> : 'Save'}
-                    </button>
-                  </div>
-                </div>
+              {activeTab === 'general' && isAdmin && (
+                <GeneralTab
+                  syncFrequencyHours={syncFrequencyHours}
+                  onSyncFrequencyChange={setSyncFrequencyHours}
+                  saving={saving}
+                  onSave={handleSaveSync}
+                />
               )}
 
-              {/* TMDB Tab */}
-              {activeTab === 'tmdb' && (
-                <div id="tab-panel-tmdb" role="tabpanel" className="space-y-5">
-                  <div className="bg-decidarr-dark/50 rounded-lg p-4 border border-decidarr-border">
-                    <p className="text-decidarr-text text-sm">
-                      <span className="text-decidarr-text-muted">Status: </span>
-                      {settings?.tmdb.hasKey ? (
-                        <span className="text-green-400">Configured</span>
-                      ) : (
-                        <span className="text-decidarr-text-muted">Not configured</span>
-                      )}
-                    </p>
-                    {settings?.tmdb.keyMasked && (
-                      <p className="text-decidarr-text-muted text-sm mt-1">
-                        <span>Key: </span>{settings.tmdb.keyMasked}
-                      </p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label htmlFor="tmdb-key" className={labelClass}>
-                      {settings?.tmdb.hasKey ? 'Update TMDB API Key' : 'TMDB API Key'}
-                    </label>
-                    <input
-                      id="tmdb-key"
-                      type="password"
-                      value={tmdbApiKey}
-                      onChange={e => {
-                        setTmdbApiKey(e.target.value);
-                        setTmdbValid(null);
-                        setError(null);
-                        setSuccess(null);
-                      }}
-                      placeholder="Enter TMDB API key"
-                      className={inputClass}
-                      style={{ background: 'var(--decidarr-input-bg)' }}
-                    />
-                    <p className="text-decidarr-text-muted text-xs mt-1">
-                      <a
-                        href="https://www.themoviedb.org/settings/api"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-decidarr-primary hover:underline"
-                      >
-                        Get a free TMDB API key
-                      </a>
-                    </p>
-                  </div>
-
-                  {tmdbValid === true && (
-                    <div role="status" className="bg-green-500/10 border border-green-500/50 rounded-lg p-3">
-                      <p className="text-green-400 text-sm">API key is valid</p>
-                    </div>
-                  )}
-
-                  <div className="flex gap-3">
-                    <button
-                      onClick={handleTestTmdb}
-                      disabled={saving || !tmdbApiKey.trim()}
-                      className="flex-1 bg-decidarr-surface text-decidarr-text font-medium py-2 px-4 rounded-lg border border-decidarr-border hover:border-decidarr-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Test API Key
-                    </button>
-                    <button
-                      onClick={handleSaveTmdb}
-                      disabled={saving}
-                      className="flex-1 bg-decidarr-primary text-black font-medium py-2 px-4 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                    >
-                      {saving ? <LoadingSpinner size="sm" /> : tmdbApiKey.trim() ? 'Save' : 'Remove Key'}
-                    </button>
-                  </div>
-                </div>
+              {activeTab === 'integrations' && isAdmin && (
+                <IntegrationsTab
+                  settings={settings}
+                  plexToken={plexToken}
+                  onPlexTokenChange={setPlexToken}
+                  plexServerUrl={plexServerUrl}
+                  onPlexServerUrlChange={setPlexServerUrl}
+                  plexValidation={plexValidation}
+                  onPlexValidationClear={() => setPlexValidation(null)}
+                  availableServers={availableServers}
+                  tmdbApiKey={tmdbApiKey}
+                  onTmdbApiKeyChange={setTmdbApiKey}
+                  tmdbValid={tmdbValid}
+                  onTmdbValidClear={() => setTmdbValid(null)}
+                  tautulliUrl={tautulliUrl}
+                  onTautulliUrlChange={setTautulliUrl}
+                  tautulliApiKey={tautulliApiKey}
+                  onTautulliApiKeyChange={setTautulliApiKey}
+                  tautulliEnabled={tautulliEnabled}
+                  onTautulliEnabledChange={setTautulliEnabled}
+                  tautulliUsers={tautulliUsers}
+                  tautulliValid={tautulliValid}
+                  syncingTautulli={syncingTautulli}
+                  overseerrUrl={overseerrUrl}
+                  onOverseerrUrlChange={setOverseerrUrl}
+                  overseerrApiKey={overseerrApiKey}
+                  onOverseerrApiKeyChange={setOverseerrApiKey}
+                  overseerrFilterEnabled={overseerrFilterEnabled}
+                  onOverseerrFilterEnabledChange={setOverseerrFilterEnabled}
+                  overseerrValid={overseerrValid}
+                  overseerrVersion={overseerrVersion}
+                  saving={saving}
+                  onTestPlex={handleTestPlex}
+                  onSavePlex={handleSavePlex}
+                  onTestTmdb={handleTestTmdb}
+                  onSaveTmdb={handleSaveTmdb}
+                  onTestTautulli={handleTestTautulli}
+                  onSaveTautulli={handleSaveTautulli}
+                  onSyncTautulli={handleSyncTautulli}
+                  onTestOverseerr={handleTestOverseerr}
+                  onSaveOverseerr={handleSaveOverseerr}
+                  onClearMessages={clearMessages}
+                />
               )}
 
-              {/* Tautulli Tab */}
-              {activeTab === 'tautulli' && (
-                <div id="tab-panel-tautulli" role="tabpanel" className="space-y-5">
-                  <div className="bg-decidarr-dark/50 rounded-lg p-4 border border-decidarr-border">
-                    <p className="text-decidarr-text text-sm">
-                      <span className="text-decidarr-text-muted">Status: </span>
-                      {settings?.tautulli?.enabled ? (
-                        settings?.tautulli?.url && settings?.tautulli?.hasKey ? (
-                          <span className="text-green-400">Enabled</span>
-                        ) : (
-                          <span className="text-yellow-400">Enabled (incomplete — save URL and API key)</span>
-                        )
-                      ) : settings?.tautulli?.hasKey ? (
-                        <span className="text-yellow-400">Configured (disabled)</span>
-                      ) : (
-                        <span className="text-decidarr-text-muted">Not configured</span>
-                      )}
-                    </p>
-                    {settings?.tautulli?.url && (
-                      <p className="text-decidarr-text-muted text-sm mt-1">
-                        <span>URL: </span>{settings.tautulli.url}
-                      </p>
-                    )}
-                    {settings?.tautulli?.lastSync && (
-                      <p className="text-decidarr-text-muted text-sm mt-1">
-                        <span>Last sync: </span>{new Date(settings.tautulli.lastSync).toLocaleString()}
-                      </p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label htmlFor="tautulli-url" className={labelClass}>Tautulli URL</label>
-                    <input
-                      id="tautulli-url"
-                      type="url"
-                      value={tautulliUrl}
-                      onChange={e => {
-                        setTautulliUrl(e.target.value);
-                        setTautulliValid(null);
-                      }}
-                      placeholder="http://192.168.1.100:8181"
-                      className={inputClass}
-                      style={{ background: 'var(--decidarr-input-bg)' }}
-                    />
-                  </div>
-
-                  <div>
-                    <label htmlFor="tautulli-key" className={labelClass}>
-                      {settings?.tautulli?.hasKey ? 'Update API Key' : 'API Key'}
-                    </label>
-                    <input
-                      id="tautulli-key"
-                      type="password"
-                      value={tautulliApiKey}
-                      onChange={e => {
-                        setTautulliApiKey(e.target.value);
-                        setTautulliValid(null);
-                      }}
-                      placeholder="Enter Tautulli API key"
-                      className={inputClass}
-                      style={{ background: 'var(--decidarr-input-bg)' }}
-                    />
-                    <p className="text-decidarr-text-muted text-xs mt-1">
-                      Find your API key in Tautulli Settings &rarr; Web Interface &rarr; API Key
-                    </p>
-                  </div>
-
-                  {tautulliValid && tautulliUsers.length > 0 && (
-                    <div role="status" className="bg-green-500/10 border border-green-500/50 rounded-lg p-3">
-                      <p className="text-green-400 text-sm mb-1">Connected! Users found:</p>
-                      <div className="flex flex-wrap gap-2">
-                        {tautulliUsers.map(u => (
-                          <span key={u.id} className="text-xs bg-green-500/20 px-2 py-1 rounded">
-                            {u.friendlyName || u.username}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={tautulliEnabled}
-                        onChange={e => setTautulliEnabled(e.target.checked)}
-                        className="w-4 h-4 rounded border-gray-600 text-decidarr-primary focus:ring-decidarr-primary"
-                      />
-                      <span className="text-decidarr-text text-sm">Enable Tautulli watch history sync</span>
-                    </label>
-                  </div>
-
-                  <div className="flex gap-3">
-                    <button
-                      onClick={handleTestTautulli}
-                      disabled={saving || !tautulliUrl.trim() || !tautulliApiKey.trim()}
-                      className="flex-1 bg-decidarr-surface text-decidarr-text font-medium py-2 px-4 rounded-lg border border-decidarr-border hover:border-decidarr-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Test Connection
-                    </button>
-                    <button
-                      onClick={handleSaveTautulli}
-                      disabled={saving}
-                      className="flex-1 bg-decidarr-primary text-black font-medium py-2 px-4 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                    >
-                      {saving ? <LoadingSpinner size="sm" /> : 'Save'}
-                    </button>
-                  </div>
-
-                  {settings?.tautulli?.enabled && settings?.tautulli?.url && settings?.tautulli?.hasKey && (
-                    <button
-                      onClick={handleSyncTautulli}
-                      disabled={syncingTautulli}
-                      className="w-full bg-decidarr-surface text-decidarr-text font-medium py-2 px-4 rounded-lg border border-decidarr-border hover:border-decidarr-primary transition-colors disabled:opacity-50"
-                    >
-                      {syncingTautulli ? (
-                        <span className="flex items-center justify-center gap-2">
-                          <LoadingSpinner size="sm" /> Syncing...
-                        </span>
-                      ) : (
-                        'Sync Watch History Now'
-                      )}
-                    </button>
-                  )}
-                </div>
+              {activeTab === 'appearance' && (
+                <AppearanceTab
+                  selectedTheme={selectedTheme}
+                  onThemeChange={setSelectedTheme}
+                  defaultMediaType={defaultMediaType}
+                  onDefaultMediaTypeChange={setDefaultMediaType}
+                  tvSelectionMode={tvSelectionMode}
+                  onTvSelectionModeChange={setTvSelectionMode}
+                  spinHistoryEnabled={spinHistoryEnabled}
+                  onSpinHistoryEnabledChange={setSpinHistoryEnabled}
+                  spinHistoryRetention={spinHistoryRetention}
+                  onSpinHistoryRetentionChange={setSpinHistoryRetention}
+                  spinHistoryStoreSnapshots={spinHistoryStoreSnapshots}
+                  onSpinHistoryStoreSnapshotsChange={setSpinHistoryStoreSnapshots}
+                  showClearConfirm={showClearConfirm}
+                  onShowClearConfirm={setShowClearConfirm}
+                  clearingHistory={clearingHistory}
+                  onClearSpinHistory={handleClearSpinHistory}
+                  animationStyle={animationStyle}
+                  onAnimationStyleChange={setAnimationStyle}
+                  animationSpeed={animationSpeed}
+                  onAnimationSpeedChange={setAnimationSpeed}
+                  saving={saving}
+                  onSave={handleSavePreferences}
+                />
               )}
 
-              {/* Overseerr Tab */}
-              {activeTab === 'overseerr' && (
-                <div id="tab-panel-overseerr" role="tabpanel" className="space-y-5">
-                  <div className="bg-decidarr-dark/50 rounded-lg p-4 border border-decidarr-border">
-                    <p className="text-decidarr-text text-sm">
-                      <span className="text-decidarr-text-muted">Status: </span>
-                      {settings?.overseerr?.filterEnabled ? (
-                        <span className="text-green-400">Filter enabled</span>
-                      ) : settings?.overseerr?.hasKey ? (
-                        <span className="text-yellow-400">Configured (filter off)</span>
-                      ) : (
-                        <span className="text-decidarr-text-muted">Not configured</span>
-                      )}
-                    </p>
-                    {settings?.overseerr?.url && (
-                      <p className="text-decidarr-text-muted text-sm mt-1">
-                        <span>URL: </span>{settings.overseerr.url}
-                      </p>
-                    )}
-                    {settings?.overseerr?.lastSyncAt && (
-                      <p className="text-decidarr-text-muted text-sm mt-1">
-                        <span>Last sync: </span>
-                        {new Date(settings.overseerr.lastSyncAt).toLocaleString()}
-                        {!settings.overseerr.lastSyncOk && (
-                          <span className="text-yellow-400 ml-2">(stale data)</span>
-                        )}
-                      </p>
-                    )}
-                  </div>
-
-                  <p className="text-decidarr-text-muted text-sm">
-                    Exclude fully available titles from the spin pool. Partially available titles stay
-                    in the pool and show a badge on the result card.
-                  </p>
-
-                  <div>
-                    <label htmlFor="overseerr-url" className={labelClass}>Overseerr URL</label>
-                    <input
-                      id="overseerr-url"
-                      type="url"
-                      value={overseerrUrl}
-                      onChange={e => {
-                        setOverseerrUrl(e.target.value);
-                        setOverseerrValid(null);
-                      }}
-                      placeholder="http://192.168.1.100:5055"
-                      className={inputClass}
-                      style={{ background: 'var(--decidarr-input-bg)' }}
-                    />
-                  </div>
-
-                  <div>
-                    <label htmlFor="overseerr-key" className={labelClass}>
-                      {settings?.overseerr?.hasKey ? 'Update API Key' : 'API Key'}
-                    </label>
-                    <input
-                      id="overseerr-key"
-                      type="password"
-                      value={overseerrApiKey}
-                      onChange={e => {
-                        setOverseerrApiKey(e.target.value);
-                        setOverseerrValid(null);
-                      }}
-                      placeholder="Enter Overseerr API key"
-                      className={inputClass}
-                      style={{ background: 'var(--decidarr-input-bg)' }}
-                    />
-                    <p className="text-decidarr-text-muted text-xs mt-1">
-                      Find your API key in Overseerr Settings &rarr; General
-                    </p>
-                  </div>
-
-                  {overseerrValid && (
-                    <div role="status" className="bg-green-500/10 border border-green-500/50 rounded-lg p-3">
-                      <p className="text-green-400 text-sm">
-                        Connected{overseerrVersion ? ` (v${overseerrVersion})` : ''}
-                      </p>
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={overseerrFilterEnabled}
-                        onChange={e => setOverseerrFilterEnabled(e.target.checked)}
-                        className="w-4 h-4 rounded border-gray-600 text-decidarr-primary focus:ring-decidarr-primary"
-                      />
-                      <span className="text-decidarr-text text-sm">
-                        Exclude fully available titles from the spin pool
-                      </span>
-                    </label>
-                  </div>
-
-                  <div className="flex gap-3">
-                    <button
-                      onClick={handleTestOverseerr}
-                      disabled={saving || !overseerrUrl.trim() || !overseerrApiKey.trim()}
-                      className="flex-1 bg-decidarr-surface text-decidarr-text font-medium py-2 px-4 rounded-lg border border-decidarr-border hover:border-decidarr-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Test Connection
-                    </button>
-                    <button
-                      onClick={handleSaveOverseerr}
-                      disabled={saving}
-                      className="flex-1 bg-decidarr-primary text-black font-medium py-2 px-4 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                    >
-                      {saving ? <LoadingSpinner size="sm" /> : 'Save'}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Sync Tab */}
-              {activeTab === 'sync' && (
-                <div id="tab-panel-sync" role="tabpanel" className="space-y-5">
-                  <div>
-                    <label htmlFor="sync-frequency" className={labelClass}>
-                      Library Sync Frequency
-                    </label>
-                    <select
-                      id="sync-frequency"
-                      value={syncFrequencyHours}
-                      onChange={e => setSyncFrequencyHours(Number(e.target.value))}
-                      className={inputClass}
-                      style={{ background: 'var(--decidarr-input-bg)' }}
-                    >
-                      <option value={1}>Every hour</option>
-                      <option value={6}>Every 6 hours</option>
-                      <option value={12}>Every 12 hours</option>
-                      <option value={24}>Every 24 hours</option>
-                      <option value={48}>Every 2 days</option>
-                      <option value={168}>Every week</option>
-                    </select>
-                    <p className="text-decidarr-text-muted text-xs mt-2">
-                      How often to refresh your library cache from Plex. More frequent syncs ensure
-                      new content appears faster but use more resources.
-                    </p>
-                  </div>
-
-                  <button
-                    onClick={handleSaveSync}
-                    disabled={saving}
-                    className="w-full bg-decidarr-primary text-black font-medium py-2 px-4 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  >
-                    {saving ? <LoadingSpinner size="sm" /> : 'Save'}
-                  </button>
-                </div>
-              )}
-
-              {activeTab === 'users' && isAdmin && (
-                <div id="tab-panel-users" role="tabpanel" className="space-y-4">
-                  <p className="text-decidarr-text-muted text-sm">
-                    Grant Plex friends access to Decidarr. They must already have access to your Plex server.
-                  </p>
-                  {loadingUsers ? (
-                    <LoadingSpinner size="md" />
-                  ) : plexFriends.length === 0 ? (
-                    <p className="text-decidarr-text-muted text-sm">No Plex friends found.</p>
-                  ) : (
-                    <ul className="space-y-2">
-                      {plexFriends.map((friend) => (
-                        <li
-                          key={friend.id}
-                          className="flex items-center justify-between bg-decidarr-dark/50 border border-decidarr-border rounded-lg px-4 py-3"
-                        >
-                          <div>
-                            <p className="text-decidarr-text font-medium">{friend.username}</p>
-                            <p className="text-decidarr-text-muted text-xs">
-                              {friend.hasServerAccess ? 'Has server access' : 'No server access'}
-                            </p>
-                          </div>
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <span className="text-sm text-decidarr-text-muted">Access</span>
-                            <input
-                              type="checkbox"
-                              checked={friend.isApproved}
-                              disabled={saving}
-                              onChange={(e) => handleToggleUser(friend.id, e.target.checked)}
-                              className="w-4 h-4 accent-decidarr-primary"
-                            />
-                          </label>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              )}
-
-              {/* Preferences Tab */}
-              {activeTab === 'preferences' && (
-                <div id="tab-panel-preferences" role="tabpanel" className="space-y-6">
-                  {/* Theme Picker */}
-                  <div>
-                    <p className={labelClass}>Theme</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {(Object.entries(THEME_CONFIG) as [AppTheme, typeof THEME_CONFIG[AppTheme]][]).map(
-                        ([themeKey, config]) => (
-                          <button
-                            key={themeKey}
-                            onClick={() => setSelectedTheme(themeKey)}
-                            aria-pressed={selectedTheme === themeKey}
-                            className={`text-left rounded-xl p-3 border-2 transition-all focus:outline-none focus:ring-2 focus:ring-decidarr-primary ${
-                              selectedTheme === themeKey
-                                ? 'border-decidarr-primary shadow-lg'
-                                : 'border-decidarr-border hover:border-decidarr-primary/50'
-                            }`}
-                            style={{ background: config.colors.bg }}
-                          >
-                            {/* Color swatches */}
-                            <div className="flex gap-1.5 mb-2">
-                              {[config.colors.bg, config.colors.surface, config.colors.primary, config.colors.accent].map(
-                                (color, i) => (
-                                  <div
-                                    key={i}
-                                    className="w-5 h-5 rounded-full border border-white/10"
-                                    style={{ background: color }}
-                                    aria-hidden="true"
-                                  />
-                                )
-                              )}
-                              {selectedTheme === themeKey && (
-                                <div className="ml-auto w-5 h-5 rounded-full flex items-center justify-center" style={{ background: config.colors.primary }}>
-                                  <svg className="w-3 h-3" fill="none" stroke="#000" viewBox="0 0 24 24" aria-hidden="true">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                  </svg>
-                                </div>
-                              )}
-                            </div>
-                            <p className="font-semibold text-sm" style={{ color: config.colors.primary }}>
-                              {config.label}
-                            </p>
-                            <p className="text-xs mt-0.5 opacity-75" style={{ color: config.colors.primary }}>
-                              {config.description}
-                            </p>
-                          </button>
-                        )
-                      )}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label htmlFor="default-media-type" className={labelClass}>
-                      Default Media Type
-                    </label>
-                    <select
-                      id="default-media-type"
-                      value={defaultMediaType}
-                      onChange={e => setDefaultMediaType(e.target.value as 'movie' | 'show')}
-                      className={inputClass}
-                      style={{ background: 'var(--decidarr-input-bg)' }}
-                    >
-                      <option value="movie">Movies</option>
-                      <option value="show">TV Shows</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label htmlFor="tv-selection-mode" className={labelClass}>
-                      TV Selection Mode
-                    </label>
-                    <select
-                      id="tv-selection-mode"
-                      value={tvSelectionMode}
-                      onChange={e => setTvSelectionMode(e.target.value as 'show' | 'episode')}
-                      className={inputClass}
-                      style={{ background: 'var(--decidarr-input-bg)' }}
-                    >
-                      <option value="show">Pick a Show</option>
-                      <option value="episode">Pick an Episode</option>
-                    </select>
-                    <p className="text-decidarr-text-muted text-xs mt-1">
-                      &quot;Pick a Show&quot; selects a random TV series. &quot;Pick an Episode&quot; selects a
-                      specific random episode.
-                    </p>
-                  </div>
-
-                  {/* Spin History */}
-                  <div className="border-t border-decidarr-border pt-6 space-y-4">
-                    <h3 className="text-sm font-semibold text-decidarr-text">Spin History</h3>
-
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={spinHistoryEnabled}
-                        onChange={e => setSpinHistoryEnabled(e.target.checked)}
-                        className="w-4 h-4 rounded border-gray-600 text-decidarr-primary focus:ring-decidarr-primary"
-                      />
-                      <span className="text-decidarr-text text-sm">Record spin history</span>
-                    </label>
-
-                    <div>
-                      <label htmlFor="spin-history-retention" className={labelClass}>
-                        Retention Limit
-                      </label>
-                      <input
-                        id="spin-history-retention"
-                        type="number"
-                        min={1}
-                        max={500}
-                        value={spinHistoryRetention}
-                        onChange={e => setSpinHistoryRetention(Number(e.target.value))}
-                        disabled={!spinHistoryEnabled}
-                        className={inputClass}
-                        style={{ background: 'var(--decidarr-input-bg)' }}
-                      />
-                      <p className="text-decidarr-text-muted text-xs mt-1">
-                        Keep up to 500 recent spins (oldest removed automatically).
-                      </p>
-                    </div>
-
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={spinHistoryStoreSnapshots}
-                        onChange={e => setSpinHistoryStoreSnapshots(e.target.checked)}
-                        disabled={!spinHistoryEnabled}
-                        className="w-4 h-4 rounded border-gray-600 text-decidarr-primary focus:ring-decidarr-primary"
-                      />
-                      <span className="text-decidarr-text text-sm">Store filter snapshots</span>
-                    </label>
-                    <p className="text-decidarr-text-muted text-xs -mt-2">
-                      Save filter settings with each spin so you can reapply them later.
-                    </p>
-
-                    {showClearConfirm ? (
-                      <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-4 space-y-3">
-                        <p className="text-red-400 text-sm">
-                          Delete all spin history? This cannot be undone.
-                        </p>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={handleClearSpinHistory}
-                            disabled={clearingHistory}
-                            className="flex-1 bg-red-600 text-white font-medium py-2 px-4 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
-                          >
-                            {clearingHistory ? 'Clearing...' : 'Yes, clear all'}
-                          </button>
-                          <button
-                            onClick={() => setShowClearConfirm(false)}
-                            disabled={clearingHistory}
-                            className="flex-1 bg-decidarr-surface text-decidarr-text font-medium py-2 px-4 rounded-lg border border-decidarr-border hover:border-decidarr-primary transition-colors"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => setShowClearConfirm(true)}
-                        className="w-full bg-decidarr-surface text-red-400 font-medium py-2 px-4 rounded-lg border border-decidarr-border hover:border-red-500/50 transition-colors"
-                      >
-                        Clear All Spin History
-                      </button>
-                    )}
-                  </div>
-
-                  <div>
-                    <label htmlFor="animation-style" className={labelClass}>
-                      Spin Animation
-                    </label>
-                    <select
-                      id="animation-style"
-                      value={animationStyle}
-                      onChange={e => setAnimationStyle(e.target.value as AnimationStyle)}
-                      className={inputClass}
-                      style={{ background: 'var(--decidarr-input-bg)' }}
-                    >
-                      {(Object.keys(ANIMATION_STYLE_LABELS) as AnimationStyle[]).map((key) => (
-                        <option key={key} value={key}>
-                          {ANIMATION_STYLE_LABELS[key]}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label htmlFor="animation-speed" className={labelClass}>
-                      Animation Speed
-                    </label>
-                    <select
-                      id="animation-speed"
-                      value={animationSpeed}
-                      onChange={e => setAnimationSpeed(e.target.value as AnimationSpeed)}
-                      className={inputClass}
-                      style={{ background: 'var(--decidarr-input-bg)' }}
-                    >
-                      {(Object.keys(ANIMATION_SPEED_LABELS) as AnimationSpeed[]).map((key) => (
-                        <option key={key} value={key}>
-                          {ANIMATION_SPEED_LABELS[key]}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <button
-                    onClick={handleSavePreferences}
-                    disabled={saving}
-                    className="w-full bg-decidarr-primary text-black font-medium py-2 px-4 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  >
-                    {saving ? <LoadingSpinner size="sm" /> : 'Save Preferences'}
-                  </button>
-                </div>
+              {activeTab === 'admin' && isAdmin && (
+                <AdminTab
+                  plexFriends={plexFriends}
+                  loadingUsers={loadingUsers}
+                  saving={saving}
+                  onToggleUser={handleToggleUser}
+                />
               )}
             </>
           )}

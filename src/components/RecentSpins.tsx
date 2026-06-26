@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { spinHistoryApi, SpinHistoryEntry } from '@/lib/api';
+import { plexImageUrl } from '@/lib/plex-image';
 import { Filters } from '@/types/filters';
 
 interface RecentSpinsProps {
@@ -91,11 +92,15 @@ export default function RecentSpins({ refreshKey = 0, onReapply, onRevisit }: Re
             className="flex items-center gap-3 p-2 rounded-lg bg-decidarr-dark/50 hover:bg-decidarr-dark transition-colors"
           >
             <div className="w-10 h-14 flex-shrink-0 rounded overflow-hidden bg-decidarr-dark flex items-center justify-center">
-              {entry.posterUrl ? (
-                <img src={entry.posterUrl} alt="" className="w-full h-full object-cover" />
-              ) : (
-                <span className="text-lg">{entry.mediaType === 'show' ? '📺' : '🎬'}</span>
-              )}
+              {(() => {
+                const imageUrl =
+                  entry.posterUrl || plexImageUrl(entry.thumbPath) || null;
+                return imageUrl ? (
+                  <img src={imageUrl} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-lg">{entry.mediaType === 'show' ? '📺' : '🎬'}</span>
+                );
+              })()}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-white text-sm font-medium truncate">{entry.title}</p>

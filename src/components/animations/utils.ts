@@ -37,8 +37,21 @@ export function pickRandomAnimation(): ResolvedAnimationStyle {
   return RESOLVED_STYLES[Math.floor(Math.random() * RESOLVED_STYLES.length)];
 }
 
-export function getPosterUrl(item: { posterUrl?: string; art?: string }): string | null {
-  return item.posterUrl || item.art || null;
+import { plexImageUrl } from '@/lib/plex-image';
+
+export function getPosterUrl(item: {
+  posterUrl?: string;
+  art?: string;
+  thumbPath?: string;
+  artPath?: string;
+}): string | null {
+  return (
+    plexImageUrl(item.thumbPath) ||
+    plexImageUrl(item.artPath) ||
+    item.posterUrl ||
+    item.art ||
+    null
+  );
 }
 
 export function delay(ms: number): Promise<void> {

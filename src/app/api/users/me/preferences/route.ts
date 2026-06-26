@@ -9,6 +9,7 @@ import {
   trimSpinHistoryToRetention,
 } from '@/lib/spin-history';
 import { createLogger } from '@/lib/logger';
+import { parsePreferencesPatchBody } from '@/lib/validation/preferences';
 
 const logger = createLogger('API:UserPreferences');
 
@@ -129,29 +130,29 @@ export async function PATCH(request: NextRequest) {
   try {
     await connectDB();
     const { user } = await requireUser();
-    const body = await request.json();
-
-    if (!body.spinHistory) {
-      return NextResponse.json({ error: 'No valid preference fields provided' }, { status: 400 });
+    const parsed = parsePreferencesPatchBody(await request.json());
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 });
     }
+
+    const { spinHistory: body } = parsed.data;
 
     const current = normalizeSpinHistoryPreferences(user.preferences.spinHistory);
     const previousRetention = current.retentionLimit;
     user.preferences.spinHistory = {
-      enabled: body.spinHistory.enabled ?? current.enabled,
+      enabled: body.enabled ?? current.enabled,
       retentionLimit:
-        body.spinHistory.retentionLimit !== undefined
-          ? normalizeRetentionLimit(body.spinHistory.retentionLimit)
+        body.retentionLimit !== undefined
+          ? normalizeRetentionLimit(body.retentionLimit)
           : current.retentionLimit,
-      storeFilterSnapshot:
-        body.spinHistory.storeFilterSnapshot ?? current.storeFilterSnapshot,
+      storeFilterSnapshot: body.storeFilterSnapshot ?? current.storeFilterSnapshot,
     };
 
     await user.save();
 
     const nextSpinHistory = user.preferences.spinHistory;
     if (
-      body.spinHistory.retentionLimit !== undefined &&
+      body.retentionLimit !== undefined &&
       nextSpinHistory &&
       nextSpinHistory.retentionLimit < previousRetention
     ) {

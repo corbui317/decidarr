@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin, isAuthError, authErrorStatus } from '@/lib/auth';
 import { OverseerrService } from '@/lib/services/overseerr';
 import { createLogger } from '@/lib/logger';
+import { assertSafeServiceUrl, allowPrivateServiceUrls } from '@/lib/security/service-url';
 
 const logger = createLogger('API:OverseerrTest');
 
@@ -19,7 +20,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const service = new OverseerrService(url, apiKey);
+    const urlCheck = await assertSafeServiceUrl(url, {
+      allowPrivateNetworks: allowPrivateServiceUrls(),
+    });
+    if (!urlCheck.valid) {
+      return NextResponse.json(
+        { success: false, error: urlCheck.error || 'Invalid or disallowed service URL' },
+        { status: 400 }
+      );
+    }
+
+    const service = new OverseerrService(urlCheck.normalized || url, apiKey);
     const result = await service.testConnection();
 
     if (result.success) {

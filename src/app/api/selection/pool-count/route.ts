@@ -12,7 +12,7 @@ import { WatchedItem } from '@/lib/models/WatchedItem';
 import { PlexService } from '@/lib/services/plex';
 import { createLogger } from '@/lib/logger';
 import { computeDataStats, getPoolCountWithBreakdown } from '@/lib/selection/filters';
-import type { Filters } from '@/types/filters';
+import { parseSelectionRequestBody } from '@/lib/validation/selection';
 
 const logger = createLogger('API:PoolCount');
 
@@ -20,7 +20,12 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireUser();
     const { plexToken, plexServerUrl, settings, user } = auth;
-    const { libraryIds, mediaType, filters = {} } = await request.json();
+    const parsed = parseSelectionRequestBody(await request.json());
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 });
+    }
+
+    const { libraryIds, mediaType, filters } = parsed.data;
 
     if (!libraryIds || libraryIds.length === 0) {
       return NextResponse.json({
@@ -64,7 +69,7 @@ export async function POST(request: NextRequest) {
     const caches = await LibraryCache.find({
       plexMachineId: machineId,
       libraryId: { $in: allowedLibraryIds },
-      mediaType: mediaType || 'movie',
+      mediaType,
     }).lean();
 
     const allItems = caches.flatMap((cache) => cache.items);
@@ -99,7 +104,7 @@ export async function POST(request: NextRequest) {
       const plexService = new PlexService(plexToken, plexServerUrl, settings.plexMachineId);
 
       await Promise.all(
-        (filters.collections as string[]).map(async (collectionKey: string) => {
+        filters.collections.map(async (collectionKey: string) => {
           try {
             const items = await plexService.getCollectionItems(collectionKey);
             for (const item of items) {
@@ -121,7 +126,7 @@ export async function POST(request: NextRequest) {
 
     const result = getPoolCountWithBreakdown(
       allItems,
-      filters as Filters,
+      filters,
       watchedIds,
       dataStats,
       collectionItemIds,

@@ -6,7 +6,8 @@ Implementation-ready specifications for Decidarr, reconciled against the current
 
 1. **[Current Feature Inventory](./current-feature-inventory.md)** — cross-reference of every feature, file, route, model, test, and implementation status.
 2. [00-beta-roadmap.md](./beta/00-beta-roadmap.md) — scope, sequencing, non-goals, implementation snapshot.
-3. Use [spec-template.md](./spec-template.md) when authoring new specs.
+3. **[Security Remediation](./security/01-security-remediation.md)** — implementation spec for Code Reviewer findings (Plex token exposure, OAuth/setup hardening, SSRF, secrets, dependencies).
+4. Use [spec-template.md](./spec-template.md) when authoring new specs.
 
 ## Reading Order
 
@@ -23,6 +24,26 @@ Implementation-ready specifications for Decidarr, reconciled against the current
 - Each spec includes an **Implementation Snapshot** section: what is shipped, partial, or planned.
 - Specs should not become task plans. Convert implementation slices into `docs/tasks/beta/beta-backlog.md`.
 - If code disagrees with the spec, update one of them intentionally. Do not let both drift.
+
+## Security
+
+| Domain | Status | Spec |
+|--------|--------|------|
+| Security remediation (code review findings) | **Ready** | [01-security-remediation](./security/01-security-remediation.md) |
+
+## Code Review Remediation (June 2026)
+
+Cross-cutting fixes from the Code Reviewer pass. Start with the [remediation roadmap](./remediation/00-remediation-roadmap.md).
+
+| Order | Domain | Status | Spec |
+|-------|--------|--------|------|
+| 1 | Correctness quick fixes | **Ready** | [01-correctness-quick-fixes](./remediation/01-correctness-quick-fixes.md) |
+| 2 | API request validation | **Ready** | [02-api-validation](./remediation/02-api-validation.md) |
+| 3 | Maintainability cleanup | **Ready** | [03-maintainability-cleanup](./remediation/03-maintainability-cleanup.md) |
+| 4 | Test infrastructure | **Ready** | [04-test-infrastructure](./remediation/04-test-infrastructure.md) |
+| 5 | Test coverage expansion | **Ready** | [05-test-coverage-expansion](./remediation/05-test-coverage-expansion.md) |
+| 6 | Performance quick wins | **Ready** | [06-performance-quick-wins](./remediation/06-performance-quick-wins.md) |
+| 7 | Library item normalization | **Planned** | [07-library-item-normalization](./remediation/07-library-item-normalization.md) |
 
 ## Current Decidarr Domains
 

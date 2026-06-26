@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { getOrCreateSettings } from '@/lib/models/Settings';
-import { requireAdmin, validatePlexUrl, normalizeUrl, isAuthError, authErrorStatus } from '@/lib/auth';
+import { requireAdmin, isAuthError, authErrorStatus } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
+import { assertSafeServiceUrl, allowPrivateServiceUrls } from '@/lib/security/service-url';
 
 const logger = createLogger('API:Settings');
 
@@ -96,10 +97,12 @@ export async function PUT(request: NextRequest) {
         }
       }
       if (body.plex.serverUrl !== undefined && body.plex.serverUrl) {
-        const urlCheck = validatePlexUrl(body.plex.serverUrl);
+        const urlCheck = await assertSafeServiceUrl(body.plex.serverUrl, {
+          allowPrivateNetworks: allowPrivateServiceUrls(),
+        });
         if (!urlCheck.valid) {
           return NextResponse.json(
-            { error: `Invalid server URL: ${urlCheck.error}` },
+            { error: urlCheck.error || 'Invalid or disallowed service URL' },
             { status: 400 }
           );
         }
@@ -126,7 +129,20 @@ export async function PUT(request: NextRequest) {
 
     if (body.overseerr) {
       if (body.overseerr.url !== undefined) {
-        settings.overseerrUrl = body.overseerr.url ? normalizeUrl(body.overseerr.url) : undefined;
+        if (body.overseerr.url) {
+          const urlCheck = await assertSafeServiceUrl(body.overseerr.url, {
+            allowPrivateNetworks: allowPrivateServiceUrls(),
+          });
+          if (!urlCheck.valid) {
+            return NextResponse.json(
+              { error: urlCheck.error || 'Invalid or disallowed service URL' },
+              { status: 400 }
+            );
+          }
+          settings.overseerrUrl = urlCheck.normalized;
+        } else {
+          settings.overseerrUrl = undefined;
+        }
       }
       if (body.overseerr.apiKey !== undefined) {
         if (body.overseerr.apiKey && !body.overseerr.apiKey.includes('****')) {
@@ -143,7 +159,20 @@ export async function PUT(request: NextRequest) {
     // Update Tautulli settings if provided
     if (body.tautulli) {
       if (body.tautulli.url !== undefined) {
-        settings.tautulliUrl = body.tautulli.url ? normalizeUrl(body.tautulli.url) : undefined;
+        if (body.tautulli.url) {
+          const urlCheck = await assertSafeServiceUrl(body.tautulli.url, {
+            allowPrivateNetworks: allowPrivateServiceUrls(),
+          });
+          if (!urlCheck.valid) {
+            return NextResponse.json(
+              { error: urlCheck.error || 'Invalid or disallowed service URL' },
+              { status: 400 }
+            );
+          }
+          settings.tautulliUrl = urlCheck.normalized;
+        } else {
+          settings.tautulliUrl = undefined;
+        }
       }
       if (body.tautulli.apiKey !== undefined) {
         if (body.tautulli.apiKey && !body.tautulli.apiKey.includes('****')) {

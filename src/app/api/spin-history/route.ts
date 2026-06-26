@@ -9,6 +9,12 @@ import {
   trimSpinHistoryToRetention,
 } from '@/lib/spin-history';
 import { createLogger } from '@/lib/logger';
+import {
+  containsPlexToken,
+  plexImageUrl,
+  resolveItemImageUrls,
+  sanitizeThumbPathInput,
+} from '@/lib/plex-image';
 
 const logger = createLogger('API:SpinHistory');
 
@@ -29,8 +35,17 @@ export async function GET(request: NextRequest) {
       SpinHistoryEntry.countDocuments({ userId }),
     ]);
 
+    const safeItems = items.map((item) => {
+      const images = resolveItemImageUrls(item);
+      return {
+        ...item,
+        thumbPath: item.thumbPath || images.thumbPath,
+        posterUrl: images.posterUrl || undefined,
+      };
+    });
+
     return NextResponse.json({
-      items,
+      items: safeItems,
       total,
       page,
       pageSize: limit,
@@ -63,6 +78,7 @@ export async function POST(request: NextRequest) {
       title,
       mediaType,
       posterUrl,
+      thumbPath,
       year,
       libraryIds = [],
       filtersSnapshot,
@@ -77,6 +93,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (containsPlexToken(posterUrl) || (typeof posterUrl === 'string' && /^https?:\/\//i.test(posterUrl))) {
+      return NextResponse.json(
+        { error: 'posterUrl must not contain Plex tokens or absolute URLs' },
+        { status: 400 }
+      );
+    }
+
+    const safeThumbPath = sanitizeThumbPathInput(thumbPath);
+
     if (!['movie', 'show', 'episode'].includes(mediaType)) {
       return NextResponse.json({ error: 'Invalid mediaType' }, { status: 400 });
     }
@@ -86,7 +111,7 @@ export async function POST(request: NextRequest) {
       plexId,
       title,
       mediaType,
-      posterUrl,
+      thumbPath: safeThumbPath,
       year,
       libraryIds: Array.isArray(libraryIds) ? libraryIds : [],
       filtersSnapshot:
@@ -100,7 +125,14 @@ export async function POST(request: NextRequest) {
 
     await trimSpinHistoryToRetention(userId, prefs.retentionLimit);
 
-    return NextResponse.json({ entry }, { status: 201 });
+    const images = resolveItemImageUrls(entry.toObject());
+    const safeEntry = {
+      ...entry.toObject(),
+      thumbPath: entry.thumbPath || images.thumbPath,
+      posterUrl: images.posterUrl || undefined,
+    };
+
+    return NextResponse.json({ entry: safeEntry }, { status: 201 });
   } catch (error) {
     const msg = (error as Error)?.message;
     if (isAuthError(error)) {

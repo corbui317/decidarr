@@ -31,7 +31,7 @@ export default function LoginScreen({ onLoginSuccess, onReconfigure }: LoginScre
     stopPolling();
 
     try {
-      const { authUrl, pinId } = await authApi.startPlexLogin();
+      const { authUrl, state } = await authApi.startPlexLogin();
       window.open(authUrl, '_blank', 'noopener,noreferrer');
 
       const startedAt = Date.now();
@@ -44,7 +44,7 @@ export default function LoginScreen({ onLoginSuccess, onReconfigure }: LoginScre
         }
 
         try {
-          const result = await authApi.pollPlexLogin(pinId);
+          const result = await authApi.pollPlexLogin(state);
           if (!result.authorized) return;
 
           stopPolling();

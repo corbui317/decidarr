@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { timingSafeEqual } from 'crypto';
 import {
   pollAuthPin,
   OAUTH_PIN_COOKIE,
@@ -9,6 +10,7 @@ import {
 import { completePlexLogin } from '@/lib/auth-login';
 import { connectDB } from '@/lib/db';
 import { createLogger } from '@/lib/logger';
+import { assertSetupSecretAllowed } from '@/lib/security/setup-secret';
 
 const logger = createLogger('API:PlexAuthPoll');
 
@@ -18,27 +20,49 @@ function clearOAuthCookies(cookieStore: Awaited<ReturnType<typeof cookies>>) {
   cookieStore.delete(OAUTH_STATE_COOKIE);
 }
 
+function statesMatch(expected: string, provided: string): boolean {
+  const a = Buffer.from(expected);
+  const b = Buffer.from(provided);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
 export async function GET(request: NextRequest) {
   try {
     await connectDB();
-    const cookieStore = await cookies();
-    const pinIdParam = request.nextUrl.searchParams.get('pinId');
-    const pinId = pinIdParam
-      ? parseInt(pinIdParam, 10)
-      : parseInt(cookieStore.get(OAUTH_PIN_COOKIE)?.value || '', 10);
 
-    const pinCode =
-      cookieStore.get(OAUTH_PIN_CODE_COOKIE)?.value ||
-      request.nextUrl.searchParams.get('code') ||
-      '';
-
-    if (!pinId || isNaN(pinId)) {
-      return NextResponse.json({ error: 'Invalid pin', code: 'INVALID_PIN' }, { status: 400 });
+    const setupCheck = await assertSetupSecretAllowed(request);
+    if (!setupCheck.ok) {
+      return NextResponse.json(
+        { error: setupCheck.error, code: setupCheck.code },
+        { status: setupCheck.status }
+      );
     }
 
-    if (!pinCode) {
+    const cookieStore = await cookies();
+    const pinId = parseInt(cookieStore.get(OAUTH_PIN_COOKIE)?.value || '', 10);
+    const pinCode = cookieStore.get(OAUTH_PIN_CODE_COOKIE)?.value || '';
+    const stateCookie = cookieStore.get(OAUTH_STATE_COOKIE)?.value || '';
+    const stateParam = request.nextUrl.searchParams.get('state') || '';
+
+    if (request.nextUrl.searchParams.has('pinId') || request.nextUrl.searchParams.has('code')) {
       return NextResponse.json(
-        { error: 'Missing authorization code. Please start login again.', code: 'MISSING_CODE' },
+        { error: 'OAuth pin must come from session cookies', code: 'INVALID_OAUTH_PIN' },
+        { status: 400 }
+      );
+    }
+
+    if (!pinId || Number.isNaN(pinId) || !pinCode) {
+      return NextResponse.json(
+        { error: 'Missing OAuth session. Please start login again.', code: 'MISSING_OAUTH_COOKIES' },
+        { status: 400 }
+      );
+    }
+
+    if (!stateCookie || !stateParam || !statesMatch(stateCookie, stateParam)) {
+      clearOAuthCookies(cookieStore);
+      return NextResponse.json(
+        { error: 'Invalid OAuth state', code: 'INVALID_OAUTH_STATE' },
         { status: 400 }
       );
     }

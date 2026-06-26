@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { validateSession } from '@/lib/auth';
+import { requireAdmin, isAuthError, authErrorStatus } from '@/lib/auth';
 import { TautulliService } from '@/lib/services/tautulli';
 import { createLogger } from '@/lib/logger';
+import { assertSafeServiceUrl, allowPrivateServiceUrls } from '@/lib/security/service-url';
 
 const logger = createLogger('API:TautulliTest');
 
 export async function POST(request: NextRequest) {
   try {
-    const valid = await validateSession();
-    if (!valid) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    await requireAdmin();
 
     const body = await request.json();
     const { url, apiKey } = body;
@@ -22,7 +20,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const service = new TautulliService(url, apiKey);
+    const urlCheck = await assertSafeServiceUrl(url, {
+      allowPrivateNetworks: allowPrivateServiceUrls(),
+    });
+    if (!urlCheck.valid) {
+      return NextResponse.json(
+        { success: false, error: urlCheck.error || 'Invalid or disallowed service URL' },
+        { status: 400 }
+      );
+    }
+
+    const service = new TautulliService(urlCheck.normalized || url, apiKey);
     const result = await service.testConnection();
 
     if (result.success) {
@@ -41,6 +49,12 @@ export async function POST(request: NextRequest) {
     logger.warn('Tautulli test failed', { error: result.error });
     return NextResponse.json({ success: false, error: result.error });
   } catch (error) {
+    if (isAuthError(error)) {
+      return NextResponse.json(
+        { error: (error as Error).message },
+        { status: authErrorStatus(error) }
+      );
+    }
     logger.error('Tautulli test error', { error: (error as Error).message });
     return NextResponse.json(
       { success: false, error: 'Failed to test Tautulli connection' },

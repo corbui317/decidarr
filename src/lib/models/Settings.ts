@@ -84,13 +84,29 @@ export interface ISettings extends Omit<Document, '_id'> {
 }
 
 // Master key for encrypting the auto-generated secrets
-// This is derived from a combination of factors to make it unique per installation
-const getMasterKey = (): string => {
-  // Use a fixed prefix combined with MongoDB connection info
-  // This ensures consistency across restarts while being installation-specific
+const getLegacyMasterKey = (): string => {
   const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/decidarr';
   return CryptoJS.SHA256('decidarr-master-' + mongoUri).toString().substring(0, 32);
 };
+
+const getMasterKey = (): string => {
+  const secret = process.env.DECIDARR_SECRET?.trim();
+  if (secret) {
+    return CryptoJS.SHA256('decidarr-secret-' + secret).toString().substring(0, 32);
+  }
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('DECIDARR_SECRET is required in production');
+  }
+  return getLegacyMasterKey();
+};
+
+export function getLegacySettingsMasterKey(): string {
+  return getLegacyMasterKey();
+}
+
+export function getCurrentSettingsMasterKey(): string {
+  return getMasterKey();
+}
 
 const settingsSchema = new mongoose.Schema<ISettings>(
   {
@@ -171,10 +187,21 @@ const encryptWithMaster = (value: string): string => {
 };
 
 // Decrypt a value with the master key
-const decryptWithMaster = (encrypted: string): string => {
-  const masterKey = getMasterKey();
+const decryptWithMasterKey = (encrypted: string, masterKey: string): string => {
   const bytes = CryptoJS.AES.decrypt(encrypted, masterKey);
   return bytes.toString(CryptoJS.enc.Utf8);
+};
+
+const decryptWithMaster = (encrypted: string): string => {
+  const currentKey = getMasterKey();
+  const decrypted = decryptWithMasterKey(encrypted, currentKey);
+  if (decrypted) return decrypted;
+
+  if (process.env.DECIDARR_SECRET?.trim()) {
+    return decryptWithMasterKey(encrypted, getLegacyMasterKey());
+  }
+
+  return decrypted;
 };
 
 // Methods to get decrypted values

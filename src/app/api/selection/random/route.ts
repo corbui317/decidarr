@@ -13,16 +13,22 @@ import { PlexService } from '@/lib/services/plex';
 import { TMDbService } from '@/lib/services/tmdb';
 import { createLogger } from '@/lib/logger';
 import { applyFullFilters } from '@/lib/selection/filters';
-import type { Filters } from '@/types/filters';
+import { sanitizeLibraryItemForClient } from '@/lib/plex-image';
+import { parseSelectionRequestBody } from '@/lib/validation/selection';
 
 const logger = createLogger('API:Random');
 
 export async function POST(request: NextRequest) {
   try {
     const auth = await requireUser();
-    const { libraryIds, mediaType, filters = {}, tvSelectionMode } = await request.json();
+    const parsed = parseSelectionRequestBody(await request.json());
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 });
+    }
 
-    if (!libraryIds || libraryIds.length === 0) {
+    const { libraryIds, mediaType, filters, tvSelectionMode } = parsed.data;
+
+    if (libraryIds.length === 0) {
       return NextResponse.json(
         { error: 'At least one library must be selected' },
         { status: 400 }
@@ -45,7 +51,7 @@ export async function POST(request: NextRequest) {
     const caches = await LibraryCache.find({
       plexMachineId: machineId,
       libraryId: { $in: allowedLibraryIds },
-      mediaType: mediaType || 'movie',
+      mediaType,
     }).lean();
 
     let allItems = caches.flatMap((cache) => cache.items);
@@ -73,7 +79,7 @@ export async function POST(request: NextRequest) {
     if (filters.collections && filters.collections.length > 0) {
       collectionItemIds = new Set<string>();
       await Promise.all(
-        (filters.collections as string[]).map(async (collectionKey: string) => {
+        filters.collections.map(async (collectionKey: string) => {
           try {
             const items = await plexService.getCollectionItems(collectionKey);
             for (const item of items) {
@@ -101,7 +107,7 @@ export async function POST(request: NextRequest) {
 
     allItems = applyFullFilters(
       allItems,
-      filters as Filters,
+      filters,
       watchedIds,
       collectionItemIds,
       settings.overseerrFilterEnabled
@@ -127,16 +133,16 @@ export async function POST(request: NextRequest) {
       tmdbData = await tmdbService.matchPlexItem(
         fullDetails.title,
         fullDetails.year,
-        mediaType as 'movie' | 'show'
+        mediaType
       );
     }
 
     return NextResponse.json({
-      selection: {
+      selection: sanitizeLibraryItemForClient({
         ...fullDetails,
         tmdb: tmdbData,
         overseerrStatus: selectedItem.overseerrStatus ?? null,
-      },
+      } as Record<string, unknown>),
       playLinks,
       stats: {
         totalMatches: allItems.length,

@@ -10,11 +10,20 @@ import {
   getOAuthCookieOptions,
 } from '@/lib/services/plex-oauth';
 import { createLogger } from '@/lib/logger';
+import { assertSetupSecretAllowed } from '@/lib/security/setup-secret';
 
 const logger = createLogger('API:PlexAuthStart');
 
 export async function POST(request: Request) {
   try {
+    const setupCheck = await assertSetupSecretAllowed(request);
+    if (!setupCheck.ok) {
+      return NextResponse.json(
+        { error: setupCheck.error, code: setupCheck.code },
+        { status: setupCheck.status }
+      );
+    }
+
     const state = generateOAuthState();
     const pin = await createAuthPin();
 

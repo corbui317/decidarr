@@ -4,10 +4,9 @@ import { useState, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
-  selectionApi,
-  spinHistoryApi,
-  SpinHistoryEntry,
   authApi,
+  watchedApi,
+  SpinHistoryEntry,
   AnimationStyle,
   AnimationSpeed,
 } from '@/lib/api';
@@ -20,35 +19,11 @@ import LibrarySelector from '@/components/LibrarySelector';
 import FilterPanel from '@/components/FilterPanel';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import RecentSpins, { historyFiltersToFilters } from '@/components/RecentSpins';
-import {
-  resolveAnimationStyle,
-  ResolvedAnimationStyle,
-  PlexItem,
-} from '@/components/animations';
-
-import { Filters, DEFAULT_FILTERS, PoolCountResult } from '@/types/filters';
-
-type SpinPhase = 'idle' | 'loading' | 'animating' | 'result';
-
-interface SelectionResult {
-  selection: {
-    plexId: string;
-    title: string;
-    type: string;
-    tmdb?: unknown;
-    [key: string]: unknown;
-  };
-  playLinks?: {
-    web: string;
-    app: string;
-    ios: string;
-    android: string;
-    machineId: string | null;
-  } | null;
-  stats: {
-    totalMatches: number;
-  };
-}
+import { PlexItem } from '@/components/animations';
+import { Filters, DEFAULT_FILTERS } from '@/types/filters';
+import { usePoolCount } from '@/hooks/usePoolCount';
+import { useSpinFlow } from '@/hooks/useSpinFlow';
+import type { SelectionResultResponse } from '@/types/api/selection';
 
 export default function Dashboard() {
   const { isAuthenticated, loading: authLoading } = useAuth();
@@ -57,22 +32,42 @@ export default function Dashboard() {
   const [selectedLibraries, setSelectedLibraries] = useState<string[]>([]);
   const [mediaType, setMediaType] = useState('movie');
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
-  const [phase, setPhase] = useState<SpinPhase>('idle');
-  const [pendingResult, setPendingResult] = useState<SelectionResult | null>(null);
-  const [activeVariant, setActiveVariant] = useState<ResolvedAnimationStyle>('slots');
-  const [result, setResult] = useState<SelectionResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [stats, setStats] = useState<{ totalMatches: number } | null>(null);
-  const [poolCount, setPoolCount] = useState<number | null>(null);
-  const [totalItems, setTotalItems] = useState<number>(0);
-  const [emptyReason, setEmptyReason] = useState<string | null>(null);
-  const [dataStats, setDataStats] = useState<PoolCountResult['dataStats'] | null>(null);
-  const [loadingPoolCount, setLoadingPoolCount] = useState(false);
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
   const [tvSelectionMode, setTvSelectionMode] = useState<'show' | 'episode'>('show');
-  const [overseerrWarning, setOverseerrWarning] = useState<string | null>(null);
   const [animationStyle, setAnimationStyle] = useState<AnimationStyle>('slots');
   const [animationSpeed, setAnimationSpeed] = useState<AnimationSpeed>('normal');
+  const [resultWatched, setResultWatched] = useState<boolean | null>(null);
+
+  const {
+    poolCount,
+    totalItems,
+    emptyReason,
+    dataStats,
+    overseerrWarning,
+    loadingPoolCount,
+  } = usePoolCount(selectedLibraries, mediaType, filters);
+
+  const {
+    phase,
+    pendingResult,
+    activeVariant,
+    result,
+    error,
+    stats,
+    setError,
+    handleSpin,
+    handleAnimationComplete,
+    handleSpinAgain,
+    resetResult,
+    showHistoryResult,
+  } = useSpinFlow({
+    selectedLibraries,
+    mediaType,
+    filters,
+    tvSelectionMode,
+    animationStyle,
+    onHistoryRecorded: () => setHistoryRefreshKey((k) => k + 1),
+  });
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -123,102 +118,28 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    if (selectedLibraries.length === 0) {
-      setPoolCount(null);
-      setTotalItems(0);
-      setEmptyReason(null);
-      setDataStats(null);
-      setOverseerrWarning(null);
+    const plexId = result?.selection.plexId;
+    if (!plexId) {
+      setResultWatched(null);
       return;
     }
 
-    const controller = new AbortController();
-    let requestId = 0;
+    let cancelled = false;
+    setResultWatched(null);
 
-    const fetchPoolCount = async () => {
-      const id = ++requestId;
-      setLoadingPoolCount(true);
-      try {
-        const data = await selectionApi.getPoolCount(
-          selectedLibraries,
-          mediaType,
-          filters,
-          controller.signal
-        );
-        if (id !== requestId) return;
-        setPoolCount(data.matchingItems);
-        setTotalItems(data.totalItems);
-        setEmptyReason(data.emptyReason);
-        setDataStats(data.dataStats);
-        setOverseerrWarning(data.overseerrWarning ?? null);
-      } catch (err) {
-        if (id !== requestId) return;
-        if (err instanceof DOMException && err.name === 'AbortError') return;
-        console.error('Failed to fetch pool count:', err);
-        setPoolCount(null);
-      } finally {
-        if (id === requestId) {
-          setLoadingPoolCount(false);
-        }
-      }
-    };
+    watchedApi
+      .getStatus(plexId)
+      .then(({ watched }) => {
+        if (!cancelled) setResultWatched(watched);
+      })
+      .catch(() => {
+        if (!cancelled) setResultWatched(false);
+      });
 
-    const timeoutId = setTimeout(fetchPoolCount, 300);
     return () => {
-      clearTimeout(timeoutId);
-      controller.abort();
+      cancelled = true;
     };
-  }, [selectedLibraries, mediaType, filters]);
-
-  const handleSpin = useCallback(async () => {
-    if (selectedLibraries.length === 0) return;
-
-    setPhase('loading');
-    setError(null);
-    setResult(null);
-    setPendingResult(null);
-
-    const variant = resolveAnimationStyle(animationStyle);
-    setActiveVariant(variant);
-
-    try {
-      const data = await selectionApi.getRandom(
-        selectedLibraries,
-        mediaType,
-        filters,
-        mediaType === 'show' ? tvSelectionMode : undefined
-      );
-
-      setPendingResult(data as SelectionResult);
-      setStats(data.stats);
-
-      const selection = (data as SelectionResult).selection;
-      spinHistoryApi
-        .create({
-          plexId: selection.plexId,
-          title: selection.title,
-          mediaType: (selection.type as 'movie' | 'show' | 'episode') || 'movie',
-          thumbPath:
-            typeof selection.thumbPath === 'string' ? selection.thumbPath : undefined,
-          year: typeof selection.year === 'number' ? selection.year : undefined,
-          libraryIds: selectedLibraries,
-          filtersSnapshot: filters,
-          tvSelectionMode: mediaType === 'show' ? tvSelectionMode : undefined,
-          poolSizeAtSpin: data.stats?.totalMatches,
-        })
-        .then(() => setHistoryRefreshKey((k) => k + 1))
-        .catch((historyErr) => console.error('Failed to record spin history:', historyErr));
-      setPhase('animating');
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Something went wrong';
-      if (errorMessage.includes('No items')) {
-        setError('No items found matching your criteria');
-      } else {
-        setError('Something went wrong. Please try again.');
-      }
-      setPhase('idle');
-    }
-  }, [selectedLibraries, mediaType, filters, tvSelectionMode, animationStyle]);
+  }, [result?.selection.plexId]);
 
   const handleReapplyHistory = useCallback((entry: SpinHistoryEntry) => {
     if (entry.libraryIds?.length) {
@@ -234,11 +155,11 @@ export default function Dashboard() {
     if (restoredFilters) {
       setFilters(restoredFilters);
     }
-    setResult(null);
-  }, []);
+    resetResult();
+  }, [resetResult]);
 
   const handleRevisitHistory = useCallback((entry: SpinHistoryEntry) => {
-    setResult({
+    const historyResult: SelectionResultResponse = {
       selection: {
         plexId: entry.plexId,
         title: entry.title,
@@ -249,31 +170,16 @@ export default function Dashboard() {
       },
       playLinks: null,
       stats: { totalMatches: entry.poolSizeAtSpin ?? 0 },
-    });
-    setPhase('result');
-  }, []);
-
-  const handleAnimationComplete = useCallback(() => {
-    if (pendingResult) {
-      setResult(pendingResult);
-      setPendingResult(null);
-    }
-    setPhase('result');
-  }, [pendingResult]);
+    };
+    showHistoryResult(historyResult);
+  }, [showHistoryResult]);
 
   const handleMediaTypeChange = useCallback((type: string) => {
     setMediaType(type);
     setSelectedLibraries([]);
-    setResult(null);
-    setPhase('idle');
+    resetResult();
     setFilters(DEFAULT_FILTERS);
-  }, []);
-
-  const handleSpinAgain = useCallback(() => {
-    setResult(null);
-    setPhase('idle');
-    handleSpin();
-  }, [handleSpin]);
+  }, [resetResult]);
 
   const spinDisabled =
     selectedLibraries.length === 0 || loadingPoolCount || poolCount === 0;
@@ -357,10 +263,10 @@ export default function Dashboard() {
                     </div>
 
                     <MovieCard
-                      item={result.selection as Parameters<typeof MovieCard>[0]['item']}
-                      tmdb={result.selection.tmdb as Parameters<typeof MovieCard>[0]['tmdb']}
-                      isWatched={false}
-                      onWatchedChange={() => {}}
+                      item={result.selection}
+                      tmdb={result.selection.tmdb ?? undefined}
+                      isWatched={resultWatched ?? false}
+                      onWatchedChange={setResultWatched}
                       playLinks={result.playLinks}
                     />
 
@@ -374,10 +280,7 @@ export default function Dashboard() {
                         Spin Again
                       </button>
                       <button
-                        onClick={() => {
-                          setResult(null);
-                          setPhase('idle');
-                        }}
+                        onClick={resetResult}
                         className="px-6 py-3 bg-decidarr-secondary text-white
                                font-semibold rounded-lg hover:bg-white/10
                                transition-colors border border-gray-700"

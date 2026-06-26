@@ -31,6 +31,7 @@ export default defineConfig({
       MONGODB_URI: e2eMongoUri,
       SECURE_COOKIES: 'false',
       E2E_MOCK_PLEX: 'true',
+      DECIDARR_ALLOW_PRIVATE_URLS: 'true',
     },
   },
 });

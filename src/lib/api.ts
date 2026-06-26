@@ -1,6 +1,9 @@
 'use client';
 
 import type { Filters } from '@/types/filters';
+import type { SelectionResultResponse } from '@/types/api/selection';
+import type { MediaType, TvSelectionMode } from '@/lib/validation/selection';
+import type { WatchedMediaType } from '@/lib/validation/watched';
 
 const API_BASE = '/api';
 const SETUP_SECRET_STORAGE_KEY = 'decidarr_setup_secret';
@@ -226,11 +229,11 @@ export const libraryApi = {
 export const selectionApi = {
   getRandom: (
     libraryIds: string[],
-    mediaType: string,
-    filters: unknown,
-    tvSelectionMode?: string
+    mediaType: MediaType,
+    filters: Filters,
+    tvSelectionMode?: TvSelectionMode
   ) =>
-    request<{ selection: unknown; stats: { totalMatches: number } }>('/selection/random', {
+    request<SelectionResultResponse>('/selection/random', {
       method: 'POST',
       body: { libraryIds, mediaType, filters, tvSelectionMode },
     }),
@@ -240,8 +243,8 @@ export const selectionApi = {
     ),
   getPoolCount: (
     libraryIds: string[],
-    mediaType: string,
-    filters: unknown,
+    mediaType: MediaType,
+    filters: Filters,
     signal?: AbortSignal
   ) =>
     request<{
@@ -277,7 +280,9 @@ export const watchedApi = {
     request<{ items: unknown[]; pagination: unknown }>(
       `/watched?mediaType=${mediaType || ''}&page=${page}&limit=${limit}`
     ),
-  markWatched: (plexId: string, mediaType: string, title: string) =>
+  getStatus: (plexId: string) =>
+    request<{ watched: boolean }>(`/watched/${encodeURIComponent(plexId)}`),
+  markWatched: (plexId: string, mediaType: WatchedMediaType, title: string) =>
     request(`/watched/${plexId}`, {
       method: 'POST',
       body: { mediaType, title },

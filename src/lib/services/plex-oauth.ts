@@ -237,10 +237,12 @@ export async function fetchPlexFriends(authToken: string): Promise<
   }
 }
 
+import { isSecureCookieEnabled } from '@/lib/security/cookie-options';
+
 export function getOAuthCookieOptions() {
   return {
     httpOnly: true,
-    secure: process.env.SECURE_COOKIES === 'true',
+    secure: isSecureCookieEnabled(),
     sameSite: 'lax' as const,
     maxAge: OAUTH_COOKIE_MAX_AGE,
     path: '/',

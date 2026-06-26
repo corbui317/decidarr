@@ -5,6 +5,7 @@ import { createCookieMock } from './tests/helpers/cookies';
 process.env.MONGODB_URI =
   process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/decidarr-test';
 process.env.SECURE_COOKIES = 'false';
+process.env.DECIDARR_ALLOW_PRIVATE_URLS = 'true';
 
 if (typeof window !== 'undefined') {
   Object.defineProperty(window, 'matchMedia', {

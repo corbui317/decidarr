@@ -8,6 +8,10 @@ services:
     environment:
       - NODE_ENV=production
       - MONGODB_URI=mongodb://mongo:27017/decidarr
+      - SECURE_COOKIES=true
+      - DECIDARR_SECRET=${DECIDARR_SECRET}
+      - DECIDARR_SETUP_SECRET=${DECIDARR_SETUP_SECRET}
+      - DECIDARR_ALLOW_PRIVATE_URLS=${DECIDARR_ALLOW_PRIVATE_URLS:-true}
     depends_on:
       - mongo
     networks:

@@ -5,7 +5,10 @@ export interface ILibraryItem {
   plexId: string;
   title: string;
   year?: number;
+  /** @deprecated Tokenless thumbPath preferred */
   posterUrl?: string;
+  thumbPath?: string;
+  artPath?: string;
   genres?: string[];
   summary?: string;
   rating?: number;
@@ -45,6 +48,8 @@ const libraryItemSchema = new mongoose.Schema<ILibraryItem>(
     title: { type: String, required: true },
     year: Number,
     posterUrl: String,
+    thumbPath: String,
+    artPath: String,
     genres: [String],
     summary: String,
     rating: Number,

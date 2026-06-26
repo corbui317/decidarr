@@ -35,10 +35,8 @@ export default function LibrarySelector({
     setIsAuthErrorState(false);
     
     try {
-      console.log('[LibrarySelector] Loading library sections...');
       const data = await libraryApi.getSections();
       setSections(data.sections as Section[]);
-      console.log('[LibrarySelector] Loaded sections:', data.sections.length);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load libraries';
       console.error('[LibrarySelector] Load error:', message);
@@ -163,43 +161,55 @@ export default function LibrarySelector({
             No {mediaType === 'movie' ? 'movie' : 'TV show'} libraries found
           </p>
         ) : (
-          filteredSections.map((section) => (
-            <button
-              key={section.id}
-              onClick={() => handleToggle(section.id)}
-              disabled={syncing[section.id]}
-              className={`w-full flex items-center justify-between p-3 rounded-lg
-                       transition-all ${
-                         selectedLibraries.includes(section.id)
-                           ? 'bg-decidarr-primary/20 border-2 border-decidarr-primary'
-                           : 'bg-decidarr-dark border-2 border-transparent hover:border-gray-700'
-                       }`}
-            >
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">{section.type === 'movie' ? '🎬' : '📺'}</span>
-                <span className="font-medium text-white">{section.title}</span>
+          filteredSections.map((section) => {
+            const isSelected = selectedLibraries.includes(section.id);
+            const isSyncing = syncing[section.id];
+
+            return (
+              <div
+                key={section.id}
+                role="group"
+                aria-label={section.title}
+                className={`w-full flex items-center justify-between p-3 rounded-lg transition-all ${
+                  isSelected
+                    ? 'bg-decidarr-primary/20 border-2 border-decidarr-primary'
+                    : 'bg-decidarr-dark border-2 border-transparent hover:border-gray-700'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => handleToggle(section.id)}
+                  disabled={isSyncing}
+                  className="flex flex-1 items-center gap-3 min-w-0 text-left"
+                  aria-pressed={isSelected}
+                >
+                  <span className="text-2xl">{section.type === 'movie' ? '🎬' : '📺'}</span>
+                  <span className="font-medium text-white">{section.title}</span>
+                </button>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {isSelected && (
+                    <button
+                      type="button"
+                      onClick={(e) => handleRefresh(e, section.id)}
+                      disabled={isSyncing}
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-decidarr-primary hover:bg-decidarr-dark/50 transition-colors disabled:opacity-50"
+                      title="Refresh library"
+                      aria-label={`Refresh ${section.title}`}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                    </button>
+                  )}
+                  {isSyncing ? (
+                    <LoadingSpinner size="sm" />
+                  ) : isSelected ? (
+                    <span className="text-decidarr-primary" aria-hidden="true">✓</span>
+                  ) : null}
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                {selectedLibraries.includes(section.id) && !syncing[section.id] && (
-                  <button
-                    onClick={(e) => handleRefresh(e, section.id)}
-                    className="p-1.5 rounded-lg text-gray-400 hover:text-decidarr-primary hover:bg-decidarr-dark/50 transition-colors"
-                    title="Refresh library"
-                    aria-label={`Refresh ${section.title}`}
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                  </button>
-                )}
-                {syncing[section.id] ? (
-                  <LoadingSpinner size="sm" />
-                ) : selectedLibraries.includes(section.id) ? (
-                  <span className="text-decidarr-primary">✓</span>
-                ) : null}
-              </div>
-            </button>
-          ))
+            );
+          })
         )}
       </div>
     </div>

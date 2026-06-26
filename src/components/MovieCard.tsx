@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { watchedApi } from '@/lib/api';
+import { resolveItemImageUrls } from '@/lib/plex-image';
 
 interface Item {
   plexId: string;
@@ -73,6 +74,12 @@ export default function MovieCard({ item, tmdb, isWatched = false, onWatchedChan
   const [selectedDevice, setSelectedDevice] = useState<PlayDevice['id']>('web');
   const devicePickerRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    setWatched(isWatched);
+    setExpanded(false);
+    setWatchedError(null);
+  }, [item.plexId, isWatched]);
+
   // Close device picker when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -135,6 +142,9 @@ export default function MovieCard({ item, tmdb, isWatched = false, onWatchedChan
 
   const rating = tmdb?.voteAverage || item.rating;
   const runtime = tmdb?.runtime || (item.duration ? Math.round(item.duration / 60000) : null);
+  const images = resolveItemImageUrls(item);
+  const backdropUrl = images.art;
+  const posterUrl = images.posterUrl;
 
   return (
     <motion.div
@@ -144,11 +154,11 @@ export default function MovieCard({ item, tmdb, isWatched = false, onWatchedChan
     >
       {/* Backdrop/Poster */}
       <div className="relative aspect-video bg-decidarr-dark">
-        {item.art ? (
-          <img src={item.art} alt={item.title} className="w-full h-full object-cover" />
-        ) : item.posterUrl ? (
+        {backdropUrl ? (
+          <img src={backdropUrl} alt={item.title} className="w-full h-full object-cover" />
+        ) : posterUrl ? (
           <div className="flex items-center justify-center h-full">
-            <img src={item.posterUrl} alt={item.title} className="h-full object-contain" />
+            <img src={posterUrl} alt={item.title} className="h-full object-contain" />
           </div>
         ) : (
           <div className="flex items-center justify-center h-full text-6xl">

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { getOrCreateSettings } from '@/lib/models/Settings';
 import { loadUserWithToken } from '@/lib/models/User';
+import { isSetupSecretRequired, getConfiguredSetupSecret } from '@/lib/security/setup-secret';
 
 async function hasUsablePlexToken(
   settings: Awaited<ReturnType<typeof getOrCreateSettings>>
@@ -36,6 +37,7 @@ export async function GET() {
       hasPlexToken,
       hasPlexServer,
       hasTmdbKey: !!settings.getDecryptedTmdbKey(),
+      setupSecretRequired: !setupComplete && isSetupSecretRequired() && !!getConfiguredSetupSecret(),
     });
   } catch (error) {
     console.error('Settings status error:', error);

@@ -7,6 +7,7 @@ import { PlexService, PlexServer } from './services/plex';
 import { fetchPlexUser } from './services/plex-oauth';
 import { validatePlexUrl } from './auth';
 import { createLogger } from './logger';
+import { isSecureCookieEnabled } from './security/cookie-options';
 
 const logger = createLogger('AuthLogin');
 
@@ -76,12 +77,19 @@ export async function completePlexLogin(
   }
 
   const ownedServers = servers.filter((s) => s.owned);
-  const candidateServer = ownedServers[0] || servers[0];
+  const candidateServer = !settings.setupComplete ? ownedServers[0] : ownedServers[0] || servers[0];
 
   let isAdmin = false;
   let isApproved = false;
 
   if (!settings.setupComplete) {
+    if (ownedServers.length === 0) {
+      return {
+        success: false,
+        error: 'No owned Plex Media Server found on your account. You need an owned server to set up Decidarr.',
+        status: 403,
+      };
+    }
     if (!candidateServer) {
       return {
         success: false,
@@ -217,7 +225,7 @@ export async function issueSessionCookie(user: IUser, jwtSecret: string): Promis
   const cookieStore = await cookies();
   cookieStore.set(SESSION_COOKIE, token, {
     httpOnly: true,
-    secure: process.env.SECURE_COOKIES === 'true',
+    secure: isSecureCookieEnabled(),
     sameSite: 'lax',
     maxAge: SESSION_MAX_AGE,
     path: '/',

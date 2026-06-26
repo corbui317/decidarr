@@ -5,7 +5,9 @@ export interface ISpinHistoryEntry extends Document {
   plexId: string;
   title: string;
   mediaType: 'movie' | 'show' | 'episode';
+  /** @deprecated Use thumbPath */
   posterUrl?: string;
+  thumbPath?: string;
   year?: number;
   libraryIds: string[];
   filtersSnapshot?: Record<string, unknown>;
@@ -23,6 +25,7 @@ const spinHistoryEntrySchema = new mongoose.Schema<ISpinHistoryEntry>(
     title: { type: String, required: true },
     mediaType: { type: String, enum: ['movie', 'show', 'episode'], required: true },
     posterUrl: { type: String },
+    thumbPath: { type: String },
     year: { type: Number },
     libraryIds: { type: [String], default: [] },
     filtersSnapshot: { type: mongoose.Schema.Types.Mixed },

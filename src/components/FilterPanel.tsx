@@ -250,7 +250,10 @@ export default function FilterPanel({
   return (
     <div className="bg-decidarr-secondary rounded-xl overflow-hidden">
       <button
+        type="button"
         onClick={() => setIsOpen(!isOpen)}
+        aria-expanded={isOpen}
+        aria-controls="filter-panel-content"
         className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition"
       >
         <div className="flex items-center gap-2">
@@ -266,7 +269,7 @@ export default function FilterPanel({
       </button>
 
       {isOpen && (
-        <div className="p-4 pt-0 space-y-4">
+        <div id="filter-panel-content" className="p-4 pt-0 space-y-4">
           {overseerrWarning && (
             <div
               role="status"
@@ -316,7 +319,9 @@ export default function FilterPanel({
           <div className="space-y-2">
             <label className="block text-sm font-medium text-gray-400 mb-2">Quick Filters</label>
             <button
+              type="button"
               onClick={toggleUnwatched}
+              aria-pressed={filters.unwatchedOnly}
               className={`w-full flex items-center justify-between p-3 rounded-lg transition ${
                 filters.unwatchedOnly
                   ? 'bg-decidarr-primary/20 border-2 border-decidarr-primary'
@@ -341,7 +346,9 @@ export default function FilterPanel({
                 {collections.map((collection) => (
                   <button
                     key={collection.ratingKey}
+                    type="button"
                     onClick={() => toggleCollection(collection.ratingKey)}
+                    aria-pressed={(filters.collections || []).includes(collection.ratingKey)}
                     className={`px-3 py-1 rounded-full text-sm transition ${
                       (filters.collections || []).includes(collection.ratingKey)
                         ? 'bg-decidarr-primary text-decidarr-dark'
@@ -369,7 +376,9 @@ export default function FilterPanel({
                 {genres.map((genre) => (
                   <button
                     key={genre}
+                    type="button"
                     onClick={() => toggleGenre(genre)}
+                    aria-pressed={filters.genres.includes(genre)}
                     className={`px-3 py-1 rounded-full text-sm transition ${
                       filters.genres.includes(genre)
                         ? 'bg-decidarr-primary text-decidarr-dark'
@@ -386,9 +395,11 @@ export default function FilterPanel({
           {/* 4. YEAR RANGE - Commonly used */}
           {showYearFilter && (
             <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">Year Range</label>
-              <div className="flex items-center gap-2">
+              <span id="year-range-label" className="block text-sm font-medium text-gray-400 mb-2">Year Range</span>
+              <div className="flex items-center gap-2" role="group" aria-labelledby="year-range-label">
+                <label htmlFor="filter-year-start" className="sr-only">Year from</label>
                 <input
+                  id="filter-year-start"
                   type="number"
                   placeholder={String(yearRange.min)}
                   value={filters.yearRange?.start || ''}
@@ -397,7 +408,9 @@ export default function FilterPanel({
                            text-white text-center focus:border-decidarr-primary outline-none"
                 />
                 <span className="text-gray-500">to</span>
+                <label htmlFor="filter-year-end" className="sr-only">Year to</label>
                 <input
+                  id="filter-year-end"
                   type="number"
                   placeholder={String(yearRange.max)}
                   value={filters.yearRange?.end || ''}
@@ -427,7 +440,9 @@ export default function FilterPanel({
                   {ratingCategories.map((category) => (
                     <button
                       key={category.id}
+                      type="button"
                       onClick={() => toggleRatingFilter(category.id)}
+                      aria-pressed={filters.ratingFilter === category.id}
                       className={`p-2 rounded-lg text-sm text-left transition flex items-center gap-2 ${
                         filters.ratingFilter === category.id
                           ? 'bg-decidarr-primary/20 border-2 border-decidarr-primary'
@@ -442,8 +457,10 @@ export default function FilterPanel({
               )}
 
               {/* Custom range */}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2" role="group" aria-label="Custom score rating range">
+                <label htmlFor="filter-rating-min" className="sr-only">Minimum score</label>
                 <input
+                  id="filter-rating-min"
                   type="number"
                   step="0.5"
                   min={filterOptions.ratingRange.min}
@@ -455,7 +472,9 @@ export default function FilterPanel({
                            text-white text-center focus:border-decidarr-primary outline-none text-sm"
                 />
                 <span className="text-gray-500 text-sm">to</span>
+                <label htmlFor="filter-rating-max" className="sr-only">Maximum score</label>
                 <input
+                  id="filter-rating-max"
                   type="number"
                   step="0.5"
                   min={filterOptions.ratingRange.min}
@@ -489,7 +508,9 @@ export default function FilterPanel({
                 {filterOptions.contentRatings.map((rating) => (
                   <button
                     key={rating}
+                    type="button"
                     onClick={() => toggleContentRating(rating)}
+                    aria-pressed={filters.contentRatings.includes(rating)}
                     className={`px-3 py-1 rounded-full text-sm transition ${
                       filters.contentRatings.includes(rating)
                         ? 'bg-decidarr-primary text-decidarr-dark'
@@ -560,7 +581,9 @@ export default function FilterPanel({
                   currentStudios.map((studio) => (
                     <button
                       key={studio}
+                      type="button"
                       onClick={() => toggleStudio(studio)}
+                      aria-pressed={filters.studios.includes(studio)}
                       className={`px-3 py-1 rounded-full text-xs transition ${
                         filters.studios.includes(studio)
                           ? 'bg-decidarr-primary text-decidarr-dark'
