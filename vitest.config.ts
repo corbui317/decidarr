@@ -18,6 +18,13 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
       include: ['src/**/*.{ts,tsx}'],
+      thresholds: {
+        'src/lib/auth.ts': { lines: 70 },
+        'src/lib/auth-login.ts': { lines: 70 },
+        'src/lib/security/**': { lines: 70 },
+        'src/app/api/auth/**': { lines: 70 },
+        'src/lib/services/overseerr.ts': { lines: 70 },
+      },
       exclude: [
         'src/**/*.d.ts',
         'src/app/**/layout.tsx',

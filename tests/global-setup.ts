@@ -7,6 +7,12 @@ let mongoServer: MongoMemoryServer;
 const URI_FILE = path.join(__dirname, '.mongo-uri');
 
 export async function setup() {
+  const existingUri = process.env.MONGODB_URI?.trim();
+  if (existingUri) {
+    fs.writeFileSync(URI_FILE, existingUri, 'utf-8');
+    return;
+  }
+
   process.env.MONGOMS_DOWNLOAD_DIR = path.join(process.cwd(), '.cache', 'mongodb-binaries');
   mongoServer = await MongoMemoryServer.create();
   const uri = mongoServer.getUri();

@@ -48,6 +48,20 @@ describe('POST /api/tautulli/sync', () => {
     tautulliMock.getUserIdByPlexUsername.mockResolvedValue(42);
   });
 
+  it('returns 400 when Tautulli sync is disabled', async () => {
+    const settings = await getOrCreateSettings();
+    settings.tautulliEnabled = false;
+    await settings.save();
+
+    const res = await tautulliSyncPost();
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.error).toMatch(/not enabled/i);
+    expect(tautulliMock.testConnection).not.toHaveBeenCalled();
+    expect(await WatchedItem.countDocuments({ userId })).toBe(0);
+  });
+
   it('imports paginated movie and episode history beyond a single page', async () => {
     const movies = Array.from({ length: 3 }, (_, i) => ({
       reference_id: i + 1,

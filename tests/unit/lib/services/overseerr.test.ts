@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { OverseerrService } from '@/lib/services/overseerr';
+import multiPageFixture from '../../../fixtures/overseerr-multi-page.json';
 
 const PAGE_SIZE = 100;
 
@@ -28,11 +29,10 @@ describe('OverseerrService.fetchAllMediaStatus', () => {
   });
 
   it('uses skip offset for pages after the first', async () => {
-    const page0 = Array.from({ length: PAGE_SIZE }, (_, i) => makeMediaRecord(i + 1));
-    const page1 = Array.from({ length: PAGE_SIZE }, (_, i) => makeMediaRecord(i + PAGE_SIZE + 1));
-    const page2 = [makeMediaRecord(250)];
-
-    const pages = [makePage(page0, 0, 3), makePage(page1, 1, 3), makePage(page2, 2, 3)];
+    const pages = multiPageFixture.pages.map((page, index) => ({
+      ...page,
+      _page: index,
+    }));
 
     fetchMock.mockImplementation(async (url: string) => {
       const skipMatch = url.match(/skip=(\d+)/);
@@ -52,8 +52,9 @@ describe('OverseerrService.fetchAllMediaStatus', () => {
     expect(fetchMock.mock.calls[0][0]).toContain('skip=0');
     expect(fetchMock.mock.calls[1][0]).toContain(`skip=${PAGE_SIZE}`);
     expect(fetchMock.mock.calls[2][0]).toContain(`skip=${PAGE_SIZE * 2}`);
-    expect(index.totalRecords).toBe(PAGE_SIZE * 2 + 1);
+    expect(index.totalRecords).toBe(5);
     expect(index.byKey.get('movie:101')).toBeDefined();
+    expect(index.byKey.get('tv:102')).toBeDefined();
     expect(index.byKey.get('movie:250')).toBeDefined();
   });
 
