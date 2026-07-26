@@ -156,10 +156,22 @@ export default function MovieCard({ item, tmdb, isWatched = false, onWatchedChan
       {/* Backdrop/Poster */}
       <div className="relative aspect-video bg-decidarr-dark">
         {backdropUrl ? (
-          <img src={backdropUrl} alt={item.title} className="w-full h-full object-cover" />
+          <img
+            src={backdropUrl}
+            alt={item.title}
+            className="w-full h-full object-cover"
+            loading="lazy"
+            decoding="async"
+          />
         ) : posterUrl ? (
           <div className="flex items-center justify-center h-full">
-            <img src={posterUrl} alt={item.title} className="h-full object-contain" />
+            <img
+              src={posterUrl}
+              alt={item.title}
+              className="h-full object-contain"
+              loading="lazy"
+              decoding="async"
+            />
           </div>
         ) : (
           <div className="flex items-center justify-center h-full text-6xl">

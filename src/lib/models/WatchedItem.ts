@@ -30,6 +30,7 @@ const watchedItemSchema = new mongoose.Schema<IWatchedItem>(
 );
 
 watchedItemSchema.index({ userId: 1, plexId: 1 }, { unique: true });
+watchedItemSchema.index({ userId: 1, watchedAt: -1 });
 watchedItemSchema.index({ userId: 1 });
 watchedItemSchema.index({ plexUserId: 1, plexId: 1 });
 

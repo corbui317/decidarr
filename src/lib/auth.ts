@@ -154,25 +154,59 @@ export async function requireAuth(): Promise<{
   };
 }
 
+const sectionsCache = new Map<string, { ids: string[]; expiresAt: number }>();
+const SECTIONS_TTL_MS = 60_000;
+
+function filterRequestedLibraryIds(allowedIds: string[], requestedIds?: string[]): string[] {
+  if (!requestedIds || requestedIds.length === 0) {
+    return allowedIds;
+  }
+
+  const allowed = new Set(allowedIds);
+  return requestedIds.filter((id) => allowed.has(id));
+}
+
+/** Clears cached Plex library sections. Omit userId to clear all entries (e.g. Plex URL change). */
+export function invalidateAccessibleLibraryCache(userId?: string): void {
+  if (!userId) {
+    sectionsCache.clear();
+    return;
+  }
+
+  const prefix = `${userId}:`;
+  for (const key of sectionsCache.keys()) {
+    if (key.startsWith(prefix)) {
+      sectionsCache.delete(key);
+    }
+  }
+}
+
 export async function getAccessibleLibraryIds(
   auth: AuthContext,
   requestedIds?: string[]
 ): Promise<string[]> {
+  const cacheKey = `${auth.user._id}:${auth.settings.plexMachineId ?? ''}`;
+  const cached = sectionsCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return filterRequestedLibraryIds(cached.ids, requestedIds);
+  }
+
   const plexService = new PlexService(
     auth.plexToken,
     auth.plexServerUrl,
     auth.settings.plexMachineId || null
   );
   const sections = await plexService.getLibrarySections();
-  const allowed = new Set(
-    sections.filter((s) => s.type === 'movie' || s.type === 'show').map((s) => s.id)
-  );
+  const allowedIds = sections
+    .filter((s) => s.type === 'movie' || s.type === 'show')
+    .map((s) => s.id);
 
-  if (!requestedIds || requestedIds.length === 0) {
-    return Array.from(allowed);
-  }
+  sectionsCache.set(cacheKey, {
+    ids: allowedIds,
+    expiresAt: Date.now() + SECTIONS_TTL_MS,
+  });
 
-  return requestedIds.filter((id) => allowed.has(id));
+  return filterRequestedLibraryIds(allowedIds, requestedIds);
 }
 
 export function filterLibrariesForUser(

@@ -1,6 +1,6 @@
 'use client';
 
-import { forwardRef, useState, useEffect, useRef, useImperativeHandle, useCallback } from 'react';
+import { forwardRef, useState, useEffect, useRef, useImperativeHandle, useCallback, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { AnimationSpeed, PlexItem } from './types';
 import { getAnimationDurationMs, getPosterUrl } from './utils';
@@ -32,10 +32,14 @@ function buildPockets(result: PlexItem) {
 
 export const RouletteAnimation = forwardRef<SpinAnimationHandle, RouletteAnimationProps>(
   function RouletteAnimation({ result, speed, reducedMotion, onComplete }, ref) {
-    const { pockets, winnerIndex } = buildPockets(result);
+    const { pockets, winnerIndex } = useMemo(
+      () => buildPockets(result),
+      [result.plexId, result.title]
+    );
     const [rotation, setRotation] = useState(0);
     const [stopped, setStopped] = useState(false);
     const completedRef = useRef(false);
+    const rafRef = useRef<number | null>(null);
 
     const segmentAngle = 360 / POCKET_COUNT;
     const finish = useCallback(() => {
@@ -47,6 +51,7 @@ export const RouletteAnimation = forwardRef<SpinAnimationHandle, RouletteAnimati
     const targetRotation = 360 * 5 + (360 - winnerIndex * segmentAngle - segmentAngle / 2);
 
     const skip = useCallback(() => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
       setRotation(targetRotation);
       setStopped(true);
       finish();
@@ -71,14 +76,17 @@ export const RouletteAnimation = forwardRef<SpinAnimationHandle, RouletteAnimati
         const eased = 1 - Math.pow(1 - t, 3);
         setRotation(targetRotation * eased);
         if (t < 1) {
-          requestAnimationFrame(tick);
+          rafRef.current = requestAnimationFrame(tick);
         } else {
           setStopped(true);
           finish();
         }
       };
 
-      requestAnimationFrame(tick);
+      rafRef.current = requestAnimationFrame(tick);
+      return () => {
+        if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      };
     }, [reducedMotion, targetRotation, speed, finish]);
 
     return (

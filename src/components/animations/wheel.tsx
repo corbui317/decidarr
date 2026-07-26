@@ -1,6 +1,6 @@
 'use client';
 
-import { forwardRef, useState, useEffect, useRef, useImperativeHandle, useCallback } from 'react';
+import { forwardRef, useState, useEffect, useRef, useImperativeHandle, useCallback, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { AnimationSpeed, PlexItem } from './types';
 import { getAnimationDurationMs } from './utils';
@@ -27,10 +27,14 @@ function buildSegments(result: PlexItem) {
 
 export const WheelOfFortuneAnimation = forwardRef<SpinAnimationHandle, WheelAnimationProps>(
   function WheelOfFortuneAnimation({ result, speed, reducedMotion, onComplete }, ref) {
-    const segments = buildSegments(result);
+    const segments = useMemo(
+      () => buildSegments(result),
+      [result.plexId, result.title]
+    );
     const [offset, setOffset] = useState(0);
     const [stopped, setStopped] = useState(false);
     const completedRef = useRef(false);
+    const rafRef = useRef<number | null>(null);
 
     const winnerIndex = segments.findIndex((s) => s.isWinner);
     const targetOffset = -(winnerIndex * SEGMENT_HEIGHT + SEGMENT_HEIGHT / 2 - 120);
@@ -42,6 +46,7 @@ export const WheelOfFortuneAnimation = forwardRef<SpinAnimationHandle, WheelAnim
     }, [onComplete]);
 
     const skip = useCallback(() => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
       setOffset(targetOffset);
       setStopped(true);
       finish();
@@ -68,14 +73,17 @@ export const WheelOfFortuneAnimation = forwardRef<SpinAnimationHandle, WheelAnim
         const eased = 1 - Math.pow(1 - t, 4);
         setOffset(startOffset + (targetOffset - startOffset) * eased);
         if (t < 1) {
-          requestAnimationFrame(tick);
+          rafRef.current = requestAnimationFrame(tick);
         } else {
           setStopped(true);
           finish();
         }
       };
 
-      requestAnimationFrame(tick);
+      rafRef.current = requestAnimationFrame(tick);
+      return () => {
+        if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      };
     }, [reducedMotion, targetOffset, speed, finish]);
 
     const colors = ['#e11d48', '#2563eb', '#16a34a', '#ca8a04', '#9333ea', '#0891b2', '#ea580c', '#4f46e5'];

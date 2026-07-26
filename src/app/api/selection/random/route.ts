@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
 
     let watchedIds = new Set<string>();
     if (filters.unwatchedOnly) {
-      const watchedItems = await WatchedItem.find({ userId: user._id }).lean();
+      const watchedItems = await WatchedItem.find({ userId: user._id }).select('plexId').lean();
       watchedIds = new Set(watchedItems.map((w) => w.plexId));
     }
 

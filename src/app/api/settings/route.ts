@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { getOrCreateSettings } from '@/lib/models/Settings';
-import { requireAdmin, isAuthError, authErrorStatus } from '@/lib/auth';
+import { requireAdmin, isAuthError, authErrorStatus, invalidateAccessibleLibraryCache } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
 import { assertSafeServiceUrl, allowPrivateServiceUrls } from '@/lib/security/service-url';
 
@@ -88,6 +88,7 @@ export async function PUT(request: NextRequest) {
     await connectDB();
     const { settings } = await requireAdmin();
     const body = await request.json();
+    let plexServerUrlChanged = false;
 
     // Update Plex settings if provided
     if (body.plex) {
@@ -106,7 +107,9 @@ export async function PUT(request: NextRequest) {
             { status: 400 }
           );
         }
-        settings.plexServerUrl = urlCheck.normalized || body.plex.serverUrl;
+        const nextServerUrl = urlCheck.normalized || body.plex.serverUrl;
+        plexServerUrlChanged = nextServerUrl !== settings.plexServerUrl;
+        settings.plexServerUrl = nextServerUrl;
       }
     }
 
@@ -234,6 +237,10 @@ export async function PUT(request: NextRequest) {
     }
 
     await settings.save();
+
+    if (plexServerUrlChanged) {
+      invalidateAccessibleLibraryCache();
+    }
 
     // Get updated decrypted values for response
     const plexToken = settings.getDecryptedPlexToken();

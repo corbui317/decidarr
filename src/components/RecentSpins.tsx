@@ -96,7 +96,13 @@ export default function RecentSpins({ refreshKey = 0, onReapply, onRevisit }: Re
                 const imageUrl =
                   entry.posterUrl || plexImageUrl(entry.thumbPath) || null;
                 return imageUrl ? (
-                  <img src={imageUrl} alt="" className="w-full h-full object-cover" />
+                  <img
+                    src={imageUrl}
+                    alt=""
+                    className="w-full h-full object-cover"
+                    loading="lazy"
+                    decoding="async"
+                  />
                 ) : (
                   <span className="text-lg">{entry.mediaType === 'show' ? '📺' : '🎬'}</span>
                 );
