@@ -87,8 +87,15 @@ Task backlog for the beta spec set. Keep tasks small enough for one branch and o
 
 | ID | Status | Spec | Task | Lead | Verification |
 |----|--------|------|------|------|--------------|
-| `DECIDARR-08-PWA-01` | PLAN | 08 | Audit mobile web dashboard before adding PWA metadata. | UX Architect | Mobile screenshots and gap list. |
-| `DECIDARR-08-ADR-01` | PLAN | 08 | Write native vs PWA ADR when mobile becomes active. | Mobile App Builder | ADR in `docs/adr/`. |
+| `DECIDARR-08-PWA-01` | DONE | 08 | Audit mobile web dashboard before adding PWA metadata. | UX Architect | `docs/testing/mobile-viewport-smoke.md`, `tests/e2e/mobile-viewport.spec.ts`. |
+| `DECIDARR-08-PWA-PROD-01` | PLAN | [Mobile 01](../../specs/mobile/01-production-https-pwa-verification.md) | Document production HTTPS ingress and secure-cookie contract. | DevOps Automator | Proxy/TLS/cookie smoke evidence. |
+| `DECIDARR-08-PWA-VERIFY-01` | BLOCKED | [Mobile 01](../../specs/mobile/01-production-https-pwa-verification.md) | Verify deployed PWA resources, current Lighthouse quality, and browser installation. | Senior Developer | Production probe, reports, device evidence; blocked on HTTPS target. |
+| `DECIDARR-08-ADR-01` | PLAN | [Mobile 03](../../specs/mobile/03-native-vs-pwa-adr.md) | Decide PWA-only, native companion, native-first, or defer using explicit evidence. | Mobile App Builder | Accepted/deferred ADR and evidence pack in `docs/adr/`. |
+| `DECIDARR-08-AUTH-NATIVE-01` | BLOCKED | [Mobile 02](../../specs/mobile/02-offline-sync-expo-client.md) | Design and threat-model native device authorization, token rotation, and revocation. | Security Engineer | Contract and security review; blocked on accepted ADR. |
+| `DECIDARR-08-CONTRACTS-01` | BLOCKED | [Mobile 02](../../specs/mobile/02-offline-sync-expo-client.md) | Extract versioned API contracts for server, web, and mobile. | Senior Developer | Cross-runtime contract tests; blocked on accepted ADR. |
+| `DECIDARR-08-SYNC-SERVER-01` | BLOCKED | [Mobile 02](../../specs/mobile/02-offline-sync-expo-client.md) | Implement revisions, change feed, mutation idempotency, and conflicts. | Backend Architect | Migration/API/conflict tests; blocked on auth, contracts, and ADR. |
+| `DECIDARR-08-EXPO-01` | BLOCKED | [Mobile 02](../../specs/mobile/02-offline-sync-expo-client.md) | Build the ADR-authorized online Expo vertical slice. | Mobile App Builder | iOS/Android core-loop smoke; blocked on native auth and contracts. |
+| `DECIDARR-08-OFFLINE-01` | BLOCKED | [Mobile 02](../../specs/mobile/02-offline-sync-expo-client.md) | Add SQLite bootstrap, observable queue, resync, and bounded offline writes. | Mobile App Builder | Offline/retry/conflict/device evidence; blocked on stable online client and sync API. |
 
 ## Deferred - Future Product Lines
 
@@ -96,7 +103,7 @@ Discovery-only backlog rows. Do not implement without a new spec and ADR.
 
 | ID | Status | Spec | Task | Lead | Verification |
 |----|--------|------|------|------|--------------|
-| `DECIDARR-DEFER-01` | PLAN | 08 | Native mobile app discovery: validate demand and platform choice before scaffold. | Mobile App Builder | Decision memo linked to spec 08. |
+| `DECIDARR-DEFER-01` | SUPERSEDED | [Mobile 03](../../specs/mobile/03-native-vs-pwa-adr.md) | Native mobile discovery is now defined by `DECIDARR-08-ADR-01`. | Mobile App Builder | See ADR task and evidence contract above. |
 | `DECIDARR-DEFER-02` | PLAN | backlog | Social watch parties / multiplayer decision rooms: define problem, sync model, and non-goals. | Product Manager | Discovery spec draft or ADR outline. |
 | `DECIDARR-DEFER-03` | PLAN | backlog | Autonomous AI watch concierge: define bounded MVP vs chat-only recommendations. | AI Engineer | Discovery spec with guardrails and no-autonomous-write rule. |
 | `DECIDARR-DEFER-04` | PLAN | backlog | Hosted multi-tenant SaaS assumptions: document tenancy, billing, and ops boundaries only if pursued. | Software Architect | ADR with explicit non-goals for self-hosted beta. |

@@ -36,19 +36,19 @@ export default function Header() {
 
   return (
     <>
-      <header className="bg-decidarr-secondary border-b border-decidarr-primary/20 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="text-3xl">🎰</div>
-            <div>
-              <h1 className="text-xl font-bold text-decidarr-primary">Decidarr</h1>
-              <p className="text-xs text-gray-400">Plex Movie Roulette</p>
+      <header className="bg-decidarr-secondary border-b border-decidarr-primary/20 sticky top-0 z-50 pt-safe">
+        <div className="max-w-7xl mx-auto px-4 py-2 sm:py-3 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="text-2xl sm:text-3xl flex-shrink-0">🎰</div>
+            <div className="min-w-0">
+              <h1 className="text-lg sm:text-xl font-bold text-decidarr-primary truncate">Decidarr</h1>
+              <p className="text-xs text-gray-400 hidden sm:block">Plex Movie Roulette</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
             {user && (
-              <span className="text-sm text-gray-300">
+              <span className="text-sm text-gray-300 hidden sm:inline max-w-[8rem] truncate">
                 {(user as { username?: string }).username}
               </span>
             )}
@@ -56,9 +56,10 @@ export default function Header() {
             {/* Settings button */}
             <button
               onClick={handleOpenSettings}
-              className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors"
+              className="touch-target flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
               title="Settings"
               type="button"
+              aria-label="Settings"
             >
               <svg
                 className="w-5 h-5"
@@ -85,8 +86,9 @@ export default function Header() {
               onClick={handleLogout}
               disabled={loggingOut}
               type="button"
-              className="px-3 py-1.5 text-sm text-gray-300 hover:text-white
-                       hover:bg-white/10 rounded transition-colors disabled:opacity-50"
+              className="touch-target px-3 text-sm text-gray-300 hover:text-white
+                       hover:bg-white/10 rounded-lg transition-colors disabled:opacity-50
+                       flex items-center justify-center"
             >
               {loggingOut ? 'Logging out...' : 'Logout'}
             </button>

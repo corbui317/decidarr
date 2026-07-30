@@ -37,11 +37,12 @@ export default function SpinControls({
           disabled={disabled}
           whileHover={!disabled ? { scale: 1.05 } : {}}
           whileTap={!disabled ? { scale: 0.95 } : {}}
-          className={`relative overflow-hidden rounded-full
+          aria-label="Spin for a random pick"
+          className={`relative overflow-hidden rounded-full touch-target
                     ${disabled ? 'bg-gray-700 cursor-not-allowed' : 'bg-gradient-to-r from-decidarr-primary to-decidarr-accent cursor-pointer'}`}
         >
           <div
-            className={`px-12 py-4 font-bold text-xl
+            className={`px-10 sm:px-12 py-3 sm:py-4 font-bold text-lg sm:text-xl
                         ${disabled ? 'text-gray-500' : 'text-decidarr-dark'}`}
           >
             SPIN!

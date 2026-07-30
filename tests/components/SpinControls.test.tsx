@@ -47,8 +47,16 @@ describe('SpinControls', () => {
     render(
       <SpinControls onSpin={onSpin} loading={false} disabled={false} poolCount={42} />
     );
-    await user.click(screen.getByRole('button', { name: /SPIN!/i }));
+    await user.click(screen.getByRole('button', { name: /spin for a random pick/i }));
     expect(onSpin).toHaveBeenCalledOnce();
+  });
+
+  it('meets minimum touch target size on the spin button', () => {
+    render(
+      <SpinControls onSpin={vi.fn()} loading={false} disabled={false} poolCount={42} />
+    );
+    const button = screen.getByRole('button', { name: /spin for a random pick/i });
+    expect(button.className).toMatch(/touch-target/);
   });
 
   it('shows pool count when enabled', () => {

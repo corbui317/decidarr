@@ -15,7 +15,7 @@ Implementation-ready specifications for Decidarr, reconciled against the current
 2. **P0:** [01 setup/auth](./beta/01-setup-auth-user-access.md), [02 library foundation](./beta/02-library-data-foundation.md), [03 selection](./beta/03-selection-filters-command-center.md).
 3. **P1:** [04 watch history](./beta/04-watch-history-tautulli.md), [05 integrations/settings](./beta/05-integrations-settings-operations.md), [06 Overseerr](./beta/06-overseerr-request-flow.md), [09 spin history](./beta/09-spin-history-settings.md).
 4. **P2:** [07 spin animations](./beta/07-spin-animation-experience.md).
-5. **Deferred:** [08 mobile/PWA](./beta/08-mobile-pwa-later.md).
+5. **Mobile roadmap:** [08 mobile/PWA](./beta/08-mobile-pwa-later.md), then the implementation-ready [mobile specifications](./mobile/).
 
 ## Spec Rules
 
@@ -30,6 +30,16 @@ Implementation-ready specifications for Decidarr, reconciled against the current
 | Domain | Status | Spec |
 |--------|--------|------|
 | Security remediation (code review findings) | **Ready** | [01-security-remediation](./security/01-security-remediation.md) |
+
+## Mobile and PWA Future Implementation
+
+These specs are intentionally separated from the beta parent spec so future platform work has explicit gates and does not expand beta scope accidentally.
+
+| Order | Domain | Status | Spec |
+|-------|--------|--------|------|
+| 1 | Production HTTPS and current PWA verification | **Planned** | [01-production-https-pwa-verification](./mobile/01-production-https-pwa-verification.md) |
+| 2 | Native vs PWA architecture decision | **Ready for discovery** | [03-native-vs-pwa-adr](./mobile/03-native-vs-pwa-adr.md) |
+| 3 | Offline sync and Expo client | **Planned, ADR-gated** | [02-offline-sync-expo-client](./mobile/02-offline-sync-expo-client.md) |
 
 ## Code Review Remediation (June 2026)
 
@@ -59,6 +69,9 @@ Cross-cutting fixes from the Code Reviewer pass. Start with the [remediation roa
 | Plex OAuth, admin users, session refresh | **Planned** | [01](./beta/01-setup-auth-user-access.md) |
 | Overseerr status and requests | **Planned** | [06](./beta/06-overseerr-request-flow.md) |
 | Animation variants, reduced motion | **Planned** | [07](./beta/07-spin-animation-experience.md) |
-| Mobile/PWA / native app | **Deferred** | [08](./beta/08-mobile-pwa-later.md) |
+| Mobile/PWA shell | **Partial** | [08](./beta/08-mobile-pwa-later.md) |
+| Production PWA verification | **Planned** | [Mobile 01](./mobile/01-production-https-pwa-verification.md) |
+| Native vs PWA decision | **Ready for discovery** | [Mobile 03](./mobile/03-native-vs-pwa-adr.md) |
+| Offline sync / Expo client | **Planned, ADR-gated** | [Mobile 02](./mobile/02-offline-sync-expo-client.md) |
 
 See [current-feature-inventory.md](./current-feature-inventory.md) for the full file/route/test map.

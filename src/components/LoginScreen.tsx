@@ -85,7 +85,7 @@ export default function LoginScreen({ onLoginSuccess, onReconfigure }: LoginScre
             <button
               onClick={handleLogin}
               disabled={loading}
-              className="w-full bg-decidarr-primary text-decidarr-dark font-bold py-3 px-6 rounded-xl
+              className="touch-target w-full bg-decidarr-primary text-decidarr-dark font-bold py-3 px-6 rounded-xl
                          hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed
                          flex items-center justify-center gap-2"
             >

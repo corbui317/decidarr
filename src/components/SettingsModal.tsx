@@ -579,7 +579,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     >
       <div
         ref={modalRef}
-        className="bg-decidarr-secondary border border-decidarr-border rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
+        className="bg-decidarr-secondary border border-decidarr-border rounded-xl shadow-2xl w-full max-w-2xl max-h-[min(90dvh,90vh)] overflow-hidden flex flex-col"
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-decidarr-border">
           <h2 id="settings-modal-title" className="text-xl font-bold text-decidarr-text">
@@ -590,7 +590,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             type="button"
             onClick={onClose}
             aria-label="Close settings"
-            className="text-decidarr-text-muted hover:text-decidarr-text transition-colors rounded-lg p-1 focus:outline-none focus:ring-2 focus:ring-decidarr-primary"
+            className="touch-target text-decidarr-text-muted hover:text-decidarr-text transition-colors rounded-lg focus:outline-none focus:ring-2 focus:ring-decidarr-primary"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -608,7 +608,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               aria-controls={`tab-panel-${tab.id}`}
               disabled={saving}
               onClick={() => switchTab(tab.id)}
-              className={`flex-1 py-3 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-inset focus:ring-decidarr-primary disabled:opacity-50 ${
+              className={`touch-target flex-1 py-3 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-inset focus:ring-decidarr-primary disabled:opacity-50 ${
                 activeTab === tab.id
                   ? 'text-decidarr-primary border-b-2 border-decidarr-primary'
                   : 'text-decidarr-text-muted hover:text-decidarr-text'

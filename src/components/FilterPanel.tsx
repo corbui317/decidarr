@@ -254,7 +254,7 @@ export default function FilterPanel({
         onClick={() => setIsOpen(!isOpen)}
         aria-expanded={isOpen}
         aria-controls="filter-panel-content"
-        className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition"
+        className="touch-target w-full flex items-center justify-between p-4 hover:bg-white/5 transition"
       >
         <div className="flex items-center gap-2">
           <span className="text-lg">🎯</span>

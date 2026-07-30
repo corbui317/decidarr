@@ -199,8 +199,8 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-decidarr-dark">
       <Header />
-      <div className="min-h-screen pb-8">
-        <div className="max-w-7xl mx-auto px-4 py-6">
+      <div className="min-h-screen pb-8 pb-safe">
+        <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-1 space-y-4">
               <LibrarySelector
@@ -270,20 +270,21 @@ export default function Dashboard() {
                       playLinks={result.playLinks}
                     />
 
-                    <div className="flex justify-center gap-4">
+                    <div className="flex flex-col sm:flex-row justify-center gap-3 sm:gap-4 w-full max-w-md sm:max-w-none mx-auto">
                       <button
                         onClick={handleSpinAgain}
-                        className="px-6 py-3 bg-decidarr-primary text-decidarr-dark
+                        className="touch-target px-6 py-3 bg-decidarr-primary text-decidarr-dark
                                font-semibold rounded-lg hover:bg-decidarr-accent
-                               transition-colors"
+                               transition-colors flex items-center justify-center"
                       >
                         Spin Again
                       </button>
                       <button
                         onClick={resetResult}
-                        className="px-6 py-3 bg-decidarr-secondary text-white
+                        className="touch-target px-6 py-3 bg-decidarr-secondary text-white
                                font-semibold rounded-lg hover:bg-white/10
-                               transition-colors border border-gray-700"
+                               transition-colors border border-gray-700
+                               flex items-center justify-center"
                       >
                         Back to Machine
                       </button>
@@ -295,7 +296,7 @@ export default function Dashboard() {
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
-                    className="flex flex-col items-center justify-center min-h-[500px]"
+                    className="flex flex-col items-center justify-center min-h-[min(500px,70vh)]"
                   >
                     <SpinAnimationPlayer
                       variant={activeVariant}
@@ -310,7 +311,7 @@ export default function Dashboard() {
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
-                    className="flex flex-col items-center justify-center min-h-[500px]"
+                    className="flex flex-col items-center justify-center min-h-[min(500px,70vh)]"
                   >
                     <SpinControls
                       onSpin={handleSpin}

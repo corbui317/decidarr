@@ -204,12 +204,12 @@ export default function MovieCard({ item, tmdb, isWatched = false, onWatchedChan
       </div>
 
       {/* Content */}
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         {/* Title and year */}
-        <div className="flex items-start justify-between gap-4 mb-4">
-          <div>
-            <h2 className="text-2xl font-bold text-white">{item.title}</h2>
-            <div className="flex items-center gap-3 mt-1 text-gray-400 text-sm">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4 mb-4">
+          <div className="min-w-0">
+            <h2 className="text-xl sm:text-2xl font-bold text-white break-words">{item.title}</h2>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-gray-400 text-sm">
               {item.year && <span>{item.year}</span>}
               {runtime && <span>{runtime} min</span>}
               {item.contentRating && (
@@ -224,14 +224,14 @@ export default function MovieCard({ item, tmdb, isWatched = false, onWatchedChan
           </div>
 
           {/* Action buttons */}
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-2 flex-shrink-0 self-start sm:self-auto">
             {playLinks && (
               <div className="relative" ref={devicePickerRef}>
                 {/* Play button with dropdown */}
                 <div className="flex">
                   <button
                     onClick={handlePlayButtonClick}
-                    className="w-12 h-12 rounded-l-full flex items-center justify-center
+                    className="touch-target w-12 rounded-l-full flex items-center justify-center
                               bg-decidarr-primary text-white hover:bg-decidarr-primary/80
                               transition-all shadow-lg"
                     title={`Play on ${PLAY_DEVICES.find(d => d.id === selectedDevice)?.name}`}
@@ -243,7 +243,7 @@ export default function MovieCard({ item, tmdb, isWatched = false, onWatchedChan
                   </button>
                   <button
                     onClick={() => setShowDevicePicker(!showDevicePicker)}
-                    className="w-8 h-12 rounded-r-full flex items-center justify-center
+                    className="touch-target w-11 rounded-r-full flex items-center justify-center
                               bg-decidarr-primary/80 text-white hover:bg-decidarr-primary/60
                               transition-all shadow-lg border-l border-white/20"
                     title="Choose device"
@@ -307,14 +307,14 @@ export default function MovieCard({ item, tmdb, isWatched = false, onWatchedChan
             <button
               onClick={handleWatchedToggle}
               disabled={updating}
-              className={`w-12 h-12 rounded-full flex items-center justify-center
+              aria-label={watched ? 'Mark as unwatched' : 'Mark as watched'}
+              className={`touch-target w-12 h-12 rounded-full flex items-center justify-center
                         transition-all ${
                           watched
                             ? 'bg-decidarr-success text-white'
                             : 'bg-decidarr-dark text-gray-400 hover:text-white'
                         } ${updating ? 'opacity-50' : ''}`}
               title={watched ? 'Mark as unwatched' : 'Mark as watched'}
-              aria-label={watched ? 'Mark as unwatched' : 'Mark as watched'}
             >
               {updating ? <span className="animate-spin">⏳</span> : watched ? '✓' : '👁'}
             </button>

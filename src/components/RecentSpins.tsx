@@ -120,7 +120,7 @@ export default function RecentSpins({ refreshKey = 0, onReapply, onRevisit }: Re
                 <button
                   type="button"
                   onClick={() => onReapply(entry)}
-                  className="px-2 py-1 text-xs text-decidarr-primary hover:text-decidarr-accent transition-colors"
+                  className="touch-target px-2 text-xs text-decidarr-primary hover:text-decidarr-accent transition-colors"
                   title="Reapply filters"
                 >
                   Filters
@@ -130,7 +130,7 @@ export default function RecentSpins({ refreshKey = 0, onReapply, onRevisit }: Re
                 <button
                   type="button"
                   onClick={() => onRevisit(entry)}
-                  className="px-2 py-1 text-xs text-gray-400 hover:text-white transition-colors"
+                  className="touch-target px-2 text-xs text-gray-400 hover:text-white transition-colors"
                   title="View result"
                 >
                   View
@@ -139,7 +139,7 @@ export default function RecentSpins({ refreshKey = 0, onReapply, onRevisit }: Re
               <button
                 type="button"
                 onClick={() => handleDelete(entry._id)}
-                className="px-2 py-1 text-xs text-gray-500 hover:text-red-400 transition-colors"
+                className="touch-target px-2 text-xs text-gray-500 hover:text-red-400 transition-colors"
                 title="Remove from history"
                 aria-label={`Remove ${entry.title} from history`}
               >

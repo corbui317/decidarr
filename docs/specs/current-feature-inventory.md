@@ -138,8 +138,8 @@ Cross-reference index for every implemented feature surface. Use this to find th
 
 | Feature | Status | Spec | Frontend | API | Models | Tests |
 |---------|--------|------|----------|-----|--------|-------|
-| Responsive dashboard layout | Partial | [08](./beta/08-mobile-pwa-later.md) | Tailwind responsive classes | — | — | — |
-| PWA manifest / service worker | Deferred | [08](./beta/08-mobile-pwa-later.md) | — | — | — | — |
+| Responsive dashboard layout | Shipped | [08](./beta/08-mobile-pwa-later.md) | Tailwind responsive classes, touch targets | — | — | `tests/e2e/mobile-viewport.spec.ts` |
+| PWA manifest / service worker | Shipped | [08](./beta/08-mobile-pwa-later.md) | `manifest.ts`, `sw.js`, `PwaRegistration.tsx` | — | — | `tests/unit/app/manifest.test.ts`, `tests/unit/public/sw.test.ts` |
 | Native mobile app | Deferred | [08](./beta/08-mobile-pwa-later.md) | — | — | — | — |
 
 ---

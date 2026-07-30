@@ -20,6 +20,16 @@ npm run test -- tests/components/FilterPanel
 npm run test:e2e
 ```
 
+### Mobile viewport smoke
+
+Automated checks at 375px and 414px widths plus PWA manifest/service-worker registration:
+
+```bash
+npm run test:e2e -- tests/e2e/mobile-viewport.spec.ts
+```
+
+Manual checklist: [docs/testing/mobile-viewport-smoke.md](./testing/mobile-viewport-smoke.md).
+
 E2E starts a local Next.js dev server on port `3101` and uses an isolated MongoDB instance (see `tests/e2e/global-setup.ts`).
 
 ### E2E MongoDB lifecycle

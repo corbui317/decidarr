@@ -26,7 +26,7 @@ Decidarr helps Plex users decide what to watch by turning a large media library 
 - `User` model and spin-history user resolution exist; most routes still use hard-coded `SINGLE_USER_ID`.
 - `defaultMediaType`, `tvSelectionMode`, `tautulliSyncIntervalMinutes` stored but not fully consumed (no scheduler, dashboard ignores saved defaults).
 - TV `episode` selection mode accepted by API but selection returns show-level items only.
-- Responsive layout exists; no PWA manifest or service worker.
+- Responsive layout and PWA install shell (manifest, service worker, touch targets); offline sync and native app deferred.
 
 ### Planned (spec'd, not on disk)
 
