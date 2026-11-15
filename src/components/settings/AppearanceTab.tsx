@@ -77,13 +77,11 @@ export default function AppearanceTab() {
 
     try {
       await userPreferencesApi.update({
-        preferences: {
-          theme: selectedTheme,
-          defaultMediaType,
-          tvSelectionMode,
-          animationStyle,
-          animationSpeed,
-        },
+        theme: selectedTheme,
+        defaultMediaType,
+        tvSelectionMode,
+        animationStyle,
+        animationSpeed,
         spinHistory: {
           enabled: spinHistoryEnabled,
           retentionLimit: spinHistoryRetention,
@@ -117,7 +115,7 @@ export default function AppearanceTab() {
     setError(null);
 
     try {
-      await spinHistoryApi.clearHistory();
+      await spinHistoryApi.clearAll();
       setShowClearConfirm(false);
       setSuccess('Spin history cleared');
       setTimeout(() => setSuccess(null), 3000);

@@ -49,7 +49,7 @@ export default function GeneralTab() {
     setSuccess(null);
 
     try {
-      await settingsApi.saveSettings({
+      await settingsApi.updateSettings({
         syncFrequencyHours,
       });
 

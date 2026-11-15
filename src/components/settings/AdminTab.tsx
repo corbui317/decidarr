@@ -24,7 +24,8 @@ export default function AdminTab() {
       setLoading(true);
       setError(null);
       try {
-        const friends = await adminUsersApi.listPlexFriends();
+        const response = await adminUsersApi.list();
+        const friends = response.users;
         setPlexFriends(friends);
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to load Plex friends';
@@ -43,11 +44,7 @@ export default function AdminTab() {
     setSuccess(null);
 
     try {
-      if (approved) {
-        await adminUsersApi.approveUser(plexUserId);
-      } else {
-        await adminUsersApi.revokeUser(plexUserId);
-      }
+      await adminUsersApi.setApproved(plexUserId, approved);
 
       // Update local state
       setPlexFriends((prev) =>

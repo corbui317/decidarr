@@ -93,7 +93,7 @@ export default function IntegrationsTab() {
     setSaving(true);
     clearMessages();
     try {
-      const validation = await settingsApi.testPlex({ token: plexToken });
+      const validation = await settingsApi.testPlex(plexToken, plexServerUrl || undefined);
       setPlexValidation(validation);
       if (validation.valid && validation.servers) {
         setAvailableServers(validation.servers);
@@ -121,9 +121,11 @@ export default function IntegrationsTab() {
     setSaving(true);
     clearMessages();
     try {
-      await settingsApi.saveSettings({
-        plexToken,
-        plexServerUrl,
+      await settingsApi.updateSettings({
+        plex: {
+          token: plexToken,
+          serverUrl: plexServerUrl,
+        },
       });
       setSuccess('Plex settings saved successfully');
       setTimeout(() => setSuccess(null), 3000);
@@ -150,7 +152,7 @@ export default function IntegrationsTab() {
     setSaving(true);
     clearMessages();
     try {
-      const result = await settingsApi.testTmdb({ apiKey: tmdbApiKey });
+      const result = await settingsApi.testTmdb(tmdbApiKey);
       setTmdbValid(result.valid);
       if (!result.valid) {
         setError('TMDB API key validation failed');
@@ -173,8 +175,10 @@ export default function IntegrationsTab() {
     setSaving(true);
     clearMessages();
     try {
-      await settingsApi.saveSettings({
-        tmdbApiKey,
+      await settingsApi.updateSettings({
+        tmdb: {
+          apiKey: tmdbApiKey,
+        },
       });
       setSuccess('TMDB settings saved successfully');
       setTimeout(() => setSuccess(null), 3000);
@@ -201,12 +205,12 @@ export default function IntegrationsTab() {
     setSaving(true);
     clearMessages();
     try {
-      const result = await tautulliApi.testConnection({ url: tautulliUrl, apiKey: tautulliApiKey });
-      setTautulliValid(result.valid);
-      if (result.valid && result.users) {
+      const result = await tautulliApi.test(tautulliUrl, tautulliApiKey);
+      setTautulliValid(result.success);
+      if (result.success && result.users) {
         setTautulliUsers(result.users);
       }
-      if (!result.valid) {
+      if (!result.success) {
         setError('Tautulli connection test failed');
       }
     } catch (err) {
@@ -227,10 +231,12 @@ export default function IntegrationsTab() {
     setSaving(true);
     clearMessages();
     try {
-      await settingsApi.saveSettings({
-        tautulliUrl,
-        tautulliApiKey,
-        tautulliEnabled,
+      await settingsApi.updateSettings({
+        tautulli: {
+          url: tautulliUrl,
+          apiKey: tautulliApiKey,
+          enabled: tautulliEnabled,
+        },
       });
       setSuccess('Tautulli settings saved successfully');
       setTimeout(() => setSuccess(null), 3000);
@@ -250,7 +256,7 @@ export default function IntegrationsTab() {
     setSyncingTautulli(true);
     clearMessages();
     try {
-      await tautulliApi.syncWatchHistory();
+      await tautulliApi.sync();
       setSuccess('Tautulli watch history synced successfully');
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
@@ -271,12 +277,12 @@ export default function IntegrationsTab() {
     setSaving(true);
     clearMessages();
     try {
-      const result = await overseerrApi.testConnection({ url: overseerrUrl, apiKey: overseerrApiKey });
-      setOverseerrValid(result.valid);
+      const result = await overseerrApi.test(overseerrUrl, overseerrApiKey);
+      setOverseerrValid(result.success);
       if (result.version) {
         setOverseerrVersion(result.version);
       }
-      if (!result.valid) {
+      if (!result.success) {
         setError('Overseerr connection test failed');
       }
     } catch (err) {
@@ -297,10 +303,12 @@ export default function IntegrationsTab() {
     setSaving(true);
     clearMessages();
     try {
-      await settingsApi.saveSettings({
-        overseerrUrl,
-        overseerrApiKey,
-        overseerrFilterEnabled,
+      await settingsApi.updateSettings({
+        overseerr: {
+          url: overseerrUrl,
+          apiKey: overseerrApiKey,
+          filterEnabled: overseerrFilterEnabled,
+        },
       });
       setSuccess('Overseerr settings saved successfully');
       setTimeout(() => setSuccess(null), 3000);
@@ -470,18 +478,18 @@ export default function IntegrationsTab() {
 
       {subTab === 'tmdb' && (
         <div className="space-y-5">
-          {settings?.tmdb.hasApiKey && (
+          {settings?.tmdb.hasKey && (
             <div className="bg-decidarr-dark/50 rounded-lg p-4 border border-decidarr-border">
               <p className="text-decidarr-text text-sm">
                 <span className="text-decidarr-text-muted">API Key: </span>
-                <strong>{settings.tmdb.apiKeyMasked}</strong>
+                <strong>{settings.tmdb.keyMasked}</strong>
               </p>
             </div>
           )}
 
           <div>
             <label htmlFor="tmdb-api-key" className={labelClass}>
-              {settings?.tmdb.hasApiKey ? 'Update TMDB API Key' : 'TMDB API Key'}
+              {settings?.tmdb.hasKey ? 'Update TMDB API Key' : 'TMDB API Key'}
             </label>
             <input
               id="tmdb-api-key"
@@ -604,7 +612,7 @@ export default function IntegrationsTab() {
               <p className="text-decidarr-text text-sm font-medium mb-2">Found {tautulliUsers.length} users</p>
               <ul className="text-decidarr-text-muted text-xs space-y-1">
                 {tautulliUsers.slice(0, 5).map((user) => (
-                  <li key={user.user_id}>{user.friendly_name || user.username}</li>
+                  <li key={user.id}>{user.friendlyName || user.username}</li>
                 ))}
                 {tautulliUsers.length > 5 && (
                   <li>... and {tautulliUsers.length - 5} more</li>

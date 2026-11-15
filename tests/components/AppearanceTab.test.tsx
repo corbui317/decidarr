@@ -38,7 +38,7 @@ vi.mock('@/lib/api', () => ({
   },
   settingsApi: {
     getSettings: vi.fn(),
-    saveSettings: vi.fn(),
+    updateSettings: vi.fn(),
   },
   AnimationStyle: 'slots',
   AnimationSpeed: 'normal',
@@ -142,6 +142,6 @@ describe('AppearanceTab - Independent State', () => {
     });
 
     // Should NOT call settings API (that's for admin/integrations)
-    expect(settingsApi?.saveSettings).not.toHaveBeenCalled();
+    expect(settingsApi?.updateSettings).not.toHaveBeenCalled();
   });
 });
