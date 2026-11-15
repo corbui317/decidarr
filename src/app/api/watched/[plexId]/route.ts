@@ -40,6 +40,14 @@ export async function POST(
 ) {
   try {
     const auth = await requireUser();
+
+    if (!auth.user.isAdmin) {
+      return NextResponse.json(
+        { error: 'Manual watched marking is admin-only' },
+        { status: 403 }
+      );
+    }
+
     const { plexId } = await params;
     const plexIdResult = parsePlexIdParam(plexId);
     if (!plexIdResult.ok) {
@@ -84,6 +92,14 @@ export async function DELETE(
 ) {
   try {
     const auth = await requireUser();
+
+    if (!auth.user.isAdmin) {
+      return NextResponse.json(
+        { error: 'Manual watched marking is admin-only' },
+        { status: 403 }
+      );
+    }
+
     const { plexId } = await params;
     const plexIdResult = parsePlexIdParam(plexId);
     if (!plexIdResult.ok) {
