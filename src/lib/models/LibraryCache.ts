@@ -25,6 +25,7 @@ export interface ILibraryItem {
   networks?: string[];
   studios?: string[];
   enrichedAt?: Date;
+  attemptedEnrichmentAt?: Date;
   overseerrStatus?: OverseerrAvailability;
   overseerrSyncedAt?: Date;
 }
@@ -66,6 +67,7 @@ const libraryItemSchema = new mongoose.Schema<ILibraryItem>(
     networks: [String],
     studios: [String],
     enrichedAt: Date,
+    attemptedEnrichmentAt: Date,
     overseerrStatus: { type: String, enum: ['available', 'partially_available'] },
     overseerrSyncedAt: Date,
   },

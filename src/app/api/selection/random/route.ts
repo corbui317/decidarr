@@ -12,7 +12,7 @@ import { WatchedItem } from '@/lib/models/WatchedItem';
 import { PlexService } from '@/lib/services/plex';
 import { TMDbService } from '@/lib/services/tmdb';
 import { createLogger } from '@/lib/logger';
-import { applyFullFilters } from '@/lib/selection/filters';
+import { applyFullFilters, fetchCollectionItemIds } from '@/lib/selection/filters';
 import { sanitizeLibraryItemForClient } from '@/lib/plex-image';
 import { parseSelectionRequestBody } from '@/lib/validation/selection';
 
@@ -77,21 +77,10 @@ export async function POST(request: NextRequest) {
 
     let collectionItemIds: Set<string> | null = null;
     if (filters.collections && filters.collections.length > 0) {
-      collectionItemIds = new Set<string>();
-      await Promise.all(
-        filters.collections.map(async (collectionKey: string) => {
-          try {
-            const items = await plexService.getCollectionItems(collectionKey);
-            for (const item of items) {
-              collectionItemIds!.add(item.plexId);
-            }
-          } catch (err) {
-            logger.warn('Failed to fetch collection items', {
-              collectionKey,
-              error: (err as Error).message,
-            });
-          }
-        })
+      collectionItemIds = await fetchCollectionItemIds(
+        filters.collections,
+        plexService,
+        logger
       );
       logger.debug('Filtered by collections', {
         before: caches.flatMap((c) => c.items).length,
