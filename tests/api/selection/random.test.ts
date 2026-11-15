@@ -203,5 +203,46 @@ describe('Selection API routes', () => {
 
       expect(poolBody.matchingItems).toBe(randomBody.stats.totalMatches);
     });
+
+    it('parity: pool count matches random eligibility with collection filter', async () => {
+      await seedLibraryCache();
+
+      plexMock.getCollectionItems.mockResolvedValue([
+        { plexId: '1', title: 'Inception' },
+        { plexId: '2', title: 'The Matrix' },
+      ]);
+
+      const poolReq = createJsonRequest('http://localhost/api/selection/pool-count', 'POST', {
+        libraryIds: ['lib-1'],
+        mediaType: 'movie',
+        filters: { collections: ['col-1'] },
+      });
+      const poolRes = await poolCountPost(poolReq as never);
+      const poolBody = await poolRes.json();
+
+      vi.clearAllMocks();
+      plexMock.getCollectionItems.mockResolvedValue([
+        { plexId: '1', title: 'Inception' },
+        { plexId: '2', title: 'The Matrix' },
+      ]);
+      plexMock.getItemMetadata.mockResolvedValue({
+        plexId: '1',
+        title: 'Inception',
+        year: 2010,
+        type: 'movie',
+      });
+      plexMock.buildPlayLinks.mockReturnValue({ web: 'https://app.plex.tv', app: 'plex://' });
+
+      const randomReq = createJsonRequest('http://localhost/api/selection/random', 'POST', {
+        libraryIds: ['lib-1'],
+        mediaType: 'movie',
+        filters: { collections: ['col-1'] },
+      });
+      const randomRes = await randomPost(randomReq as never);
+      const randomBody = await randomRes.json();
+
+      expect(poolBody.matchingItems).toBe(randomBody.stats.totalMatches);
+      expect(plexMock.getCollectionItems).toHaveBeenCalledWith('col-1');
+    });
   });
 });

@@ -17,6 +17,7 @@ const ENRICHMENT_FIELDS = [
   'networks',
   'studios',
   'enrichedAt',
+  'attemptedEnrichmentAt',
   'overseerrStatus',
   'overseerrSyncedAt',
 ] as const;
@@ -47,8 +48,21 @@ function mergeExistingEnrichment(
   }
 }
 
+const ENRICHMENT_RETRY_HOURS = 24;
+
 function isItemUnenriched(item: ILibraryItem): boolean {
-  return !item.enrichedAt || !item.tmdbId;
+  if (item.enrichedAt && item.tmdbId) {
+    return false;
+  }
+
+  if (item.attemptedEnrichmentAt) {
+    const hoursSinceAttempt = (Date.now() - item.attemptedEnrichmentAt.getTime()) / (1000 * 60 * 60);
+    if (hoursSinceAttempt < ENRICHMENT_RETRY_HOURS) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 export async function GET(
@@ -127,8 +141,11 @@ export async function GET(
 
           enrichments.forEach((enrichment, i) => {
             const item = itemsToEnrich[i];
+            let enriched = false;
+
             if (enrichment.tmdbId && !item.tmdbId) {
               item.tmdbId = String(enrichment.tmdbId);
+              enriched = true;
             }
             if (enrichment.certification && !item.contentRating) {
               item.contentRating = enrichment.certification;
@@ -146,7 +163,12 @@ export async function GET(
                 item.studios = enrichment.studios;
               }
             }
-            item.enrichedAt = new Date();
+
+            if (enriched) {
+              item.enrichedAt = new Date();
+            } else {
+              item.attemptedEnrichmentAt = new Date();
+            }
           });
 
           for (let i = 0; i < items.length; i++) {
