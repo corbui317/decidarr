@@ -6,34 +6,34 @@ import CryptoJS from 'crypto-js';
  * This must be called BEFORE the server starts so the migration runs on startup.
  */
 export async function seedLegacyEncryptedSettings() {
-  const mongoUri = process.env.E2E_MONGODB_URI ||
-                   process.env.MONGODB_URI ||
+  const mongoUri = process.env.E2E_MONGODB_URI || 
+                   process.env.MONGODB_URI || 
                    'mongodb://127.0.0.1:27017/decidarr-e2e';
-
+  
   await mongoose.connect(mongoUri);
-
+  
   // Create legacy master key (without DECIDARR_SECRET)
   const legacyMasterKey = CryptoJS.SHA256('decidarr-master-' + mongoUri).toString().substring(0, 32);
-
+  
   // Generate secure keys
   const jwtSecret = 'legacy-jwt-secret-' + Date.now();
   const encryptionKey = 'legacy-encryption-key-' + Date.now();
-
+  
   // Encrypt with legacy CryptoJS format (no v2: prefix)
   const encryptedJwt = CryptoJS.AES.encrypt(jwtSecret, legacyMasterKey).toString();
   const encryptedKey = CryptoJS.AES.encrypt(encryptionKey, legacyMasterKey).toString();
-
+  
   // Encrypt integration credentials with the encryption key
   const plexToken = CryptoJS.AES.encrypt('test-plex-token-legacy', encryptionKey).toString();
   const tmdbKey = CryptoJS.AES.encrypt('test-tmdb-key-legacy', encryptionKey).toString();
-
+  
   // Insert legacy settings (without secretsMigrationVersion marker)
   await mongoose.connection.db?.collection('settings').deleteMany({});
   await mongoose.connection.db?.collection('settings').insertOne({
     _id: 'app-settings',
     jwtSecret: encryptedJwt,
     encryptionKey: encryptedKey,
-    plexToken: plexToken,
+    plexToken,
     plexServerUrl: 'http://192.168.1.10:32400',
     plexUsername: 'legacyuser',
     plexMachineId: 'legacy-machine-1',
@@ -57,13 +57,12 @@ export async function seedLegacyEncryptedSettings() {
     },
     createdAt: new Date(),
     updatedAt: new Date(),
-    // Note: NO secretsMigrationVersion - this is pre-migration
-  });
-
+  } as any);
+  
   // Create a legacy admin user
   const userId = new mongoose.Types.ObjectId();
   const userToken = CryptoJS.AES.encrypt('test-plex-token-legacy', encryptionKey).toString();
-
+  
   await mongoose.connection.db?.collection('users').insertOne({
     _id: userId,
     plexUserId: 'legacy-plex-user-1',
@@ -75,16 +74,16 @@ export async function seedLegacyEncryptedSettings() {
     preferences: {},
     createdAt: new Date(),
     updatedAt: new Date(),
-  });
-
+  } as any);
+  
   // Update settings to reference this admin user
   await mongoose.connection.db?.collection('settings').updateOne(
-    { _id: 'app-settings' },
-    { $set: { adminUserId: userId } }
+    { _id: 'app-settings' } as any,
+    { $set: { adminUserId: userId } } as any
   );
-
+  
   await mongoose.disconnect();
-
+  
   return {
     jwtSecret,
     encryptionKey,
