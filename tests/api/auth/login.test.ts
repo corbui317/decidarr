@@ -138,7 +138,7 @@ describe('Auth and setup API routes', () => {
 
   describe('POST /api/auth/login', () => {
     it('returns 410 directing clients to Plex OAuth', async () => {
-      const res = await loginPost();
+      const res = await loginPost(new Request('http://localhost/api/auth/login', { method: 'POST' }));
       expect(res.status).toBe(410);
       const body = await res.json();
       expect(body.useOAuth).toBe(true);
@@ -147,7 +147,7 @@ describe('Auth and setup API routes', () => {
 
     it('returns 410 even when app is configured', async () => {
       await seedConfiguredSettings();
-      const res = await loginPost();
+      const res = await loginPost(new Request('http://localhost/api/auth/login', { method: 'POST' }));
       expect(res.status).toBe(410);
       const body = await res.json();
       expect(body.useOAuth).toBe(true);

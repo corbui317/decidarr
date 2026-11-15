@@ -53,6 +53,23 @@ export function AuthProvider({ children }: AuthProviderProps) {
     checkAuth();
   }, [checkAuth]);
 
+  useEffect(() => {
+    if (!user) return;
+
+    const SESSION_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
+    const REFRESH_BEFORE_EXPIRY_MS = 6 * 24 * 60 * 60 * 1000;
+
+    const refreshTimer = setInterval(async () => {
+      try {
+        await authApi.refreshSession();
+      } catch {
+        setUser(null);
+      }
+    }, REFRESH_BEFORE_EXPIRY_MS);
+
+    return () => clearInterval(refreshTimer);
+  }, [user]);
+
   const login = useCallback(async () => {
     setLoading(true);
     setError(null);
