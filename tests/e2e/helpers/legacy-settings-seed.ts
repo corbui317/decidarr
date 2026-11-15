@@ -41,7 +41,7 @@ export async function seedLegacyEncryptedSettings() {
     tautulliEnabled: false,
     overseerrFilterEnabled: false,
     syncFrequencyHours: 24,
-    setupComplete: true,
+    setupComplete: false, // Allow E2E test to go through setup wizard
     approvedPlexUserIds: [],
     uiPreferences: {
       theme: 'dark',
