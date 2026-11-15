@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import { connectDB } from '@/lib/db';
+import { resetMigrationStateForTests } from '@/lib/migrate';
 
 export async function POST(request: Request) {
   if (process.env.NODE_ENV === 'production') {
@@ -32,6 +33,12 @@ export async function POST(request: Request) {
     if (cached) {
       cached.conn = null;
       cached.promise = null;
+    }
+
+    // Reset migration state if requested (for legacy migration testing)
+    const resetMigration = request.headers.get('X-E2E-Reset-Migration');
+    if (resetMigration === 'true') {
+      resetMigrationStateForTests();
     }
 
     return NextResponse.json({ ok: true });
