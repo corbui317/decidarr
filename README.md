@@ -31,19 +31,28 @@ Decidarr is a movie roulette application that randomly selects movies or TV show
    cd decidarr
    ```
 
-2. Start the application:
+2. Create a `.env` file with required settings:
+   ```bash
+   cp .env.example .env
+   ```
+   
+   Edit `.env` and set `DECIDARR_SECRET`:
+   ```bash
+   # Required in production
+   DECIDARR_SECRET=$(openssl rand -hex 32)
+   ```
+
+3. Start the application:
    ```bash
    docker compose up -d
    ```
 
-3. Open `http://localhost:3100` in your browser
+4. Open `http://localhost:3100` in your browser
 
-4. Complete the setup wizard:
+5. Complete the setup wizard:
    - Enter your Plex token
    - Your Plex servers will be auto-discovered (or enter manually)
    - Optionally add a TMDB API key for enhanced data
-
-That's it! No `.env` file needed - all configuration is done through the web UI.
 
 ## Configuration
 
@@ -80,12 +89,16 @@ All settings are managed through the **Settings** panel (gear icon in the header
 | **Default Media Type** | Movies or TV Shows |
 | **TV Selection Mode** | Pick a show or pick an episode |
 
-### Environment Variables (Optional)
+### Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | 3100 | Port to expose the application |
-| `LOG_LEVEL` | info | Logging level: debug, info, warn, error |
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `DECIDARR_SECRET` | **Yes (production)** | - | High-entropy secret for encrypting stored credentials. Generate with: `openssl rand -hex 32` |
+| `PORT` | No | 3100 | Port to expose the application |
+| `LOG_LEVEL` | No | info | Logging level: debug, info, warn, error |
+| `DECIDARR_ALLOW_PRIVATE_URLS` | No | false | Allow private/LAN URLs for self-hosted integrations |
+
+**Important**: If you change `DECIDARR_SECRET` after initial setup, all encrypted credentials will be invalidated and you'll need to re-enter integration settings (Plex, TMDB, Tautulli, Overseerr) in the Settings UI.
 
 To use a different port:
 ```bash

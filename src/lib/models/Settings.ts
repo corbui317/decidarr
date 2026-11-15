@@ -1,6 +1,6 @@
 import mongoose, { Document, Model, Types } from 'mongoose';
 import CryptoJS from 'crypto-js';
-import crypto from 'crypto';
+import { randomBytes, createHash, createCipheriv, createDecipheriv } from 'crypto';
 import { createLogger } from '../logger';
 
 const logger = createLogger('Settings');
@@ -26,6 +26,9 @@ export interface IUIPreferences {
 export interface ISettings extends Omit<Document, '_id'> {
   // Singleton identifier
   _id: string;
+
+  // Secret migration tracking
+  secretsMigrationVersion?: number;
 
   // Security keys (auto-generated, stored encrypted with master key)
   jwtSecret: string;
@@ -83,6 +86,11 @@ export interface ISettings extends Omit<Document, '_id'> {
   getEncryptionKey(): string;
 }
 
+// Encryption version constants
+const ENCRYPTION_VERSION_LEGACY = 1; // CryptoJS AES
+const ENCRYPTION_VERSION_CURRENT = 2; // AES-256-GCM
+const CURRENT_MIGRATION_VERSION = 2;
+
 // Master key for encrypting the auto-generated secrets
 const getLegacyMasterKey = (): string => {
   const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/decidarr';
@@ -108,9 +116,94 @@ export function getCurrentSettingsMasterKey(): string {
   return getMasterKey();
 }
 
+export { CURRENT_MIGRATION_VERSION, encryptWithAesGcm, decryptVersioned };
+
+/**
+ * Encrypt a value with AES-256-GCM using Node's built-in crypto.
+ * Returns format: "v2:<iv>:<authTag>:<ciphertext>" (all base64)
+ */
+function encryptWithAesGcm(plaintext: string, masterKey: string): string {
+  // Derive a 32-byte key from the master key
+  const keyBuffer = createHash('sha256').update(masterKey).digest();
+
+  // Generate a random 12-byte IV (recommended for GCM)
+  const iv = randomBytes(12);
+
+  // Create cipher
+  const cipher = createCipheriv('aes-256-gcm', keyBuffer, iv);
+
+  // Encrypt
+  const encrypted = Buffer.concat([
+    cipher.update(plaintext, 'utf8'),
+    cipher.final(),
+  ]);
+
+  // Get auth tag
+  const authTag = cipher.getAuthTag();
+
+  // Return versioned format: v2:<iv>:<authTag>:<ciphertext>
+  return `v2:${iv.toString('base64')}:${authTag.toString('base64')}:${encrypted.toString('base64')}`;
+}
+
+/**
+ * Decrypt a versioned encrypted value.
+ * Supports:
+ * - v2: AES-256-GCM (current)
+ * - v1 or unversioned: CryptoJS AES (legacy)
+ */
+function decryptVersioned(encrypted: string, masterKey: string): string {
+  // Check for v2 format
+  if (encrypted.startsWith('v2:')) {
+    const parts = encrypted.split(':');
+    if (parts.length !== 4) {
+      logger.error('Malformed v2 encrypted value');
+      throw new Error('Failed to decrypt value');
+    }
+
+    const iv = Buffer.from(parts[1], 'base64');
+    const authTag = Buffer.from(parts[2], 'base64');
+    const ciphertext = Buffer.from(parts[3], 'base64');
+
+    // Derive the same key
+    const keyBuffer = createHash('sha256').update(masterKey).digest();
+
+    try {
+      const decipher = createDecipheriv('aes-256-gcm', keyBuffer, iv);
+      decipher.setAuthTag(authTag);
+
+      const decrypted = Buffer.concat([
+        decipher.update(ciphertext),
+        decipher.final(),
+      ]);
+
+      return decrypted.toString('utf8');
+    } catch (err) {
+      logger.error('Failed to decrypt AES-256-GCM value', { error: String(err) });
+      throw new Error('Failed to decrypt value');
+    }
+  }
+
+  // Legacy CryptoJS format (v1 or unversioned)
+  try {
+    const bytes = CryptoJS.AES.decrypt(encrypted, masterKey);
+    const decrypted = bytes.toString(CryptoJS.enc.Utf8);
+    if (!decrypted) {
+      logger.error('Decryption produced empty result');
+      throw new Error('Failed to decrypt value');
+    }
+    return decrypted;
+  } catch (err) {
+    logger.error('Failed to decrypt legacy CryptoJS value', { error: String(err) });
+    throw new Error('Failed to decrypt value');
+  }
+}
+
 const settingsSchema = new mongoose.Schema<ISettings>(
   {
     _id: { type: String, default: 'app-settings' },
+
+    // Secret migration tracking
+    secretsMigrationVersion: { type: Number },
 
     // Auto-generated security keys (encrypted)
     jwtSecret: { type: String, required: true },
@@ -177,31 +270,41 @@ const settingsSchema = new mongoose.Schema<ISettings>(
 
 // Generate secure random keys
 const generateSecureKey = (length: number = 64): string => {
-  return crypto.randomBytes(length).toString('hex');
+  return randomBytes(length).toString('hex');
 };
 
 // Encrypt a value with the master key
+// Uses AES-256-GCM (v2) when DECIDARR_SECRET is set, CryptoJS (v1) otherwise
 const encryptWithMaster = (value: string): string => {
   const masterKey = getMasterKey();
+
+  // Use AES-256-GCM when DECIDARR_SECRET is set
+  if (process.env.DECIDARR_SECRET?.trim()) {
+    return encryptWithAesGcm(value, masterKey);
+  }
+
+  // Otherwise use legacy CryptoJS for backward compatibility
   return CryptoJS.AES.encrypt(value, masterKey).toString();
 };
 
-// Decrypt a value with the master key
-const decryptWithMasterKey = (encrypted: string, masterKey: string): string => {
-  const bytes = CryptoJS.AES.decrypt(encrypted, masterKey);
-  return bytes.toString(CryptoJS.enc.Utf8);
-};
-
+// Decrypt a value with the master key (version-aware)
 const decryptWithMaster = (encrypted: string): string => {
   const currentKey = getMasterKey();
-  const decrypted = decryptWithMasterKey(encrypted, currentKey);
-  if (decrypted) return decrypted;
 
-  if (process.env.DECIDARR_SECRET?.trim()) {
-    return decryptWithMasterKey(encrypted, getLegacyMasterKey());
+  try {
+    return decryptVersioned(encrypted, currentKey);
+  } catch (err) {
+    // If we have DECIDARR_SECRET set and decryption failed with current key,
+    // try the legacy key (for migration scenarios)
+    if (process.env.DECIDARR_SECRET?.trim() && !encrypted.startsWith('v2:')) {
+      try {
+        return decryptVersioned(encrypted, getLegacyMasterKey());
+      } catch {
+        // Fall through to throw the original error
+      }
+    }
+    throw err;
   }
-
-  return decrypted;
 };
 
 // Methods to get decrypted values
@@ -263,7 +366,18 @@ settingsSchema.methods.getEncryptionKey = function(): string {
 
 // Pre-save hook to encrypt sensitive fields
 settingsSchema.pre('save', function(next) {
-  const encryptionKey = this.getEncryptionKey();
+  let encryptionKey: string;
+
+  try {
+    encryptionKey = this.getEncryptionKey();
+  } catch (err) {
+    // If we can't decrypt the encryption key, skip encryption
+    // This handles corrupted state gracefully
+    logger.warn('Skipping encryption in pre-save hook due to decrypt failure', {
+      error: String(err),
+    });
+    return next();
+  }
 
   // Encrypt plex token if modified and not already encrypted
   if (this.isModified('plexToken') && this.plexToken && !this.plexToken.startsWith('U2F')) {
