@@ -1,11 +1,11 @@
-import type { MediaType, TvSelectionMode } from '@/types/shared';
-import { AppTheme, AnimationStyle, AnimationSpeed } from '@/lib/models/User';
+import type { MediaType, TvSelectionMode, AppTheme, AnimationStyle, AnimationSpeed } from '@/types/shared';
+import { APP_THEMES, ANIMATION_STYLES, ANIMATION_SPEEDS } from '@/types/shared';
 
 type ParseResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
-const VALID_THEMES: AppTheme[] = ['dark', 'light', 'vegas', 'macao', 'poker'];
-const VALID_ANIMATION_STYLES: AnimationStyle[] = ['slots', 'roulette', 'wheel', 'plinko', 'random'];
-const VALID_ANIMATION_SPEEDS: AnimationSpeed[] = ['fast', 'normal', 'dramatic'];
+const VALID_THEMES = APP_THEMES;
+const VALID_ANIMATION_STYLES = ANIMATION_STYLES;
+const VALID_ANIMATION_SPEEDS = ANIMATION_SPEEDS;
 const VALID_MEDIA_TYPES: MediaType[] = ['movie', 'show'];
 const VALID_TV_SELECTION_MODES: TvSelectionMode[] = ['show', 'episode'];
 

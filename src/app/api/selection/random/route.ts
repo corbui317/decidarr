@@ -15,6 +15,7 @@ import { createLogger } from '@/lib/logger';
 import { applyFullFilters, fetchCollectionItemIds } from '@/lib/selection/filters';
 import { sanitizeLibraryItemForClient } from '@/lib/plex-image';
 import { parseSelectionRequestBody } from '@/lib/validation/selection';
+import type { SelectionResultResponse } from '@/types/api/selection';
 
 const logger = createLogger('API:Random');
 
@@ -126,18 +127,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({
-      selection: sanitizeLibraryItemForClient({
+    const selectionWithTmdb = {
+      ...sanitizeLibraryItemForClient({
         ...fullDetails,
         tmdb: tmdbData,
         overseerrStatus: selectedItem.overseerrStatus ?? null,
       } as Record<string, unknown>),
+      tmdb: tmdbData,
+    };
+
+    const response: SelectionResultResponse = {
+      selection: selectionWithTmdb,
       playLinks,
       stats: {
         totalMatches: allItems.length,
       },
       tvSelectionMode,
-    });
+    };
+    return NextResponse.json(response);
   } catch (error) {
     const msg = (error as Error)?.message;
     if (isAuthError(error)) {

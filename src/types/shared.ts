@@ -3,6 +3,15 @@
  * Single source of truth for core application types.
  */
 
+export type AppTheme = 'dark' | 'light' | 'vegas' | 'macao' | 'poker';
+export const APP_THEMES: readonly AppTheme[] = ['dark', 'light', 'vegas', 'macao', 'poker'] as const;
+
+export type AnimationStyle = 'slots' | 'roulette' | 'wheel' | 'plinko' | 'random';
+export const ANIMATION_STYLES: readonly AnimationStyle[] = ['slots', 'roulette', 'wheel', 'plinko', 'random'] as const;
+
+export type AnimationSpeed = 'fast' | 'normal' | 'dramatic';
+export const ANIMATION_SPEEDS: readonly AnimationSpeed[] = ['fast', 'normal', 'dramatic'] as const;
+
 export type MediaType = 'movie' | 'show';
 
 export type MediaTypeWithEpisode = MediaType | 'episode';
