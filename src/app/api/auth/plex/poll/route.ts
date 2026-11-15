@@ -11,8 +11,20 @@ import { completePlexLogin } from '@/lib/auth-login';
 import { connectDB } from '@/lib/db';
 import { createLogger } from '@/lib/logger';
 import { assertSetupSecretAllowed } from '@/lib/security/setup-secret';
+import { checkRateLimit } from '@/lib/security/rate-limit';
 
 const logger = createLogger('API:PlexAuthPoll');
+
+const RATE_LIMIT_CONFIG = {
+  windowMs: 15 * 60 * 1000,
+  maxAttempts: 20,
+};
+
+function getRateLimitKey(request: NextRequest): string {
+  const forwarded = request.headers.get('x-forwarded-for');
+  const ip = forwarded ? forwarded.split(',')[0].trim() : request.headers.get('x-real-ip') || 'unknown';
+  return `auth:poll:${ip}`;
+}
 
 function clearOAuthCookies(cookieStore: Awaited<ReturnType<typeof cookies>>) {
   cookieStore.delete(OAUTH_PIN_COOKIE);
@@ -29,6 +41,17 @@ function statesMatch(expected: string, provided: string): boolean {
 
 export async function GET(request: NextRequest) {
   try {
+    const rateLimitKey = getRateLimitKey(request);
+    const rateLimit = checkRateLimit(rateLimitKey, RATE_LIMIT_CONFIG);
+
+    if (!rateLimit.allowed) {
+      logger.warn('Rate limit exceeded for auth poll', { key: rateLimitKey });
+      return NextResponse.json(
+        { error: 'Too many login attempts. Please try again later.', code: 'RATE_LIMITED' },
+        { status: 429 }
+      );
+    }
+
     await connectDB();
 
     const setupCheck = await assertSetupSecretAllowed(request);
@@ -79,7 +102,7 @@ export async function GET(request: NextRequest) {
 
     if (!result.success) {
       return NextResponse.json(
-        { authorized: true, success: false, error: result.error, code: 'LOGIN_DENIED' },
+        { authorized: true, success: false, error: result.error, code: result.code || 'AUTH_FAILED' },
         { status: result.status || 403 }
       );
     }

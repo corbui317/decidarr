@@ -119,7 +119,8 @@ describe('completePlexLogin', () => {
     expect(result).toMatchObject({
       success: false,
       status: 403,
-      error: 'You do not have access to Decidarr. Contact the server owner to request access.',
+      error: 'Authentication failed',
+      code: 'NOT_APPROVED',
     });
     expect(getTestCookie('decidarr_session')).toBeUndefined();
   });
