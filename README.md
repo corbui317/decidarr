@@ -91,18 +91,18 @@ All settings are managed through the **Settings** panel (gear icon in the header
 
 ### Environment Variables
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `DECIDARR_SECRET` | **Yes (production)** | - | High-entropy secret for encrypting stored credentials. Generate with: `openssl rand -hex 32` |
-| `PORT` | No | 3100 | Port to expose the application |
-| `LOG_LEVEL` | No | info | Logging level: debug, info, warn, error |
-| `DECIDARR_ALLOW_PRIVATE_URLS` | No | false | Allow private/LAN URLs for self-hosted integrations |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | 3100 | Port to expose the application |
+| `LOG_LEVEL` | info | Logging level: debug, info, warn, error |
+| `DECIDARR_SECRET` | _(none)_ | **Required in production** - High-entropy secret for JWT/encryption (generate with `openssl rand -hex 32`) |
+| `DECIDARR_ALLOW_PRIVATE_URLS` | false | **LAN opt-in** - Set to `true` if your Plex/Tautulli/Overseerr are on your local network (192.168.x.x, 10.x.x.x). Private addresses are blocked by default for security. |
 
 **Important**: If you change `DECIDARR_SECRET` after initial setup, all encrypted credentials will be invalidated and you'll need to re-enter integration settings (Plex, TMDB, Tautulli, Overseerr) in the Settings UI.
 
-To use a different port:
+To use a different port or enable LAN access:
 ```bash
-PORT=8080 docker compose up -d
+PORT=8080 DECIDARR_ALLOW_PRIVATE_URLS=true docker compose up -d
 ```
 
 ## Filters

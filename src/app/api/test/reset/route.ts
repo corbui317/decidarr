@@ -13,11 +13,13 @@ export async function POST(request: Request) {
   }
 
   const resetSecret = process.env.E2E_TEST_RESET_SECRET?.trim();
-  if (resetSecret) {
-    const provided = request.headers.get('X-E2E-Reset-Secret')?.trim();
-    if (!provided || provided !== resetSecret) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
+  if (!resetSecret) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
+  const provided = request.headers.get('X-E2E-Reset-Secret')?.trim();
+  if (!provided || provided !== resetSecret) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
   try {

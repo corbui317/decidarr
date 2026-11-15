@@ -29,8 +29,18 @@ export function extractThumbPathFromUrl(url: string): string | null {
 
 export function isValidPlexImagePath(path: string): boolean {
   if (!path || !path.startsWith(PLEX_LIBRARY_PATH_PREFIX)) return false;
-  if (path.includes('..') || path.includes('//')) return false;
   if (path.startsWith('http://') || path.startsWith('https://')) return false;
+
+  let normalized: string;
+  try {
+    const parsed = new URL(path, 'http://localhost');
+    normalized = parsed.pathname;
+  } catch {
+    normalized = path.split('?')[0];
+  }
+
+  if (!normalized.startsWith(PLEX_LIBRARY_PATH_PREFIX)) return false;
+  if (normalized.includes('..') || normalized.includes('//')) return false;
   return true;
 }
 

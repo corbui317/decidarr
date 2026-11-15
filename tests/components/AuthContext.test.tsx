@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 
@@ -10,6 +10,7 @@ vi.mock('@/lib/api', () => ({
     getCurrentUser: vi.fn(),
     login: vi.fn(),
     logout: vi.fn(),
+    refreshSession: vi.fn(),
   },
 }));
 
@@ -99,5 +100,87 @@ describe('AuthContext', () => {
       expect(screen.getByTestId('auth')).toHaveTextContent('no');
       expect(screen.getByTestId('user')).toHaveTextContent('none');
     });
+  });
+
+  describe('Silent session refresh', () => {
+    it('sets up refresh interval before session expiry when user is authenticated', async () => {
+      const setIntervalSpy = vi.spyOn(global, 'setInterval');
+
+      vi.mocked(settingsApi.getStatus).mockResolvedValue({
+        setupComplete: true,
+        hasPlexToken: true,
+        hasPlexServer: true,
+        hasTmdbKey: false,
+      });
+      vi.mocked(authApi.getCurrentUser).mockResolvedValue({
+        user: {
+          id: 'user-1',
+          username: 'testuser',
+          serverUrl: 'http://192.168.1.10:32400',
+          isAdmin: false,
+        },
+        preferences: { theme: 'dark', defaultMediaType: 'movie', tvSelectionMode: 'show' },
+      });
+
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('auth')).toHaveTextContent('yes');
+      });
+
+      const REFRESH_BEFORE_EXPIRY_MS = 6 * 24 * 60 * 60 * 1000;
+      expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), REFRESH_BEFORE_EXPIRY_MS);
+
+      setIntervalSpy.mockRestore();
+    });
+
+    it('clears user state when refresh fails, sending user to login', async () => {
+      vi.mocked(settingsApi.getStatus).mockResolvedValue({
+        setupComplete: true,
+        hasPlexToken: true,
+        hasPlexServer: true,
+        hasTmdbKey: false,
+      });
+      vi.mocked(authApi.getCurrentUser).mockResolvedValue({
+        user: {
+          id: 'user-1',
+          username: 'testuser',
+          serverUrl: 'http://192.168.1.10:32400',
+          isAdmin: false,
+        },
+        preferences: { theme: 'dark', defaultMediaType: 'movie', tvSelectionMode: 'show' },
+      });
+
+      let refreshCallback: (() => Promise<void>) | null = null;
+      vi.spyOn(global, 'setInterval').mockImplementation((cb) => {
+        refreshCallback = cb as () => Promise<void>;
+        return 123 as never;
+      });
+
+      vi.mocked(authApi.refreshSession).mockRejectedValue(new Error('Session expired'));
+
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('auth')).toHaveTextContent('yes');
+      });
+
+      expect(refreshCallback).toBeTruthy();
+
+      await refreshCallback!();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('auth')).toHaveTextContent('no');
+      });
+    });
+
   });
 });

@@ -40,6 +40,36 @@ function hostnameAllowed(hostname: string, options: SafeUrlOptions): boolean {
   return false;
 }
 
+function normalizeIpv4MappedIpv6(address: string): string {
+  let addr = address;
+
+  if (addr.startsWith('[') && addr.endsWith(']')) {
+    addr = addr.slice(1, -1);
+  }
+
+  if (addr.startsWith('::ffff:')) {
+    const suffix = addr.substring(7);
+
+    if (/^\d+\.\d+\.\d+\.\d+$/.test(suffix)) {
+      return suffix;
+    }
+
+    if (/^[0-9a-f]+:[0-9a-f]+$/i.test(suffix)) {
+      const parts = suffix.split(':');
+      const octets: number[] = [];
+      parts.forEach(part => {
+        const num = parseInt(part, 16);
+        octets.push(Math.floor(num / 256), num % 256);
+      });
+      if (octets.length === 4) {
+        return octets.join('.');
+      }
+    }
+  }
+
+  return address;
+}
+
 export async function assertSafeServiceUrl(
   url: string,
   options: SafeUrlOptions = {}
@@ -69,23 +99,36 @@ export async function assertSafeServiceUrl(
     return { valid: false, error: 'Credentials in URL are not allowed' };
   }
 
-  const hostname = parsed.hostname.toLowerCase();
+  let hostname = parsed.hostname.toLowerCase();
+
+  const ipv4FromMapped = normalizeIpv4MappedIpv6(hostname);
+  if (ipv4FromMapped !== hostname) {
+    hostname = ipv4FromMapped;
+  }
+
   if (hostnameAllowed(hostname, options)) {
     return { valid: true, normalized };
   }
 
+  const isIpAddress = /^\d+\.\d+\.\d+\.\d+$/.test(hostname) || hostname.includes(':');
   let addresses: { address: string }[];
-  try {
-    addresses = await lookup(hostname, { all: true, verbatim: true });
-  } catch {
-    return { valid: false, error: 'Could not resolve hostname' };
+
+  if (isIpAddress) {
+    addresses = [{ address: hostname }];
+  } else {
+    try {
+      addresses = await lookup(hostname, { all: true, verbatim: true });
+    } catch {
+      return { valid: false, error: 'Could not resolve hostname' };
+    }
   }
 
   for (const { address } of addresses) {
-    if (isAlwaysBlockedIp(address)) {
+    const normalizedIp = normalizeIpv4MappedIpv6(address);
+    if (isAlwaysBlockedIp(normalizedIp)) {
       return { valid: false, error: 'Invalid or disallowed service URL' };
     }
-    if (isPrivateLanIp(address) && !options.allowPrivateNetworks) {
+    if (isPrivateLanIp(normalizedIp) && !options.allowPrivateNetworks) {
       return { valid: false, error: 'Invalid or disallowed service URL' };
     }
   }
