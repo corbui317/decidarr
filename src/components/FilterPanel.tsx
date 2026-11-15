@@ -128,13 +128,22 @@ export default function FilterPanel({
     }
   };
 
-  const toggleGenre = (genre: string) => {
-    const currentGenres = filters.genres;
-    const newGenres = currentGenres.includes(genre)
-      ? currentGenres.filter((g) => g !== genre)
-      : [...currentGenres, genre];
-    onFiltersChange({ ...filters, genres: newGenres });
+  // Shared helper for toggling array filters
+  const toggleArrayItem = <K extends 'genres' | 'contentRatings' | 'studios' | 'collections'>(
+    key: K,
+    item: string
+  ) => {
+    const currentArray = (filters[key] as string[]) || [];
+    const newArray = currentArray.includes(item)
+      ? currentArray.filter((i) => i !== item)
+      : [...currentArray, item];
+    onFiltersChange({ ...filters, [key]: newArray });
   };
+
+  const toggleGenre = (genre: string) => toggleArrayItem('genres', genre);
+  const toggleContentRating = (rating: string) => toggleArrayItem('contentRatings', rating);
+  const toggleStudio = (studio: string) => toggleArrayItem('studios', studio);
+  const toggleCollection = (ratingKey: string) => toggleArrayItem('collections', ratingKey);
 
   const updateYearRange = (key: 'start' | 'end', value: string) => {
     const current = filters.yearRange || { start: yearRange.min, end: yearRange.max };
@@ -142,14 +151,6 @@ export default function FilterPanel({
       ...filters,
       yearRange: { ...current, [key]: parseInt(value) || null },
     });
-  };
-
-  const toggleContentRating = (rating: string) => {
-    const current = filters.contentRatings;
-    const newRatings = current.includes(rating)
-      ? current.filter((r) => r !== rating)
-      : [...current, rating];
-    onFiltersChange({ ...filters, contentRatings: newRatings });
   };
 
   const updateRatingRange = (key: 'min' | 'max', value: string) => {
@@ -170,24 +171,8 @@ export default function FilterPanel({
     });
   };
 
-  const toggleStudio = (studio: string) => {
-    const currentStudios = filters.studios;
-    const newStudios = currentStudios.includes(studio)
-      ? currentStudios.filter((s) => s !== studio)
-      : [...currentStudios, studio];
-    onFiltersChange({ ...filters, studios: newStudios });
-  };
-
   const toggleUnwatched = () => {
     onFiltersChange({ ...filters, unwatchedOnly: !filters.unwatchedOnly });
-  };
-
-  const toggleCollection = (ratingKey: string) => {
-    const current = filters.collections || [];
-    const newCollections = current.includes(ratingKey)
-      ? current.filter((c) => c !== ratingKey)
-      : [...current, ratingKey];
-    onFiltersChange({ ...filters, collections: newCollections });
   };
 
   const clearFilters = () => {
