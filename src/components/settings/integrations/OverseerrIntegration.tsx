@@ -89,11 +89,14 @@ export default function OverseerrIntegration({
           onChange={(e) => onOverseerrFilterEnabledChange(e.target.checked)}
           className="w-4 h-4 rounded border-gray-600 text-decidarr-primary focus:ring-decidarr-primary"
         />
-        <span className="text-decidarr-text text-sm">Enable Overseerr Filter</span>
+        <span className="text-decidarr-text text-sm">Exclude fully available titles from the spin pool</span>
       </label>
-      <p className="text-decidarr-text-muted text-xs -mt-2">
-        Only show movies that have been requested in Overseerr
-      </p>
+
+      {overseerrValid && overseerrVersion && (
+        <div role="status" className="bg-green-500/10 border border-green-500/50 rounded-lg p-3">
+          <p className="text-green-400 text-sm">Connected (v{overseerrVersion})</p>
+        </div>
+      )}
 
       <div className="flex gap-2">
         <button
