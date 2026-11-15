@@ -96,8 +96,8 @@ export default function TautulliIntegration({
       </label>
 
       {tautulliValid && tautulliUsers.length > 0 && (
-        <div className="bg-decidarr-dark/50 rounded-lg p-3 border border-decidarr-border">
-          <p className="text-decidarr-text text-sm font-medium mb-2">Found {tautulliUsers.length} users</p>
+        <div role="status" className="bg-green-500/10 border border-green-500/50 rounded-lg p-3">
+          <p className="text-green-400 text-sm font-medium mb-2">Connected! Found {tautulliUsers.length} users</p>
           <ul className="text-decidarr-text-muted text-xs space-y-1">
             {tautulliUsers.slice(0, 5).map((user) => (
               <li key={user.id}>{user.friendlyName || user.username}</li>

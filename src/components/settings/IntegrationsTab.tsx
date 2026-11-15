@@ -241,7 +241,7 @@ export default function IntegrationsTab() {
           enabled: tautulliEnabled,
         },
       });
-      setSuccess('Tautulli settings saved successfully');
+      setSuccess('Tautulli settings saved');
       setTimeout(() => setSuccess(null), 3000);
 
       // Reload settings
@@ -313,7 +313,7 @@ export default function IntegrationsTab() {
           filterEnabled: overseerrFilterEnabled,
         },
       });
-      setSuccess('Overseerr settings saved successfully');
+      setSuccess('Overseerr settings saved');
       setTimeout(() => setSuccess(null), 3000);
 
       // Reload settings
