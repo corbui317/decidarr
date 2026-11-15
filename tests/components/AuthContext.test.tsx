@@ -103,7 +103,7 @@ describe('AuthContext', () => {
   });
 
   describe('Silent session refresh', () => {
-    it('sets up refresh interval when user is authenticated', async () => {
+    it('sets up refresh interval before session expiry when user is authenticated', async () => {
       const setIntervalSpy = vi.spyOn(global, 'setInterval');
 
       vi.mocked(settingsApi.getStatus).mockResolvedValue({
@@ -132,9 +132,54 @@ describe('AuthContext', () => {
         expect(screen.getByTestId('auth')).toHaveTextContent('yes');
       });
 
-      expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 5 * 60 * 60 * 1000);
+      const REFRESH_BEFORE_EXPIRY_MS = 6 * 24 * 60 * 60 * 1000;
+      expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), REFRESH_BEFORE_EXPIRY_MS);
 
       setIntervalSpy.mockRestore();
+    });
+
+    it('clears user state when refresh fails, sending user to login', async () => {
+      vi.mocked(settingsApi.getStatus).mockResolvedValue({
+        setupComplete: true,
+        hasPlexToken: true,
+        hasPlexServer: true,
+        hasTmdbKey: false,
+      });
+      vi.mocked(authApi.getCurrentUser).mockResolvedValue({
+        user: {
+          id: 'user-1',
+          username: 'testuser',
+          serverUrl: 'http://192.168.1.10:32400',
+          isAdmin: false,
+        },
+        preferences: { theme: 'dark', defaultMediaType: 'movie', tvSelectionMode: 'show' },
+      });
+
+      let refreshCallback: (() => Promise<void>) | null = null;
+      vi.spyOn(global, 'setInterval').mockImplementation((cb) => {
+        refreshCallback = cb as () => Promise<void>;
+        return 123 as never;
+      });
+
+      vi.mocked(authApi.refreshSession).mockRejectedValue(new Error('Session expired'));
+
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('auth')).toHaveTextContent('yes');
+      });
+
+      expect(refreshCallback).toBeTruthy();
+
+      await refreshCallback!();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('auth')).toHaveTextContent('no');
+      });
     });
 
   });

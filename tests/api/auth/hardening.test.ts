@@ -40,6 +40,7 @@ vi.mock('@/lib/services/plex', () => ({
 
 import { POST as plexStartPost } from '@/app/api/auth/plex/start/route';
 import { GET as plexPollGet } from '@/app/api/auth/plex/poll/route';
+import { POST as loginPost } from '@/app/api/auth/login/route';
 
 describe('Auth hardening', () => {
   beforeEach(async () => {
@@ -55,6 +56,27 @@ describe('Auth hardening', () => {
   });
 
   describe('Rate limiting', () => {
+    it('returns 429 after multiple rapid attempts on /api/auth/login', async () => {
+      const makeRequest = () => loginPost(new Request('http://localhost/api/auth/login', { method: 'POST' }));
+
+      const responses = [];
+      for (let i = 0; i < 6; i++) {
+        responses.push(await makeRequest());
+      }
+
+      const statuses = responses.map((r) => r.status);
+      const rateLimitedCount = statuses.filter((s) => s === 429).length;
+
+      expect(rateLimitedCount).toBeGreaterThan(0);
+
+      const rateLimitedResponse = responses.find((r) => r.status === 429);
+      if (rateLimitedResponse) {
+        const body = await rateLimitedResponse.json();
+        expect(body.error).toMatch(/try again later/i);
+        expect(body.code).toBe('RATE_LIMITED');
+      }
+    });
+
     it('returns 429 after multiple rapid login attempts on /api/auth/plex/start', async () => {
       const makeRequest = () => plexStartPost(new Request('http://localhost/api/auth/plex/start', { method: 'POST' }));
 
