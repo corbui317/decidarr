@@ -143,7 +143,7 @@ export async function POST(request: NextRequest) {
     if (isAuthError(error)) {
       return NextResponse.json({ error: msg }, { status: authErrorStatus(error) });
     }
-    console.error('Random selection error:', error);
+    logger.error('Random selection error', { error: msg });
     return NextResponse.json({ error: 'Failed to get random selection' }, { status: 500 });
   }
 }

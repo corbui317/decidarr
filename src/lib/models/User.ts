@@ -22,6 +22,10 @@ export interface IUserPreferences {
   savedFilters?: {
     genres?: string[];
     yearRange?: { start?: number; end?: number };
+    contentRatings?: string[];
+    studios?: string[];
+    ratingRange?: { min?: number; max?: number };
+    ratingFilter?: string | null;
     collections?: string[];
     unwatchedOnly?: boolean;
   };
@@ -90,6 +94,10 @@ const userSchema = new mongoose.Schema<IUser>(
       savedFilters: {
         genres: [String],
         yearRange: { start: Number, end: Number },
+        contentRatings: [String],
+        studios: [String],
+        ratingRange: { min: Number, max: Number },
+        ratingFilter: { type: String, default: null },
         collections: [String],
         unwatchedOnly: { type: Boolean, default: false },
       },

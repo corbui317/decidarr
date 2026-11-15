@@ -39,7 +39,7 @@ export default function LibrarySelector({
       setSections(data.sections as Section[]);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load libraries';
-      console.error('[LibrarySelector] Load error:', message);
+      // Error already set in loadError state
       setError(message);
       
       // Check if this is an auth error

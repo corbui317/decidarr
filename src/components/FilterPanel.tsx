@@ -106,7 +106,7 @@ export default function FilterPanel({
       setRatingCategories(ratingsRes.categories || []);
       setPopularStudios(studiosRes.studios || { streaming: [], anime: [], traditional: [] });
     } catch (err) {
-      console.error('Failed to load static filter options:', err);
+      // Error loading filter options; filters will remain empty
     }
   };
 
@@ -124,7 +124,7 @@ export default function FilterPanel({
       setFilterOptions(filterOptionsRes);
       setCollections(collectionsRes.collections || []);
     } catch (err) {
-      console.error('Failed to load library filter options:', err);
+      // Error loading filter options; filters will remain empty
     }
   };
 

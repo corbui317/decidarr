@@ -13,6 +13,7 @@ import { PlexService } from '@/lib/services/plex';
 import { createLogger } from '@/lib/logger';
 import { computeDataStats, getPoolCountWithBreakdown, fetchCollectionItemIds } from '@/lib/selection/filters';
 import { parseSelectionRequestBody } from '@/lib/validation/selection';
+import { EMPTY_DATA_STATS } from '@/types/shared';
 
 const logger = createLogger('API:PoolCount');
 
@@ -33,13 +34,7 @@ export async function POST(request: NextRequest) {
         matchingItems: 0,
         filterBreakdown: [],
         emptyReason: 'No libraries selected',
-        dataStats: {
-          itemsWithRating: 0,
-          itemsWithContentRating: 0,
-          itemsWithStudio: 0,
-          itemsWithYear: 0,
-          itemsWithGenres: 0,
-        },
+        dataStats: EMPTY_DATA_STATS,
       });
     }
 
@@ -54,13 +49,7 @@ export async function POST(request: NextRequest) {
         matchingItems: 0,
         filterBreakdown: [],
         emptyReason: 'Plex machine ID not configured',
-        dataStats: {
-          itemsWithRating: 0,
-          itemsWithContentRating: 0,
-          itemsWithStudio: 0,
-          itemsWithYear: 0,
-          itemsWithGenres: 0,
-        },
+        dataStats: EMPTY_DATA_STATS,
       });
     }
 
@@ -80,13 +69,7 @@ export async function POST(request: NextRequest) {
         matchingItems: 0,
         filterBreakdown: [],
         emptyReason: 'No items found in selected libraries. Try syncing your libraries first.',
-        dataStats: {
-          itemsWithRating: 0,
-          itemsWithContentRating: 0,
-          itemsWithStudio: 0,
-          itemsWithYear: 0,
-          itemsWithGenres: 0,
-        },
+        dataStats: EMPTY_DATA_STATS,
       });
     }
 
@@ -143,7 +126,7 @@ export async function POST(request: NextRequest) {
         { status: authErrorStatus(error) }
       );
     }
-    console.error('Pool count error:', error);
+    logger.error('Pool count error', { error: (error as Error).message });
     return NextResponse.json({ error: 'Failed to get pool count' }, { status: 500 });
   }
 }

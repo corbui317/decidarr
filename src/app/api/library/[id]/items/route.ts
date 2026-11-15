@@ -7,6 +7,9 @@ import { TMDbService } from '@/lib/services/tmdb';
 import { enrichWithOverseerr } from '@/lib/services/overseerr-sync';
 import type { ILibraryItem } from '@/lib/models/LibraryCache';
 import { sanitizeLibraryItemForClient } from '@/lib/plex-image';
+import { createLogger } from '@/lib/logger';
+
+const logger = createLogger('API:LibraryItems');
 
 const ENRICHMENT_FIELDS = [
   'tmdbId',
@@ -201,7 +204,7 @@ export async function GET(
             }
           }
         } catch (err) {
-          console.error('Batch enrichment error:', err);
+          logger.error('Batch enrichment error', { error: (err as Error).message });
         }
       }
     }
@@ -237,7 +240,7 @@ export async function GET(
     if (isAuthError(error)) {
       return NextResponse.json({ error: msg }, { status: authErrorStatus(error) });
     }
-    console.error('Get library items error:', error);
+    logger.error('Get library items error', { error: msg });
     return NextResponse.json({ error: 'Failed to get library items' }, { status: 500 });
   }
 }

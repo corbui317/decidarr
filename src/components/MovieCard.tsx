@@ -135,7 +135,7 @@ export default function MovieCard({ item, tmdb, isWatched = false, onWatchedChan
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to update watched status';
       setWatchedError(message);
-      console.error('Failed to update watched status:', err);
+      // Revert optimistic update on error
     } finally {
       setUpdating(false);
     }

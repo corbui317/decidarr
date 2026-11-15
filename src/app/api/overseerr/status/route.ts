@@ -1,4 +1,8 @@
 import { NextResponse } from 'next/server';
+import { createLogger } from '@/lib/logger';
+const logger = createLogger('API:status');
+
+
 import { connectDB } from '@/lib/db';
 import { getOrCreateSettings } from '@/lib/models/Settings';
 import { getOverseerrConfig, requireUser, isAuthError, authErrorStatus } from '@/lib/auth';
@@ -55,7 +59,7 @@ export async function GET() {
         { status: authErrorStatus(error) }
       );
     }
-    console.error('Overseerr status error:', error);
+    logger.error('Overseerr status error:', { error: (error as Error).message });
     return NextResponse.json({ error: 'Failed to get Overseerr status' }, { status: 500 });
   }
 }
