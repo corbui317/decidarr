@@ -8,27 +8,37 @@ vi.mock('@/lib/api', () => ({
   userPreferencesApi: {
     get: vi.fn().mockResolvedValue({
       preferences: {
+        theme: 'dark',
         defaultMediaType: 'movie',
         tvSelectionMode: 'show',
+        animationStyle: 'slots',
+        animationSpeed: 'normal',
         filters: {},
       },
       spinHistory: {
         enabled: true,
-        retention: 50,
-        storeSnapshots: true,
+        retentionLimit: 50,
+        storeFilterSnapshot: true,
       },
     }),
     update: vi.fn().mockResolvedValue({
       success: true,
       preferences: {
-        defaultMediaType: 'movie',
+        theme: 'light',
+        defaultMediaType: 'show',
         tvSelectionMode: 'show',
+        animationStyle: 'slots',
+        animationSpeed: 'normal',
         filters: {},
       },
     }),
   },
   spinHistoryApi: {
     clearHistory: vi.fn().mockResolvedValue({ success: true }),
+  },
+  settingsApi: {
+    getSettings: vi.fn(),
+    saveSettings: vi.fn(),
   },
   AnimationStyle: 'slots',
   AnimationSpeed: 'normal',
@@ -61,51 +71,77 @@ describe('AppearanceTab - Independent State', () => {
     vi.clearAllMocks();
   });
 
-  it('manages its own state and saving', async () => {
+  it('loads its own data and saves independently', async () => {
     const user = userEvent.setup();
+    const { userPreferencesApi } = await import('@/lib/api');
 
-    // For now, the AppearanceTab is still a controlled component
-    // This test verifies current behavior works
-    const onThemeChange = vi.fn();
-    const onSave = vi.fn();
+    // Tab should load its own data
+    render(<AppearanceTab />);
 
-    render(
-      <AppearanceTab
-        selectedTheme="dark"
-        onThemeChange={onThemeChange}
-        defaultMediaType="movie"
-        onDefaultMediaTypeChange={vi.fn()}
-        tvSelectionMode="show"
-        onTvSelectionModeChange={vi.fn()}
-        spinHistoryEnabled={true}
-        onSpinHistoryEnabledChange={vi.fn()}
-        spinHistoryRetention={50}
-        onSpinHistoryRetentionChange={vi.fn()}
-        spinHistoryStoreSnapshots={true}
-        onSpinHistoryStoreSnapshotsChange={vi.fn()}
-        showClearConfirm={false}
-        onShowClearConfirm={vi.fn()}
-        clearingHistory={false}
-        onClearSpinHistory={vi.fn()}
-        animationStyle="slots"
-        onAnimationStyleChange={vi.fn()}
-        animationSpeed="normal"
-        onAnimationSpeedChange={vi.fn()}
-        saving={false}
-        onSave={onSave}
-      />
-    );
+    // Wait for data to load
+    await waitFor(() => {
+      expect(userPreferencesApi.get).toHaveBeenCalled();
+    });
 
-    // Find and click the Light theme
+    // Should show the form after loading
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Save Preferences/i })).toBeInTheDocument();
+    });
+
+    // Change theme from dark to light
     const lightTheme = screen.getByText('Light');
     await user.click(lightTheme.closest('button')!);
 
-    expect(onThemeChange).toHaveBeenCalledWith('light');
-
-    // Find and click Save button
-    const saveButton = screen.getByRole('button', { name: /Save/i });
+    // Save changes
+    const saveButton = screen.getByRole('button', { name: /Save Preferences/i });
     await user.click(saveButton);
 
-    expect(onSave).toHaveBeenCalled();
+    // Should save through API
+    await waitFor(() => {
+      expect(userPreferencesApi.update).toHaveBeenCalled();
+    });
+
+    // Should show success message
+    await waitFor(() => {
+      expect(screen.getByText(/Preferences saved successfully/i)).toBeInTheDocument();
+    });
+  });
+
+  it('saves independently without affecting other tabs', async () => {
+    const user = userEvent.setup();
+    const { userPreferencesApi, settingsApi } = await import('@/lib/api');
+
+    render(<AppearanceTab />);
+
+    await waitFor(() => {
+      expect(userPreferencesApi.get).toHaveBeenCalled();
+    });
+
+    // Wait for form to render
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Default Media Type/i)).toBeInTheDocument();
+    });
+
+    // Change a preference value
+    const defaultMediaTypeSelect = screen.getByLabelText(/Default Media Type/i);
+    await user.selectOptions(defaultMediaTypeSelect, 'show');
+
+    // Save
+    const saveButton = screen.getByRole('button', { name: /Save Preferences/i });
+    await user.click(saveButton);
+
+    // Should only update user preferences, not touch admin settings
+    await waitFor(() => {
+      expect(userPreferencesApi.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          preferences: expect.objectContaining({
+            defaultMediaType: 'show',
+          }),
+        })
+      );
+    });
+
+    // Should NOT call settings API (that's for admin/integrations)
+    expect(settingsApi?.saveSettings).not.toHaveBeenCalled();
   });
 });
