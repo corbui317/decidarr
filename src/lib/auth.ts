@@ -174,7 +174,7 @@ export function invalidateAccessibleLibraryCache(userId?: string): void {
   }
 
   const prefix = `${userId}:`;
-  for (const key of sectionsCache.keys()) {
+  for (const key of Array.from(sectionsCache.keys())) {
     if (key.startsWith(prefix)) {
       sectionsCache.delete(key);
     }

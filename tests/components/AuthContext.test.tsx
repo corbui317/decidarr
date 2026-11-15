@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 
@@ -10,6 +10,7 @@ vi.mock('@/lib/api', () => ({
     getCurrentUser: vi.fn(),
     login: vi.fn(),
     logout: vi.fn(),
+    refreshSession: vi.fn(),
   },
 }));
 
@@ -99,5 +100,42 @@ describe('AuthContext', () => {
       expect(screen.getByTestId('auth')).toHaveTextContent('no');
       expect(screen.getByTestId('user')).toHaveTextContent('none');
     });
+  });
+
+  describe('Silent session refresh', () => {
+    it('sets up refresh interval when user is authenticated', async () => {
+      const setIntervalSpy = vi.spyOn(global, 'setInterval');
+
+      vi.mocked(settingsApi.getStatus).mockResolvedValue({
+        setupComplete: true,
+        hasPlexToken: true,
+        hasPlexServer: true,
+        hasTmdbKey: false,
+      });
+      vi.mocked(authApi.getCurrentUser).mockResolvedValue({
+        user: {
+          id: 'user-1',
+          username: 'testuser',
+          serverUrl: 'http://192.168.1.10:32400',
+          isAdmin: false,
+        },
+        preferences: { theme: 'dark', defaultMediaType: 'movie', tvSelectionMode: 'show' },
+      });
+
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('auth')).toHaveTextContent('yes');
+      });
+
+      expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 5 * 60 * 60 * 1000);
+
+      setIntervalSpy.mockRestore();
+    });
+
   });
 });
