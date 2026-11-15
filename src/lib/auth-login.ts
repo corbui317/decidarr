@@ -3,9 +3,10 @@ import jwt from 'jsonwebtoken';
 import { Types } from 'mongoose';
 import { getOrCreateSettings } from './models/Settings';
 import { User, IUser } from './models/User';
-import { PlexService, PlexServer } from './services/plex';
-import { fetchPlexUser } from './services/plex-oauth';
-import { validatePlexUrl } from './auth';
+import { PlexServer } from './services/plex';
+import { createPlexService } from './services/plex-factory';
+import { fetchPlexUser } from './services/plex-oauth-factory';
+import { assertSafeServiceUrl, allowPrivateServiceUrls } from './security/service-url';
 import { createLogger } from './logger';
 import { isSecureCookieEnabled } from './security/cookie-options';
 import { AuthErrorCode, createAuthError } from './auth-errors';
@@ -61,7 +62,7 @@ export async function completePlexLogin(
 
   const settings = await getOrCreateSettings();
   const encryptionKey = settings.getEncryptionKey();
-  const plexService = new PlexService(authToken);
+  const plexService = await createPlexService(authToken);
 
   let servers: PlexServer[] = [];
   try {
@@ -210,10 +211,12 @@ export async function completePlexLogin(
   await user.save();
 
   if (!settings.setupComplete && isAdmin && candidateServer) {
-        const localConnection = candidateServer.connections.find((c: { local: boolean }) => c.local);
+    const localConnection = candidateServer.connections.find((c: { local: boolean }) => c.local);
     const connection = localConnection || candidateServer.connections[0];
     if (connection) {
-      const urlCheck = validatePlexUrl(connection.uri);
+      const urlCheck = await assertSafeServiceUrl(connection.uri, {
+        allowPrivateNetworks: allowPrivateServiceUrls(),
+      });
       if (urlCheck.valid) {
         settings.plexServerUrl = urlCheck.normalized || connection.uri;
         settings.plexMachineId = candidateServer.clientIdentifier;

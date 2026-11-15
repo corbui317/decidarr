@@ -43,4 +43,19 @@ describe('POST /api/test/reset', () => {
     const res = await POST(createResetRequest('any-secret'));
     expect(res.status).toBe(403);
   });
+
+  it('returns 403 when E2E_TEST_RESET_SECRET is not set', async () => {
+    vi.stubEnv('E2E_TEST_RESET_SECRET', '');
+
+    const res = await POST(createResetRequest('any-secret'));
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 403 in production even with correct secret', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('E2E_TEST_RESET_SECRET', 'test-secret');
+
+    const res = await POST(createResetRequest('test-secret'));
+    expect(res.status).toBe(404);
+  });
 });
