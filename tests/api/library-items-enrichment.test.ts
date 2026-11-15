@@ -115,4 +115,58 @@ describe('GET /api/library/[id]/items enrichment preservation', () => {
     expect(cache?.items[109].tmdbId).toBe('1110');
     expect(cache?.items[54].contentRating).toBe('PG-13');
   });
+
+  it('enriches new items even when unmatchable items exist', async () => {
+    const unmatchableItems = Array.from({ length: 60 }, (_, i) => ({
+      ...makePlexItem(i + 1),
+      attemptedEnrichmentAt: new Date(Date.now() - 1000),
+    }));
+
+    const newItems = Array.from({ length: 10 }, (_, i) => makePlexItem(100 + i));
+
+    const allItems = [...unmatchableItems, ...newItems];
+
+    await LibraryCache.create({
+      plexMachineId: 'machine-1',
+      libraryId: 'lib-1',
+      libraryName: 'Movies',
+      mediaType: 'movie',
+      items: unmatchableItems,
+      lastSyncedAt: new Date(),
+      expiresAt: new Date(Date.now() + 86400000),
+    });
+
+    plexMock.getLibraryItems.mockResolvedValue(allItems);
+
+    tmdbMock.enrichBatch.mockResolvedValue(
+      Array.from({ length: 10 }, (_, i) => ({
+        tmdbId: 2000 + i,
+        certification: 'PG',
+        rating: 8.0,
+        studios: ['New Studio'],
+      }))
+    );
+
+    const req = new NextRequest(
+      'http://localhost/api/library/lib-1/items?forceRefresh=true'
+    );
+    const res = await getLibraryItems(req as never, {
+      params: Promise.resolve({ id: 'lib-1' }),
+    });
+
+    expect(res.status).toBe(200);
+
+    expect(tmdbMock.enrichBatch).toHaveBeenCalledTimes(1);
+    expect(tmdbMock.enrichBatch).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ title: 'Movie 100' }),
+        expect.objectContaining({ title: 'Movie 109' }),
+      ]),
+      'movie'
+    );
+
+    const body = await res.json();
+    const enrichedNewItem = body.items.find((item: ILibraryItem) => item.plexId === '100');
+    expect(enrichedNewItem.tmdbId).toBe('2000');
+  });
 });

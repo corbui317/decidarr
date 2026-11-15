@@ -124,4 +124,59 @@ describe('POST /api/tautulli/sync', () => {
     expect(watched).toHaveLength(4);
     expect(watched.find((w) => w.plexId === '500' && w.mediaType === 'show')).toBeTruthy();
   });
+
+  it('deduplicates movie history by rating_key, keeping latest stopped play', async () => {
+    const duplicateMovies = [
+      {
+        reference_id: 1,
+        rating_key: '100',
+        title: 'Watched Movie',
+        year: 2020,
+        media_type: 'movie' as const,
+        watched_status: 1,
+        stopped: 1700000000,
+        user_id: 42,
+        user: 'testuser',
+      },
+      {
+        reference_id: 2,
+        rating_key: '100',
+        title: 'Watched Movie',
+        year: 2020,
+        media_type: 'movie' as const,
+        watched_status: 1,
+        stopped: 1700000500,
+        user_id: 42,
+        user: 'testuser',
+      },
+      {
+        reference_id: 3,
+        rating_key: '100',
+        title: 'Watched Movie',
+        year: 2020,
+        media_type: 'movie' as const,
+        watched_status: 1,
+        stopped: 1700000300,
+        user_id: 42,
+        user: 'testuser',
+      },
+    ];
+
+    tautulliMock.getWatchHistoryPaged
+      .mockResolvedValueOnce(duplicateMovies)
+      .mockResolvedValueOnce([]);
+
+    const res = await tautulliSyncPost();
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.movies).toBe(1);
+    expect(body.synced).toBe(1);
+
+    const watched = await WatchedItem.find({ userId, mediaType: 'movie' });
+    expect(watched).toHaveLength(1);
+    expect(watched[0].plexId).toBe('100');
+    expect(watched[0].watchedAt.getTime()).toBe(1700000500 * 1000);
+  });
 });

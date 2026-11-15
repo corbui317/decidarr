@@ -7,6 +7,36 @@ export type FilterableItem = Pick<
   'plexId' | 'genres' | 'year' | 'contentRating' | 'studio' | 'rating' | 'overseerrStatus'
 >;
 
+export interface PlexCollectionService {
+  getCollectionItems(collectionKey: string): Promise<Array<{ plexId: string }>>;
+}
+
+export async function fetchCollectionItemIds(
+  collectionKeys: string[],
+  plexService: PlexCollectionService,
+  logger?: { warn: (msg: string, meta: Record<string, unknown>) => void }
+): Promise<Set<string>> {
+  const collectionItemIds = new Set<string>();
+
+  await Promise.all(
+    collectionKeys.map(async (collectionKey: string) => {
+      try {
+        const items = await plexService.getCollectionItems(collectionKey);
+        for (const item of items) {
+          collectionItemIds.add(item.plexId);
+        }
+      } catch (err) {
+        logger?.warn('Failed to fetch collection items', {
+          collectionKey,
+          error: (err as Error).message,
+        });
+      }
+    })
+  );
+
+  return collectionItemIds;
+}
+
 export function applyOverseerrPoolFilter<T extends { overseerrStatus?: OverseerrAvailability }>(
   items: T[],
   filterEnabled: boolean

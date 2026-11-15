@@ -10,7 +10,7 @@
 
 | Capability | UI | API |
 |------------|-----|-----|
-| Mark watched / unwatched on result | `MovieCard.tsx` | `POST/DELETE /api/watched/[plexId]` |
+| Mark watched / unwatched on result (admin only) | `MovieCard.tsx` | `POST/DELETE /api/watched/[plexId]` |
 | List watched items | — (selection internal) | `GET /api/watched?mediaType=&page=&limit=` |
 | Unwatched-only filter | `FilterPanel.tsx` | pool-count + random routes |
 | Tautulli connection test | `SettingsModal.tsx` (Tautulli tab) | `POST /api/tautulli/test` |
@@ -64,8 +64,8 @@ Indexes: `{ userId: 1, plexId: 1 }` unique; `{ userId: 1 }`; `{ plexUserId: 1, p
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
 | GET | `/api/watched` | Session | Paginated list; optional `mediaType` filter |
-| POST | `/api/watched/[plexId]` | Session | Mark watched; body: `{ mediaType, title }` |
-| DELETE | `/api/watched/[plexId]` | Session | Mark unwatched |
+| POST | `/api/watched/[plexId]` | Session + Admin | Mark watched; body: `{ mediaType, title }` |
+| DELETE | `/api/watched/[plexId]` | Session + Admin | Mark unwatched |
 | POST | `/api/tautulli/test` | Session | Validate URL + API key from settings |
 | POST | `/api/tautulli/sync` | Session | Import watch history; returns counts |
 
@@ -82,6 +82,7 @@ Indexes: `{ userId: 1, plexId: 1 }` unique; `{ userId: 1 }`; `{ plexUserId: 1, p
 
 ### Rules
 
+- Manual watched marking (POST/DELETE `/api/watched/[plexId]`) restricted to admin users (server owner). Non-admin friends rely on Plex/Tautulli history.
 - Tautulli credentials from encrypted `Settings`; never returned raw.
 - Sync disabled or misconfigured → `400` with actionable message.
 - Tautulli unreachable → `502`.
@@ -104,8 +105,9 @@ Indexes: `{ userId: 1, plexId: 1 }` unique; `{ userId: 1 }`; `{ plexUserId: 1, p
 
 ### Shipped
 
-- [x] User can manually mark selected item watched.
-- [x] User can undo watched state.
+- [x] Admin can manually mark selected item watched.
+- [x] Admin can undo watched state.
+- [x] Non-admin users cannot manually mark watched (403 forbidden).
 - [x] `unwatchedOnly` excludes watched items from selection.
 - [x] Tautulli sync imports movies and episode-derived shows.
 - [x] Tautulli sync is idempotent (upsert).
@@ -119,6 +121,7 @@ Indexes: `{ userId: 1, plexId: 1 }` unique; `{ userId: 1 }`; `{ plexUserId: 1, p
 
 ## 5. Edge Cases
 
+- Non-admin attempts manual watched marking → `403` forbidden.
 - Tautulli configured but disabled → sync returns `400`.
 - Plex username not found in Tautulli → syncs all users' history (no user filter).
 - Episode-only history → parent show marked watched.

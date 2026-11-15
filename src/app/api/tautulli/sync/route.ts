@@ -68,6 +68,21 @@ export async function POST() {
     const movieHistory = await service.getWatchHistoryPaged(tautulliUserId, 'movie');
     const episodeHistory = await service.getWatchHistoryPaged(tautulliUserId, 'episode');
 
+    const moviesWatched = new Map<string, { title: string; watchedAt: Date; userId: number; username: string; year?: number }>();
+    for (const movie of movieHistory) {
+      const existing = moviesWatched.get(movie.rating_key);
+      const movieDate = new Date(movie.stopped * 1000);
+      if (!existing || movieDate > existing.watchedAt) {
+        moviesWatched.set(movie.rating_key, {
+          title: movie.title,
+          watchedAt: movieDate,
+          userId: movie.user_id,
+          username: movie.user,
+          year: movie.year,
+        });
+      }
+    }
+
     const showsWatched = new Map<string, { title: string; watchedAt: Date; userId: number; username: string }>();
     for (const ep of episodeHistory) {
       if (ep.grandparent_rating_key) {
@@ -87,22 +102,22 @@ export async function POST() {
     let synced = 0;
     const bulkOps: mongoose.AnyBulkWriteOperation<typeof WatchedItem>[] = [];
 
-    for (const item of movieHistory) {
+    for (const [ratingKey, data] of Array.from(moviesWatched.entries())) {
       bulkOps.push({
         updateOne: {
-          filter: { userId: decidarrUserId, plexId: item.rating_key },
+          filter: { userId: decidarrUserId, plexId: ratingKey },
           update: {
             $set: {
               mediaType: 'movie',
-              title: item.title,
-              watchedAt: new Date(item.stopped * 1000),
+              title: data.title,
+              watchedAt: data.watchedAt,
               source: 'tautulli',
-              plexUserId: item.user_id,
-              plexUsername: item.user,
+              plexUserId: data.userId,
+              plexUsername: data.username,
             },
             $setOnInsert: {
               userId: decidarrUserId,
-              plexId: item.rating_key,
+              plexId: ratingKey,
               markedManually: false,
             },
           },
@@ -144,12 +159,12 @@ export async function POST() {
     settings.tautulliLastSync = new Date();
     await settings.save();
 
-    logger.info('Tautulli sync completed', { synced, movies: movieHistory.length, shows: showsWatched.size });
+    logger.info('Tautulli sync completed', { synced, movies: moviesWatched.size, shows: showsWatched.size });
 
     return NextResponse.json({
       success: true,
       synced,
-      movies: movieHistory.length,
+      movies: moviesWatched.size,
       shows: showsWatched.size,
       lastSync: settings.tautulliLastSync,
     });
