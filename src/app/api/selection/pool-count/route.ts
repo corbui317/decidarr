@@ -11,7 +11,7 @@ import { LibraryCache } from '@/lib/models/LibraryCache';
 import { WatchedItem } from '@/lib/models/WatchedItem';
 import { PlexService } from '@/lib/services/plex';
 import { createLogger } from '@/lib/logger';
-import { computeDataStats, getPoolCountWithBreakdown } from '@/lib/selection/filters';
+import { computeDataStats, getPoolCountWithBreakdown, fetchCollectionItemIds } from '@/lib/selection/filters';
 import { parseSelectionRequestBody } from '@/lib/validation/selection';
 
 const logger = createLogger('API:PoolCount');
@@ -100,23 +100,11 @@ export async function POST(request: NextRequest) {
 
     let collectionItemIds: Set<string> | null = null;
     if (filters.collections && filters.collections.length > 0) {
-      collectionItemIds = new Set<string>();
       const plexService = new PlexService(plexToken, plexServerUrl, settings.plexMachineId);
-
-      await Promise.all(
-        filters.collections.map(async (collectionKey: string) => {
-          try {
-            const items = await plexService.getCollectionItems(collectionKey);
-            for (const item of items) {
-              collectionItemIds!.add(item.plexId);
-            }
-          } catch (err) {
-            logger.warn('Failed to fetch collection items', {
-              collectionKey,
-              error: (err as Error).message,
-            });
-          }
-        })
+      collectionItemIds = await fetchCollectionItemIds(
+        filters.collections,
+        plexService,
+        logger
       );
       logger.debug('Collection filter active', {
         collectionCount: filters.collections.length,
