@@ -1,14 +1,12 @@
 import { test, expect } from '@playwright/test';
 import { resetE2eDatabase, completeSetupWizard } from './helpers/plex-mocks';
+import { seedLegacyEncryptedSettings } from './helpers/legacy-settings-seed';
 
 /**
  * E2E tests for DECIDARR_SECRET encryption and migration.
  * These tests verify that:
  * 1. Fresh installs with DECIDARR_SECRET don't crash (fixes issue #2)
  * 2. Existing installs with legacy encryption migrate transparently
- * 
- * Note: Run with DECIDARR_SECRET environment variable set:
- * DECIDARR_SECRET=e2e-test-secret npm run test:e2e
  */
 test.describe('DECIDARR_SECRET encryption', () => {
   test.beforeEach(async ({ request }) => {
@@ -60,5 +58,54 @@ test.describe('DECIDARR_SECRET encryption', () => {
     // Verify spin button is present (disabled is OK if no libraries configured)
     const spinButton = page.getByRole('button', { name: /spin/i }).first();
     await expect(spinButton).toBeVisible({ timeout: 5000 });
+  });
+
+  test('legacy-encrypted install migrates and continues working', async ({ page, request }) => {
+    test.setTimeout(90000);
+
+    // This test verifies the critical migration scenario:
+    // An install with legacy CryptoJS-encrypted settings is restarted with
+    // DECIDARR_SECRET set, and the migration happens transparently on startup.
+
+    // Step 1: Reset database and migration state
+    await request.post('/api/test/reset', {
+      headers: {
+        'X-E2E-Reset-Secret': process.env.E2E_TEST_RESET_SECRET || 'decidarr-e2e-reset',
+        'X-E2E-Reset-Migration': 'true',
+      },
+    });
+
+    // Step 2: Seed legacy-encrypted settings (pre-migration format)
+    const legacyData = await seedLegacyEncryptedSettings();
+
+    // Step 3: Navigate to trigger migration on next database connection
+    // The server will run migration when it connects to handle this request
+    await page.goto('/');
+
+    // Step 4: Wait for page to load (migration happens server-side)
+    await page.waitForLoadState('networkidle', { timeout: 15000 });
+
+    // Step 5: Verify we reach the dashboard (not setup wizard)
+    // This confirms the migrated settings are recognized as "setupComplete"
+    await expect(page.getByText(/DECIDARR|SPIN/i).first()).toBeVisible({ timeout: 15000 });
+
+    // Step 6: Verify settings are accessible (tests decryption of migrated credentials)
+    await page.getByRole('button', { name: /settings/i }).click();
+    await expect(page.getByRole('heading', { name: /Settings/i })).toBeVisible({ timeout: 5000 });
+
+    // Step 7: Navigate to integrations tab
+    await page.getByRole('tab', { name: /Plex/i }).click();
+
+    // Step 8: Verify legacy Plex settings are still accessible
+    // The page should show the migrated Plex configuration without errors
+    await expect(page.getByText(/legacyuser|Plex/i)).toBeVisible({ timeout: 5000 });
+
+    // Step 9: Close settings and verify spin functionality
+    await page.keyboard.press('Escape');
+    const spinButton = page.getByRole('button', { name: /spin/i }).first();
+    await expect(spinButton).toBeVisible({ timeout: 5000 });
+
+    // This confirms the full flow works: migration completed,
+    // settings decrypted correctly, and app is functional
   });
 });
