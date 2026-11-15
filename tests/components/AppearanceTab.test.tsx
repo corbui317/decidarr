@@ -134,9 +134,7 @@ describe('AppearanceTab - Independent State', () => {
     await waitFor(() => {
       expect(userPreferencesApi.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          preferences: expect.objectContaining({
-            defaultMediaType: 'show',
-          }),
+          defaultMediaType: 'show',
         })
       );
     });
