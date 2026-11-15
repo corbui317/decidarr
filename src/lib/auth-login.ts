@@ -3,8 +3,9 @@ import jwt from 'jsonwebtoken';
 import { Types } from 'mongoose';
 import { getOrCreateSettings } from './models/Settings';
 import { User, IUser } from './models/User';
-import { PlexService, PlexServer } from './services/plex';
-import { fetchPlexUser } from './services/plex-oauth';
+import { PlexServer } from './services/plex';
+import { createPlexService } from './services/plex-factory';
+import { fetchPlexUser } from './services/plex-oauth-factory';
 import { assertSafeServiceUrl, allowPrivateServiceUrls } from './security/service-url';
 import { createLogger } from './logger';
 import { isSecureCookieEnabled } from './security/cookie-options';
@@ -53,7 +54,7 @@ export async function completePlexLogin(
 
   const settings = await getOrCreateSettings();
   const encryptionKey = settings.getEncryptionKey();
-  const plexService = new PlexService(authToken);
+  const plexService = await createPlexService(authToken);
 
   let servers: PlexServer[] = [];
   try {

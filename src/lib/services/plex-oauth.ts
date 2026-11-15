@@ -1,19 +1,9 @@
 import crypto from 'crypto';
 import { createLogger } from '../logger';
-import {
-  E2E_MOCK_PIN_ID,
-  E2E_MOCK_PIN_CODE,
-  E2E_MOCK_AUTH_TOKEN,
-  E2E_MOCK_OAUTH_USER,
-} from './plex-e2e-mock-data';
 
 const logger = createLogger('PlexOAuth');
 const PLEX_TV_BASE = 'https://plex.tv';
 const FETCH_TIMEOUT_MS = 15_000;
-
-function isE2eMockMode(): boolean {
-  return process.env.E2E_MOCK_PLEX === 'true';
-}
 
 export const PLEX_PRODUCT = 'Decidarr';
 export const PLEX_VERSION = process.env.PLEX_APP_VERSION || '2.0.0';
@@ -76,10 +66,6 @@ async function readErrorSnippet(response: Response): Promise<string> {
 }
 
 export async function createAuthPin(): Promise<PlexPin> {
-  if (isE2eMockMode()) {
-    return { id: E2E_MOCK_PIN_ID, code: E2E_MOCK_PIN_CODE };
-  }
-
   const response = await fetchWithTimeout(`${PLEX_TV_BASE}/api/v2/pins?strong=true`, {
     method: 'POST',
     headers: {
@@ -112,14 +98,6 @@ export async function createAuthPin(): Promise<PlexPin> {
 }
 
 export async function pollAuthPin(pinId: number, code: string): Promise<PlexPin> {
-  if (isE2eMockMode()) {
-    return {
-      id: pinId,
-      code,
-      authToken: E2E_MOCK_AUTH_TOKEN,
-    };
-  }
-
   const query = new URLSearchParams({ code });
   const response = await fetchWithTimeout(
     `${PLEX_TV_BASE}/api/v2/pins/${pinId}?${query.toString()}`,
@@ -172,10 +150,6 @@ export function buildPlexAuthUrl(code: string, options?: { forwardUrl?: string }
 }
 
 export async function fetchPlexUser(authToken: string): Promise<PlexOAuthUser> {
-  if (isE2eMockMode()) {
-    return E2E_MOCK_OAUTH_USER;
-  }
-
   const response = await fetchWithTimeout(`${PLEX_TV_BASE}/api/v2/user`, {
     headers: {
       ...getPlexClientHeaders(),
