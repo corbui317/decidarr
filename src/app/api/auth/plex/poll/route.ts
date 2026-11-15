@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { timingSafeEqual } from 'crypto';
+import { pollAuthPin } from '@/lib/services/plex-oauth-factory';
 import {
-  pollAuthPin,
   OAUTH_PIN_COOKIE,
   OAUTH_PIN_CODE_COOKIE,
   OAUTH_STATE_COOKIE,

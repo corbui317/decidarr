@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { createAuthPin } from '@/lib/services/plex-oauth-factory';
 import {
-  createAuthPin,
   buildPlexAuthUrl,
   generateOAuthState,
   OAUTH_STATE_COOKIE,
