@@ -1,31 +1,16 @@
 import { createLogger } from '../logger';
 import { getPlexClientHeaders } from './plex-oauth';
+import {
+  E2E_MOCK_USER,
+  E2E_MOCK_SERVERS,
+} from './plex-e2e-mock-data';
 
 const logger = createLogger('PlexService');
 const PLEX_TV_BASE = 'https://plex.tv';
 const FETCH_TIMEOUT_MS = 15_000;
 
-const E2E_MOCK_USER: PlexUser = {
-  id: 'e2e-user',
-  username: 'e2euser',
-  email: 'e2e@example.com',
-};
-
 function isE2eMockMode(): boolean {
   return process.env.E2E_MOCK_PLEX === 'true';
-}
-
-function e2eMockServers(): PlexServer[] {
-  return [
-    {
-      name: 'E2E Server',
-      clientIdentifier: 'e2e-machine',
-      owned: true,
-      connections: [
-        { uri: 'http://192.168.1.10:32400', local: true, relay: false },
-      ],
-    },
-  ];
 }
 
 export interface PlexUser {
@@ -182,7 +167,7 @@ export class PlexService {
 
   async getServers(): Promise<PlexServer[]> {
     if (isE2eMockMode()) {
-      return e2eMockServers();
+      return E2E_MOCK_SERVERS;
     }
 
     const resourcesUrl = `${PLEX_TV_BASE}/api/v2/resources?includeHttps=1&includeRelay=1`;

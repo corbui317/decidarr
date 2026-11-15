@@ -1,5 +1,11 @@
 import crypto from 'crypto';
 import { createLogger } from '../logger';
+import {
+  E2E_MOCK_PIN_ID,
+  E2E_MOCK_PIN_CODE,
+  E2E_MOCK_AUTH_TOKEN,
+  E2E_MOCK_OAUTH_USER,
+} from './plex-e2e-mock-data';
 
 const logger = createLogger('PlexOAuth');
 const PLEX_TV_BASE = 'https://plex.tv';
@@ -8,10 +14,6 @@ const FETCH_TIMEOUT_MS = 15_000;
 function isE2eMockMode(): boolean {
   return process.env.E2E_MOCK_PLEX === 'true';
 }
-
-const E2E_MOCK_PIN_ID = 424242;
-const E2E_MOCK_PIN_CODE = 'e2e-mock-pin-code';
-const E2E_MOCK_AUTH_TOKEN = 'e2e-test-plex-token-valid';
 
 export const PLEX_PRODUCT = 'Decidarr';
 export const PLEX_VERSION = process.env.PLEX_APP_VERSION || '2.0.0';
@@ -171,11 +173,7 @@ export function buildPlexAuthUrl(code: string, options?: { forwardUrl?: string }
 
 export async function fetchPlexUser(authToken: string): Promise<PlexOAuthUser> {
   if (isE2eMockMode()) {
-    return {
-      id: 'e2e-user',
-      username: 'e2euser',
-      email: 'e2e@example.com',
-    };
+    return E2E_MOCK_OAUTH_USER;
   }
 
   const response = await fetchWithTimeout(`${PLEX_TV_BASE}/api/v2/user`, {
