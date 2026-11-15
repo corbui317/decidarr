@@ -2,7 +2,7 @@
 
 import type { Filters } from '@/types/filters';
 import type { SelectionResultResponse } from '@/types/api/selection';
-import type { MediaType, TvSelectionMode } from '@/lib/validation/selection';
+import type { MediaType, TvSelectionMode } from '@/types/shared';
 import type { WatchedMediaType } from '@/lib/validation/watched';
 
 const API_BASE = '/api';

@@ -45,7 +45,7 @@ function mergeExistingEnrichment(
         (Array.isArray(freshValue) && freshValue.length === 0);
 
       if (freshMissing && existingValue != null) {
-        (item as unknown as Record<string, unknown>)[field] = existingValue;
+        (item as Record<string, unknown>)[field] = existingValue;
       }
     }
   }
@@ -95,7 +95,7 @@ export async function GET(
 
       if (cache && !cache.isExpired()) {
         return NextResponse.json({
-          items: cache.items.map((item) => sanitizeLibraryItemForClient(item as unknown as Record<string, unknown>)),
+          items: cache.items.map((item) => sanitizeLibraryItemForClient(item as Record<string, unknown>)),
           fromCache: true,
           lastSyncedAt: cache.lastSyncedAt,
         });
@@ -127,17 +127,17 @@ export async function GET(
     if (tmdbApiKey) {
       const tmdbService = new TMDbService(tmdbApiKey);
       const unenrichedItems = items.filter(isItemUnenriched);
-      const itemsToEnrich = unenrichedItems.slice(0, 50) as unknown as Record<string, unknown>[];
+      const itemsToEnrich = unenrichedItems.slice(0, 50);
 
       if (itemsToEnrich.length > 0) {
         try {
           const enrichments = await tmdbService.enrichBatch(
             itemsToEnrich.map((item) => ({
-              title: item.title as string,
-              year: item.year as number | undefined,
-              contentRating: item.contentRating as string | undefined,
-              rating: item.rating as number | undefined,
-              studio: item.studio as string | undefined,
+              title: item.title,
+              year: item.year,
+              contentRating: item.contentRating,
+              rating: item.rating,
+              studio: item.studio,
             })),
             section.type as 'movie' | 'show'
           );
@@ -179,7 +179,7 @@ export async function GET(
               (candidate) => candidate.plexId === items[i].plexId
             );
             if (enrichIndex === -1) continue;
-            const source = itemsToEnrich[enrichIndex] as unknown as ILibraryItem;
+            const source = itemsToEnrich[enrichIndex];
             if (source.tmdbId && !items[i].tmdbId) {
               items[i].tmdbId = source.tmdbId;
             }
@@ -231,7 +231,7 @@ export async function GET(
     );
 
     return NextResponse.json({
-      items: items.map((item) => sanitizeLibraryItemForClient(item as unknown as Record<string, unknown>)),
+      items: items.map((item) => sanitizeLibraryItemForClient(item as Record<string, unknown>)),
       fromCache: false,
       lastSyncedAt: new Date(),
     });

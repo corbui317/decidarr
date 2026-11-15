@@ -16,6 +16,7 @@ import { applyFullFilters, fetchCollectionItemIds } from '@/lib/selection/filter
 import { sanitizeLibraryItemForClient } from '@/lib/plex-image';
 import { parseSelectionRequestBody } from '@/lib/validation/selection';
 import type { SelectionResultResponse } from '@/types/api/selection';
+import type { SelectionError } from '@/types/shared';
 
 const logger = createLogger('API:Random');
 
@@ -58,10 +59,12 @@ export async function POST(request: NextRequest) {
     let allItems = caches.flatMap((cache) => cache.items);
 
     if (allItems.length === 0) {
-      return NextResponse.json(
-        { error: 'No items found in selected libraries', suggestion: 'Try syncing your libraries first' },
-        { status: 404 }
-      );
+      const errorResponse: SelectionError = {
+        code: 'NO_ITEMS_IN_LIBRARIES',
+        message: 'No items found in selected libraries',
+        suggestion: 'Try syncing your libraries first',
+      };
+      return NextResponse.json(errorResponse, { status: 404 });
     }
 
     const plexService = new PlexService(plexToken, plexServerUrl, settings.plexMachineId);
@@ -104,10 +107,12 @@ export async function POST(request: NextRequest) {
     );
 
     if (allItems.length === 0) {
-      return NextResponse.json(
-        { error: 'No items match your filters', suggestion: 'Try adjusting your filters' },
-        { status: 404 }
-      );
+      const errorResponse: SelectionError = {
+        code: 'NO_ITEMS_MATCH_FILTERS',
+        message: 'No items match your filters',
+        suggestion: 'Try adjusting your filters',
+      };
+      return NextResponse.json(errorResponse, { status: 404 });
     }
 
     const randomIndex = Math.floor(Math.random() * allItems.length);
