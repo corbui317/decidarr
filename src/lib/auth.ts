@@ -276,42 +276,6 @@ export function normalizeUrl(url: string): string {
   return `http://${trimmed}`.replace(/\/+$/, '');
 }
 
-export function validatePlexUrl(url: string): { valid: boolean; error?: string; normalized?: string } {
-  const normalized = normalizeUrl(url);
-
-  let parsed: URL;
-  try {
-    parsed = new URL(normalized);
-  } catch {
-    return { valid: false, error: 'Invalid URL format' };
-  }
-
-  if (!['http:', 'https:'].includes(parsed.protocol)) {
-    return { valid: false, error: 'Only http and https URLs are allowed' };
-  }
-
-  const hostname = parsed.hostname.toLowerCase();
-
-  if (
-    hostname === 'localhost' ||
-    hostname === '127.0.0.1' ||
-    hostname === '::1' ||
-    hostname.startsWith('127.')
-  ) {
-    return { valid: false, error: 'Loopback addresses are not permitted' };
-  }
-
-  if (hostname.startsWith('169.254.')) {
-    return { valid: false, error: 'Link-local addresses are not permitted' };
-  }
-
-  if (hostname === '::1' || hostname.startsWith('fe80:')) {
-    return { valid: false, error: 'Link-local IPv6 addresses are not permitted' };
-  }
-
-  return { valid: true, normalized };
-}
-
 export function isAuthError(error: unknown): boolean {
   const msg = (error as Error)?.message;
   return msg === 'App not configured' || msg === 'Unauthorized' || msg === 'Forbidden';
