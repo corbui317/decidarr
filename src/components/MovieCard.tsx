@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { watchedApi } from '@/lib/api';
 import type { WatchedMediaType } from '@/lib/validation/watched';
 import { resolveItemImageUrls } from '@/lib/plex-image';
+import { useAuth } from '@/context/AuthContext';
 
 interface Item {
   plexId: string;
@@ -67,6 +68,7 @@ interface MovieCardProps {
 }
 
 export default function MovieCard({ item, tmdb, isWatched = false, onWatchedChange, playLinks }: MovieCardProps) {
+  const { isAdmin } = useAuth();
   const [watched, setWatched] = useState(isWatched);
   const [updating, setUpdating] = useState(false);
   const [watchedError, setWatchedError] = useState<string | null>(null);
@@ -304,20 +306,22 @@ export default function MovieCard({ item, tmdb, isWatched = false, onWatchedChan
                 </AnimatePresence>
               </div>
             )}
-            <button
-              onClick={handleWatchedToggle}
-              disabled={updating}
-              aria-label={watched ? 'Mark as unwatched' : 'Mark as watched'}
-              className={`touch-target w-12 h-12 rounded-full flex items-center justify-center
-                        transition-all ${
-                          watched
-                            ? 'bg-decidarr-success text-white'
-                            : 'bg-decidarr-dark text-gray-400 hover:text-white'
-                        } ${updating ? 'opacity-50' : ''}`}
-              title={watched ? 'Mark as unwatched' : 'Mark as watched'}
-            >
-              {updating ? <span className="animate-spin">⏳</span> : watched ? '✓' : '👁'}
-            </button>
+            {isAdmin && (
+              <button
+                onClick={handleWatchedToggle}
+                disabled={updating}
+                aria-label={watched ? 'Mark as unwatched' : 'Mark as watched'}
+                className={`touch-target w-12 h-12 rounded-full flex items-center justify-center
+                          transition-all ${
+                            watched
+                              ? 'bg-decidarr-success text-white'
+                              : 'bg-decidarr-dark text-gray-400 hover:text-white'
+                          } ${updating ? 'opacity-50' : ''}`}
+                title={watched ? 'Mark as unwatched' : 'Mark as watched'}
+              >
+                {updating ? <span className="animate-spin">⏳</span> : watched ? '✓' : '👁'}
+              </button>
+            )}
           </div>
         </div>
 
