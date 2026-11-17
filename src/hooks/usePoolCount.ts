@@ -44,9 +44,11 @@ export function usePoolCount(
       setLoadingPoolCount(true);
       try {
         const data = await selectionApi.getPoolCount(
-          selectedLibraries,
-          mediaType,
-          filters,
+          {
+            libraryIds: selectedLibraries,
+            mediaType,
+            filters,
+          },
           controller.signal
         );
         if (id !== requestId) return;

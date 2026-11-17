@@ -45,12 +45,12 @@ export function useSpinFlow({
     setActiveVariant(variant);
 
     try {
-      const data = await selectionApi.getRandom(
-        selectedLibraries,
+      const data = await selectionApi.getRandom({
+        libraryIds: selectedLibraries,
         mediaType,
         filters,
-        mediaType === 'show' ? tvSelectionMode : undefined
-      );
+        tvSelectionMode: mediaType === 'show' ? tvSelectionMode : undefined,
+      });
 
       const selectionResult = data;
       setPendingResult(selectionResult);

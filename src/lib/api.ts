@@ -8,6 +8,7 @@ import type {
   AppTheme,
   AnimationStyle,
   AnimationSpeed,
+  SelectionParameters,
 } from '@/types/shared';
 import type { WatchedMediaType } from '@/lib/validation/watched';
 
@@ -253,26 +254,16 @@ export const libraryApi = {
 
 // Selection API
 export const selectionApi = {
-  getRandom: (
-    libraryIds: string[],
-    mediaType: MediaType,
-    filters: Filters,
-    tvSelectionMode?: TvSelectionMode
-  ) =>
+  getRandom: (params: SelectionParameters) =>
     request<SelectionResultResponse>('/selection/random', {
       method: 'POST',
-      body: { libraryIds, mediaType, filters, tvSelectionMode },
+      body: params,
     }),
   getAwardCategories: () =>
     request<{ categories: { id: string; name: string; icon: string }[] }>(
       '/selection/awards/categories'
     ),
-  getPoolCount: (
-    libraryIds: string[],
-    mediaType: MediaType,
-    filters: Filters,
-    signal?: AbortSignal
-  ) =>
+  getPoolCount: (params: Omit<SelectionParameters, 'tvSelectionMode'>, signal?: AbortSignal) =>
     request<{
       totalItems: number;
       matchingItems: number;
