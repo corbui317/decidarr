@@ -371,12 +371,12 @@ settingsSchema.pre('save', function(next) {
   try {
     encryptionKey = this.getEncryptionKey();
   } catch (err) {
-    // If we can't decrypt the encryption key, skip encryption
-    // This handles corrupted state gracefully
-    logger.warn('Skipping encryption in pre-save hook due to decrypt failure', {
+    // If we can't decrypt the encryption key, fail the save
+    // This prevents saving credentials in plaintext
+    logger.error('Cannot save Settings: encryption key unavailable', {
       error: String(err),
     });
-    return next();
+    return next(new Error('Encryption key unavailable - cannot save encrypted fields'));
   }
 
   // Encrypt plex token if modified and not already encrypted
@@ -406,6 +406,53 @@ export const Settings: Model<ISettings> =
   mongoose.models.Settings || mongoose.model<ISettings>('Settings', settingsSchema);
 
 // Helper function to get or create settings (singleton pattern)
+/**
+ * Recovery function for DECIDARR_SECRET changes.
+ * When the master key changes and existing secrets can't be decrypted:
+ * - Generate fresh jwtSecret and encryptionKey
+ * - Clear all encrypted integration credentials
+ * - Clear all user plexTokens
+ * - Keep admin users so they can re-login
+ */
+export async function recoverFromSecretChange(): Promise<ISettings> {
+  logger.warn('DECIDARR_SECRET changed - initiating recovery with fresh keys');
+
+  const settings = await Settings.findById('app-settings');
+  if (!settings) {
+    throw new Error('Settings document not found during recovery');
+  }
+
+  // Generate fresh security keys and encrypt with the NEW master key
+  const newJwtSecret = generateSecureKey(64);
+  const newEncryptionKey = generateSecureKey(32);
+  const masterKey = getCurrentSettingsMasterKey();
+
+  settings.jwtSecret = encryptWithAesGcm(newJwtSecret, masterKey);
+  settings.encryptionKey = encryptWithAesGcm(newEncryptionKey, masterKey);
+  settings.secretsMigrationVersion = CURRENT_MIGRATION_VERSION;
+
+  // Clear all encrypted integration credentials
+  settings.plexToken = undefined;
+  settings.tmdbApiKey = undefined;
+  settings.tautulliApiKey = undefined;
+  settings.overseerrApiKey = undefined;
+
+  await settings.save();
+
+  // Clear plexToken from all users, but keep the users themselves
+  const { User } = await import('./User');
+  const result = await User.updateMany(
+    { plexToken: { $exists: true } },
+    { $unset: { plexToken: '' } }
+  );
+
+  logger.info('Secret recovery complete', {
+    clearedUserTokens: result.modifiedCount,
+  });
+
+  return settings;
+}
+
 export async function getOrCreateSettings(): Promise<ISettings> {
   let settings = await Settings.findById('app-settings');
 

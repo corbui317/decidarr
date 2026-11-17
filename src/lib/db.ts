@@ -33,7 +33,13 @@ export async function connectDB() {
 
     cached.promise = mongoose.connect(MONGODB_URI, opts).then(async (conn) => {
       logger.info('Connected to MongoDB');
-      await runMigrations();
+      try {
+        await runMigrations();
+      } catch (err) {
+        // Log migration errors but don't prevent database connection
+        // Recovery mechanisms in migrations should handle most failures
+        logger.error('Migration error during connection', { error: String(err) });
+      }
       return conn;
     });
   }

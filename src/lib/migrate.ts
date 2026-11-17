@@ -153,8 +153,16 @@ async function migrateSettingsMasterKey(settings: Awaited<ReturnType<typeof getO
       logger.info('Secrets already in current format, marked migration complete');
     }
   } catch (err) {
-    logger.error('Secret migration failed', { error: String(err) });
-    throw err;
+    // Secret migration failure likely means DECIDARR_SECRET changed
+    logger.error('Secret migration failed - DECIDARR_SECRET may have changed', {
+      error: String(err),
+    });
+
+    // Trigger recovery: generate fresh keys, clear encrypted fields
+    const { recoverFromSecretChange } = await import('./models/Settings');
+    await recoverFromSecretChange();
+
+    logger.info('Recovery complete - admin can now re-login to re-enter credentials');
   }
 }
 
