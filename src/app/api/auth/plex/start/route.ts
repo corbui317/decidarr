@@ -50,10 +50,27 @@ export async function POST(request: Request) {
     const state = generateOAuthState();
     const pin = await createAuthPin();
 
+    // Validate redirect origin against APP_URL to prevent Host header injection
     let forwardUrl: string | undefined;
     try {
-      const origin = new URL(request.url).origin;
-      forwardUrl = `${origin}/`;
+      const requestOrigin = new URL(request.url).origin;
+      const appUrl = process.env.APP_URL?.trim() || process.env.NEXTAUTH_URL?.trim();
+
+      if (appUrl) {
+        const allowedOrigin = new URL(appUrl).origin;
+        if (requestOrigin === allowedOrigin) {
+          forwardUrl = `${requestOrigin}/`;
+        } else {
+          logger.warn('OAuth redirect origin mismatch', {
+            requested: requestOrigin,
+            allowed: allowedOrigin,
+          });
+          forwardUrl = undefined;
+        }
+      } else {
+        // No APP_URL configured, omit forwardUrl for safety
+        forwardUrl = undefined;
+      }
     } catch {
       forwardUrl = undefined;
     }
