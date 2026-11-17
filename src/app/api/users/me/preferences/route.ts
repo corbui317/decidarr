@@ -96,22 +96,24 @@ export async function PUT(request: NextRequest) {
       user.preferences.animationSpeed = body.animationSpeed;
     }
     let previousRetention: number | undefined;
+    let mergedSpinHistory;
     if (body.spinHistory) {
       const { merged, previousRetention: prevRetention } = mergeSpinHistoryPreferences(
         user.preferences.spinHistory,
         body.spinHistory
       );
       previousRetention = prevRetention;
+      mergedSpinHistory = merged;
       user.preferences.spinHistory = merged;
     }
 
     await user.save();
 
-    if (body.spinHistory && previousRetention !== undefined) {
+    if (body.spinHistory && previousRetention !== undefined && mergedSpinHistory) {
       await trimHistoryIfRetentionReduced(
         user._id as mongoose.Types.ObjectId,
         previousRetention,
-        user.preferences.spinHistory.retentionLimit,
+        mergedSpinHistory.retentionLimit,
         body.spinHistory.retentionLimit !== undefined
       );
     }
@@ -155,7 +157,7 @@ export async function PATCH(request: NextRequest) {
       body.retentionLimit !== undefined
     );
 
-    return NextResponse.json({ spinHistory: nextSpinHistory });
+    return NextResponse.json({ spinHistory: merged });
   } catch (error) {
     if (isAuthError(error)) {
       return NextResponse.json(
