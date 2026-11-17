@@ -11,7 +11,7 @@ import {
 } from '@/lib/services/plex-oauth';
 import { createLogger } from '@/lib/logger';
 import { assertSetupSecretAllowed } from '@/lib/security/setup-secret';
-import { checkRateLimit } from '@/lib/security/rate-limit';
+import { enforceRateLimit } from '@/lib/security/rate-limit';
 
 const logger = createLogger('API:PlexAuthStart');
 
@@ -20,23 +20,12 @@ const RATE_LIMIT_CONFIG = {
   maxAttempts: 5,
 };
 
-function getRateLimitKey(request: Request): string {
-  const forwarded = request.headers.get('x-forwarded-for');
-  const ip = forwarded ? forwarded.split(',')[0].trim() : request.headers.get('x-real-ip') || 'unknown';
-  return `auth:start:${ip}`;
-}
-
 export async function POST(request: Request) {
   try {
-    const rateLimitKey = getRateLimitKey(request);
-    const rateLimit = checkRateLimit(rateLimitKey, RATE_LIMIT_CONFIG);
-
-    if (!rateLimit.allowed) {
-      logger.warn('Rate limit exceeded for auth start', { key: rateLimitKey });
-      return NextResponse.json(
-        { error: 'Too many login attempts. Please try again later.', code: 'RATE_LIMITED' },
-        { status: 429 }
-      );
+    const rateLimitResponse = enforceRateLimit(request, 'auth:start', RATE_LIMIT_CONFIG);
+    if (rateLimitResponse) {
+      logger.warn('Rate limit exceeded for auth start');
+      return rateLimitResponse;
     }
 
     const setupCheck = await assertSetupSecretAllowed(request);
