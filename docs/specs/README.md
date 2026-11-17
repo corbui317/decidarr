@@ -68,7 +68,7 @@ Cross-cutting fixes from the Code Reviewer pass. Start with the [remediation roa
 | Slot machine spin animation | **Shipped** | [07](./beta/07-spin-animation-experience.md) |
 | Admin users, session refresh | **Shipped** | [01](./beta/01-setup-auth-user-access.md) |
 | Animation variants, reduced motion | **Shipped** | [07](./beta/07-spin-animation-experience.md) |
-| Plex OAuth | **Planned** | [01](./beta/01-setup-auth-user-access.md) |
+| Plex OAuth | **Shipped** | [01](./beta/01-setup-auth-user-access.md) |
 | Overseerr status and requests | **Planned** | [06](./beta/06-overseerr-request-flow.md) |
 | Mobile/PWA shell | **Partial** | [08](./beta/08-mobile-pwa-later.md) |
 | Production PWA verification | **Planned** | [Mobile 01](./mobile/01-production-https-pwa-verification.md) |

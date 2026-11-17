@@ -34,9 +34,9 @@ Cross-reference index for every implemented feature surface. Use this to find th
 | Returning-user login (stored Plex token) | Shipped | [01](./beta/01-setup-auth-user-access.md) | `src/components/LoginScreen.tsx` | `POST /api/auth/login` | `Settings` | `tests/api/auth/login.test.ts` |
 | Session cookie (`decidarr_session` JWT) | Shipped | [01](./beta/01-setup-auth-user-access.md) | `src/context/AuthContext.tsx` | `GET /api/auth/me`, `DELETE /api/auth/logout` | `Settings` | `tests/unit/lib/auth.test.ts` |
 | Reconfigure Plex account | Shipped | [01](./beta/01-setup-auth-user-access.md) | `src/app/page.tsx`, `LoginScreen` | `POST /api/settings/setup` | `Settings` | — |
-| Plex PIN/OAuth multi-user login | Planned | [01](./beta/01-setup-auth-user-access.md) | — | — (no `auth/plex/*` routes on disk) | `User` (schema only) | — |
+| Plex PIN/OAuth multi-user login | Shipped | [01](./beta/01-setup-auth-user-access.md) | `src/components/LoginScreen.tsx` | `POST /api/auth/plex/start`, `GET /api/auth/plex/poll` | `User` | `tests/api/plex-oauth.test.ts` |
 | Session refresh endpoint | Shipped | [01](./beta/01-setup-auth-user-access.md) | `src/context/AuthContext.tsx` | `POST /api/auth/refresh` | — | `tests/api/auth-session.test.ts` |
-| Admin user management | Shipped | [01](./beta/01-setup-auth-user-access.md) | `src/components/settings/UsersTab.tsx` | `GET/POST/DELETE /api/admin/users/*` | `User` | `tests/api/admin-users.test.ts` |
+| Admin user management | Shipped | [01](./beta/01-setup-auth-user-access.md) | `src/components/settings/IntegrationsTab.tsx` | `GET/POST/DELETE /api/admin/users/*` | `User` | `tests/api/admin-users.test.ts` |
 
 ---
 
@@ -103,8 +103,8 @@ Cross-reference index for every implemented feature surface. Use this to find th
 
 | Feature | Status | Spec | Frontend | API | Models | Tests |
 |---------|--------|------|----------|-----|--------|-------|
-| Overseerr settings / test / status | Shipped | [06](./beta/06-overseerr-request-flow.md) | `src/components/settings/OverseerrTab.tsx` | `POST /api/overseerr/test`, `GET /api/overseerr/status` | `Settings` | — |
-| Request media in Overseerr | Shipped | [06](./beta/06-overseerr-request-flow.md) | `src/components/MovieCard.tsx` | `POST /api/overseerr/request` | — | — |
+| Overseerr settings / test / status | Shipped | [06](./beta/06-overseerr-request-flow.md) | `src/components/settings/IntegrationsTab.tsx` | `POST /api/overseerr/test`, `GET /api/overseerr/status` | `Settings` | — |
+| Request media in Overseerr | Planned | [06](./beta/06-overseerr-request-flow.md) | — | — | — | — |
 
 ---
 
