@@ -179,10 +179,6 @@ export function parseSelectionRequestBody(body: unknown): ParseResult<SelectionR
     tvSelectionMode = raw.tvSelectionMode;
   }
 
-  if (mediaType === 'show' && tvSelectionMode === undefined) {
-    // Optional field — no default required by spec
-  }
-
   return {
     ok: true,
     data: {

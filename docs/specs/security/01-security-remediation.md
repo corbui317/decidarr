@@ -2,7 +2,7 @@
 
 ## Status
 
-`In Progress` — Phases 1–5 implemented; dependency major upgrade for Next.js deferred pending separate spike.
+`Implemented` — All phases shipped on fm/spec-1-integration branch. Next.js upgraded to latest 14.x patch (14.2.35).
 
 ## What & Why
 
@@ -47,18 +47,18 @@ This spec defines the target secure behavior, API contracts, migrations, and ver
 | Wildcard `next/image` hosts | Medium | `next.config.js` | `hostname: '**'` for http and https |
 | Vulnerable dependencies | Medium–Critical | `package.json` | `next@14.2.21`, `mongoose@^8.0.3` per `npm audit --omit=dev` |
 
-### Target / Future
+### Target / Implemented
 
 | Capability | Key deliverable | Status |
 |------------|-----------------|--------|
-| Tokenless media URLs + proxy | `GET /api/plex/image` | Planned |
-| OAuth state + cookie binding | Hardened poll route | Planned |
-| Setup secret gate | `DECIDARR_SETUP_SECRET` env | Planned |
-| Central SSRF validator | `src/lib/security/service-url.ts` | Planned |
-| Admin-only integration tests | Route auth changes | Planned |
-| Production-safe cookies | Default secure in production | Planned |
-| App secret encryption | `DECIDARR_SECRET` env + migration | Planned |
-| Dependency upgrades | Patched `mongoose`; controlled `next` upgrade | Planned |
+| Tokenless media URLs + proxy | `GET /api/plex/image` | **Shipped** |
+| OAuth state + cookie binding | Hardened poll route | **Shipped** |
+| Setup secret gate | `DECIDARR_SETUP_SECRET` env | **Shipped** |
+| Central SSRF validator | `src/lib/security/service-url.ts` | **Shipped** |
+| Admin-only integration tests | Route auth changes | **Shipped** |
+| Production-safe cookies | Default secure in production | **Shipped** |
+| App secret encryption | `DECIDARR_SECRET` env + migration | **Shipped** |
+| Dependency upgrades | `next@14.2.35`, `mongoose@^8.24.1` | **Shipped** |
 
 ### Known Gaps (post-remediation follow-ups)
 

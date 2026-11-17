@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { resetE2eDatabase, completeSetupWizard } from './helpers/plex-mocks';
+import { resetE2eDatabase, completeSetupWizard } from './helpers/e2e-test-helpers';
 
 test.describe('Empty pool UX', () => {
   test.beforeEach(async ({ request }) => {
