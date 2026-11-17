@@ -27,21 +27,56 @@ export function extractThumbPathFromUrl(url: string): string | null {
   }
 }
 
+function decodeAndNormalizePath(path: string): string | null {
+  // Decode repeatedly until stable (handles double/triple encoding)
+  let decoded = path;
+  let previous: string;
+  let iterations = 0;
+  do {
+    previous = decoded;
+    try {
+      decoded = decodeURIComponent(decoded);
+    } catch {
+      // Invalid percent encoding
+      return null;
+    }
+    iterations++;
+    // Prevent infinite loops on malformed input
+    if (iterations > 10) return null;
+  } while (decoded !== previous);
+
+  // After full decoding, reject any remaining % (incomplete encoding)
+  if (decoded.includes('%')) return null;
+
+  // Reject path traversal sequences
+  if (decoded.includes('..') || decoded.includes('\\')) return null;
+
+  // Normalize with URL API
+  let normalized: string;
+  try {
+    const parsed = new URL(decoded, 'http://localhost');
+    normalized = parsed.pathname;
+  } catch {
+    normalized = decoded.split('?')[0];
+  }
+
+  // Final checks on normalized path
+  if (!normalized.startsWith(PLEX_LIBRARY_PATH_PREFIX)) return null;
+  if (normalized.includes('..') || normalized.includes('//') || normalized.includes('\\')) return null;
+
+  return normalized;
+}
+
 export function isValidPlexImagePath(path: string): boolean {
   if (!path || !path.startsWith(PLEX_LIBRARY_PATH_PREFIX)) return false;
   if (path.startsWith('http://') || path.startsWith('https://')) return false;
+  return decodeAndNormalizePath(path) !== null;
+}
 
-  let normalized: string;
-  try {
-    const parsed = new URL(path, 'http://localhost');
-    normalized = parsed.pathname;
-  } catch {
-    normalized = path.split('?')[0];
-  }
-
-  if (!normalized.startsWith(PLEX_LIBRARY_PATH_PREFIX)) return false;
-  if (normalized.includes('..') || normalized.includes('//')) return false;
-  return true;
+export function normalizeAndValidatePlexImagePath(path: string): string | null {
+  if (!path || !path.startsWith(PLEX_LIBRARY_PATH_PREFIX)) return null;
+  if (path.startsWith('http://') || path.startsWith('https://')) return null;
+  return decodeAndNormalizePath(path);
 }
 
 export function plexImageUrl(thumbPath?: string | null, width?: number): string | null {
