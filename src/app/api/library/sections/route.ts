@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireUser, isAuthError, authErrorStatus } from '@/lib/auth';
-import { PlexService } from '@/lib/services/plex';
+import { createPlexService } from '@/lib/services/plex-factory';
 import { createLogger } from '@/lib/logger';
 import { connectDB } from '@/lib/db';
 
@@ -12,7 +12,7 @@ export async function GET() {
     logger.debug('Fetching library sections');
     const auth = await requireUser();
 
-    const plexService = new PlexService(
+    const plexService = await createPlexService(
       auth.plexToken,
       auth.plexServerUrl,
       auth.settings.plexMachineId || null

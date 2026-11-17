@@ -9,12 +9,13 @@ import { PlexService } from './plex';
 
 export async function createPlexService(
   authToken: string,
-  serverUrl?: string
+  serverUrl?: string | null,
+  machineId?: string | null
 ): Promise<PlexService> {
   if (process.env.E2E_MOCK_PLEX === 'true') {
     const { MockPlexService } = await import('../../../tests/helpers/plex-mock-service');
-    return new MockPlexService(authToken, serverUrl) as unknown as PlexService;
+    return new MockPlexService(authToken, serverUrl, machineId) as unknown as PlexService;
   }
 
-  return new PlexService(authToken, serverUrl);
+  return new PlexService(authToken, serverUrl, machineId);
 }

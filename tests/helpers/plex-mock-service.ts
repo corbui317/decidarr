@@ -33,7 +33,8 @@ const E2E_MOCK_SERVERS: PlexServer[] = [
 export class MockPlexService {
   constructor(
     private authToken: string,
-    private serverUrl?: string
+    private serverUrl?: string | null,
+    private machineId?: string | null
   ) {}
 
   async validateToken(): Promise<{ valid: boolean; user?: PlexUser; error?: string }> {
