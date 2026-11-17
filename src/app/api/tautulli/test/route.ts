@@ -1,8 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin } from '@/lib/auth';
+import { NextRequest } from 'next/server';
 import { TautulliService } from '@/lib/services/tautulli';
 import { createLogger } from '@/lib/logger';
-import { assertSafeServiceUrl, allowPrivateServiceUrls } from '@/lib/security/service-url';
 import { handleConnectionTest } from '@/lib/api/connection-test';
 
 const logger = createLogger('API:TautulliTest');
