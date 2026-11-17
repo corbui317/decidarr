@@ -2,7 +2,7 @@
 
 Cross-reference index for every implemented feature surface. Use this to find the canonical spec, source files, API routes, models, and tests for each capability.
 
-**Last audited:** 2026-06-14 (code + tests on disk)
+**Last audited:** 2026-11-17 (code + tests on integration branch fm/spec-1-integration)
 
 ## Legend
 
@@ -35,8 +35,8 @@ Cross-reference index for every implemented feature surface. Use this to find th
 | Session cookie (`decidarr_session` JWT) | Shipped | [01](./beta/01-setup-auth-user-access.md) | `src/context/AuthContext.tsx` | `GET /api/auth/me`, `DELETE /api/auth/logout` | `Settings` | `tests/unit/lib/auth.test.ts` |
 | Reconfigure Plex account | Shipped | [01](./beta/01-setup-auth-user-access.md) | `src/app/page.tsx`, `LoginScreen` | `POST /api/settings/setup` | `Settings` | — |
 | Plex PIN/OAuth multi-user login | Planned | [01](./beta/01-setup-auth-user-access.md) | — | — (no `auth/plex/*` routes on disk) | `User` (schema only) | — |
-| Session refresh endpoint | Planned | [01](./beta/01-setup-auth-user-access.md) | — | — (no `auth/refresh` on disk) | — | — |
-| Admin user management | Planned | [01](./beta/01-setup-auth-user-access.md) | — | — (no `admin/users` on disk) | `User` | — |
+| Session refresh endpoint | Shipped | [01](./beta/01-setup-auth-user-access.md) | `src/context/AuthContext.tsx` | `POST /api/auth/refresh` | — | `tests/api/auth-session.test.ts` |
+| Admin user management | Shipped | [01](./beta/01-setup-auth-user-access.md) | `src/components/settings/UsersTab.tsx` | `GET/POST/DELETE /api/admin/users/*` | `User` | `tests/api/admin-users.test.ts` |
 
 ---
 
@@ -103,8 +103,8 @@ Cross-reference index for every implemented feature surface. Use this to find th
 
 | Feature | Status | Spec | Frontend | API | Models | Tests |
 |---------|--------|------|----------|-----|--------|-------|
-| Overseerr settings / test / status | Planned | [06](./beta/06-overseerr-request-flow.md) | No UI | No routes on disk | — | — |
-| Request media in Overseerr | Planned | [06](./beta/06-overseerr-request-flow.md) | — | — | — | — |
+| Overseerr settings / test / status | Shipped | [06](./beta/06-overseerr-request-flow.md) | `src/components/settings/OverseerrTab.tsx` | `POST /api/overseerr/test`, `GET /api/overseerr/status` | `Settings` | — |
+| Request media in Overseerr | Shipped | [06](./beta/06-overseerr-request-flow.md) | `src/components/MovieCard.tsx` | `POST /api/overseerr/request` | — | — |
 
 ---
 
@@ -114,8 +114,8 @@ Cross-reference index for every implemented feature surface. Use this to find th
 |---------|--------|------|----------|-----|--------|-------|
 | Slot machine spin control | Shipped | [07](./beta/07-spin-animation-experience.md) | `SlotMachine.tsx` | — | — | `tests/components/SlotMachine.test.tsx` |
 | Minimum 2s spin time before reveal | Shipped | [07](./beta/07-spin-animation-experience.md) | `dashboard/page.tsx` | — | — | — |
-| Animation variants (roulette, wheel, plinko, slots) | Deferred | [07](./beta/07-spin-animation-experience.md) | Files exist under `src/components/animations/` but not imported | — | — | — |
-| Reduced-motion support | Planned | [07](./beta/07-spin-animation-experience.md) | — | — | — | — |
+| Animation variants (roulette, wheel, plinko, slots) | Shipped | [07](./beta/07-spin-animation-experience.md) | `src/components/SpinAnimationPlayer.tsx`, `src/components/animations/*` | — | — | — |
+| Reduced-motion support | Shipped | [07](./beta/07-spin-animation-experience.md) | `src/components/animations/usePrefersReducedMotion.ts` | — | — | — |
 | Persisted animation preference | Planned | [07](./beta/07-spin-animation-experience.md) | — | — | — | — |
 
 ---

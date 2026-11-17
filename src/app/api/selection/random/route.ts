@@ -69,16 +69,6 @@ export async function POST(request: NextRequest) {
 
     const plexService = await createPlexService(plexToken, plexServerUrl, settings.plexMachineId);
 
-    if (!settings.plexMachineId) {
-      logger.info('MachineId missing, fetching from server');
-      const fetchedMachineId = await plexService.fetchMachineIdFromServer();
-      if (fetchedMachineId) {
-        settings.plexMachineId = fetchedMachineId;
-        await settings.save();
-        logger.info('Stored machineId', { machineId: fetchedMachineId });
-      }
-    }
-
     let collectionItemIds: Set<string> | null = null;
     if (filters.collections && filters.collections.length > 0) {
       collectionItemIds = await fetchCollectionItemIds(

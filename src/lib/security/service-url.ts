@@ -14,7 +14,7 @@ export interface SafeUrlResult {
 }
 
 function isAlwaysBlockedIp(ip: string): boolean {
-  if (ip === '127.0.0.1' || ip === '::1' || ip === '0.0.0.0') return true;
+  if (ip === '::1' || ip === '0.0.0.0') return true;
   if (ip.startsWith('127.')) return true;
   if (ip.startsWith('169.254.')) return true;
   if (ip.startsWith('fe80:')) return true;
