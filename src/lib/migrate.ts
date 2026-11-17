@@ -15,6 +15,8 @@ import {
   CURRENT_MIGRATION_VERSION,
   encryptWithAesGcm,
   decryptVersioned,
+  encryptUserData,
+  decryptUserData,
 } from './models/Settings';
 import { createLogger } from './logger';
 
@@ -166,12 +168,105 @@ async function migrateSettingsMasterKey(settings: Awaited<ReturnType<typeof getO
   }
 }
 
+async function migrateIntegrationCredentials(settings: Awaited<ReturnType<typeof getOrCreateSettings>>): Promise<void> {
+  // Get encryption key - must be decrypted at this point
+  let encryptionKey: string;
+  try {
+    encryptionKey = settings.getEncryptionKey();
+  } catch (err) {
+    logger.warn('Skipping integration credentials migration - encryption key unavailable');
+    return;
+  }
+
+  let changed = false;
+
+  // Helper to re-encrypt if not already v2:
+  const reencryptUserData = (encrypted: string | undefined, fieldName: string): string | undefined => {
+    if (!encrypted) return encrypted;
+    if (encrypted.startsWith('v2:')) return encrypted;
+
+    try {
+      // Decrypt with legacy CryptoJS format
+      const bytes = CryptoJS.AES.decrypt(encrypted, encryptionKey);
+      const plain = bytes.toString(CryptoJS.enc.Utf8);
+      if (!plain) {
+        logger.warn(`Empty decryption result for ${fieldName}, leaving as-is`);
+        return encrypted;
+      }
+
+      // Re-encrypt with AES-256-GCM
+      return encryptUserData(plain, encryptionKey);
+    } catch (err) {
+      logger.error(`Failed to migrate ${fieldName}`, { error: String(err) });
+      return encrypted;
+    }
+  };
+
+  // Migrate integration credentials
+  if (settings.plexToken) {
+    const migrated = reencryptUserData(settings.plexToken, 'plexToken');
+    if (migrated !== settings.plexToken) {
+      settings.plexToken = migrated;
+      changed = true;
+    }
+  }
+
+  if (settings.tmdbApiKey) {
+    const migrated = reencryptUserData(settings.tmdbApiKey, 'tmdbApiKey');
+    if (migrated !== settings.tmdbApiKey) {
+      settings.tmdbApiKey = migrated;
+      changed = true;
+    }
+  }
+
+  if (settings.tautulliApiKey) {
+    const migrated = reencryptUserData(settings.tautulliApiKey, 'tautulliApiKey');
+    if (migrated !== settings.tautulliApiKey) {
+      settings.tautulliApiKey = migrated;
+      changed = true;
+    }
+  }
+
+  if (settings.overseerrApiKey) {
+    const migrated = reencryptUserData(settings.overseerrApiKey, 'overseerrApiKey');
+    if (migrated !== settings.overseerrApiKey) {
+      settings.overseerrApiKey = migrated;
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    await settings.save();
+    logger.info('Successfully migrated integration credentials to AES-256-GCM');
+  }
+
+  // Migrate all user plexTokens
+  const users = await User.find({ plexToken: { $exists: true, $ne: null } });
+  let userCount = 0;
+
+  for (const user of users) {
+    if (user.plexToken && !user.plexToken.startsWith('v2:')) {
+      const migrated = reencryptUserData(user.plexToken, `user ${user._id} plexToken`);
+      if (migrated && migrated !== user.plexToken) {
+        user.plexToken = migrated;
+        await user.save();
+        userCount++;
+      }
+    }
+  }
+
+  if (userCount > 0) {
+    logger.info(`Successfully migrated ${userCount} user plexTokens to AES-256-GCM`);
+  }
+}
+
 export async function runMigrations(): Promise<void> {
   if (migrationRan) return;
 
   const settings = await getOrCreateSettings();
 
   await migrateSettingsMasterKey(settings);
+  await migrateIntegrationCredentials(settings);
   await migrateTokenizedMediaUrls();
 
   if (settings.setupComplete && !settings.adminUserId) {

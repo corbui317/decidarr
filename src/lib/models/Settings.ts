@@ -118,7 +118,7 @@ export function getCurrentSettingsMasterKey(): string {
   return getMasterKey();
 }
 
-export { CURRENT_MIGRATION_VERSION, encryptWithAesGcm, decryptVersioned };
+export { CURRENT_MIGRATION_VERSION, encryptWithAesGcm, decryptVersioned, encryptUserData, decryptUserData };
 
 /**
  * Encrypt a value with AES-256-GCM using Node's built-in crypto.
@@ -198,6 +198,25 @@ function decryptVersioned(encrypted: string, masterKey: string): string {
     logger.error('Failed to decrypt legacy CryptoJS value', { error: String(err) });
     throw new Error('Failed to decrypt value');
   }
+}
+
+/**
+ * Encrypt user data (integration credentials, user tokens) with AES-256-GCM.
+ * Uses the same format as encryptWithAesGcm but takes an encryptionKey string.
+ * Returns format: "v2:<iv>:<authTag>:<ciphertext>" (all base64)
+ */
+function encryptUserData(plaintext: string, encryptionKey: string): string {
+  return encryptWithAesGcm(plaintext, encryptionKey);
+}
+
+/**
+ * Decrypt user data encrypted with version prefix.
+ * Supports:
+ * - v2: AES-256-GCM (current)
+ * - legacy: CryptoJS AES (no trial-and-error)
+ */
+function decryptUserData(encrypted: string, encryptionKey: string): string {
+  return decryptVersioned(encrypted, encryptionKey);
 }
 
 const settingsSchema = new mongoose.Schema<ISettings>(
@@ -289,24 +308,10 @@ const encryptWithMaster = (value: string): string => {
   return CryptoJS.AES.encrypt(value, masterKey).toString();
 };
 
-// Decrypt a value with the master key (version-aware)
+// Decrypt a value with the master key (version-aware, no trial-and-error)
 const decryptWithMaster = (encrypted: string): string => {
   const currentKey = getMasterKey();
-
-  try {
-    return decryptVersioned(encrypted, currentKey);
-  } catch (err) {
-    // If we have DECIDARR_SECRET set and decryption failed with current key,
-    // try the legacy key (for migration scenarios)
-    if (process.env.DECIDARR_SECRET?.trim() && !encrypted.startsWith('v2:')) {
-      try {
-        return decryptVersioned(encrypted, getLegacyMasterKey());
-      } catch {
-        // Fall through to throw the original error
-      }
-    }
-    throw err;
-  }
+  return decryptVersioned(encrypted, currentKey);
 };
 
 // Methods to get decrypted values
@@ -314,8 +319,7 @@ settingsSchema.methods.getDecryptedPlexToken = function(): string | null {
   if (!this.plexToken) return null;
   try {
     const encryptionKey = this.getEncryptionKey();
-    const bytes = CryptoJS.AES.decrypt(this.plexToken, encryptionKey);
-    return bytes.toString(CryptoJS.enc.Utf8);
+    return decryptUserData(this.plexToken, encryptionKey);
   } catch {
     return null;
   }
@@ -325,8 +329,7 @@ settingsSchema.methods.getDecryptedTmdbKey = function(): string | null {
   if (!this.tmdbApiKey) return null;
   try {
     const encryptionKey = this.getEncryptionKey();
-    const bytes = CryptoJS.AES.decrypt(this.tmdbApiKey, encryptionKey);
-    return bytes.toString(CryptoJS.enc.Utf8);
+    return decryptUserData(this.tmdbApiKey, encryptionKey);
   } catch {
     return null;
   }
@@ -336,8 +339,7 @@ settingsSchema.methods.getDecryptedTautulliKey = function(): string | null {
   if (!this.tautulliApiKey) return null;
   try {
     const encryptionKey = this.getEncryptionKey();
-    const bytes = CryptoJS.AES.decrypt(this.tautulliApiKey, encryptionKey);
-    return bytes.toString(CryptoJS.enc.Utf8);
+    return decryptUserData(this.tautulliApiKey, encryptionKey);
   } catch {
     return null;
   }
@@ -347,8 +349,7 @@ settingsSchema.methods.getDecryptedOverseerrKey = function(): string | null {
   if (!this.overseerrApiKey) return null;
   try {
     const encryptionKey = this.getEncryptionKey();
-    const bytes = CryptoJS.AES.decrypt(this.overseerrApiKey, encryptionKey);
-    return bytes.toString(CryptoJS.enc.Utf8);
+    return decryptUserData(this.overseerrApiKey, encryptionKey);
   } catch {
     return null;
   }
@@ -381,24 +382,24 @@ settingsSchema.pre('save', function(next) {
     return next(new Error('Encryption key unavailable - cannot save encrypted fields'));
   }
 
-  // Encrypt plex token if modified and not already encrypted
-  if (this.isModified('plexToken') && this.plexToken && !this.plexToken.startsWith('U2F')) {
-    this.plexToken = CryptoJS.AES.encrypt(this.plexToken, encryptionKey).toString();
+  // Encrypt plex token if modified and not already encrypted with v2:
+  if (this.isModified('plexToken') && this.plexToken && !this.plexToken.startsWith('v2:')) {
+    this.plexToken = encryptUserData(this.plexToken, encryptionKey);
   }
 
-  // Encrypt TMDB key if modified and not already encrypted
-  if (this.isModified('tmdbApiKey') && this.tmdbApiKey && !this.tmdbApiKey.startsWith('U2F')) {
-    this.tmdbApiKey = CryptoJS.AES.encrypt(this.tmdbApiKey, encryptionKey).toString();
+  // Encrypt TMDB key if modified and not already encrypted with v2:
+  if (this.isModified('tmdbApiKey') && this.tmdbApiKey && !this.tmdbApiKey.startsWith('v2:')) {
+    this.tmdbApiKey = encryptUserData(this.tmdbApiKey, encryptionKey);
   }
 
-  // Encrypt Tautulli API key if modified and not already encrypted
-  if (this.isModified('tautulliApiKey') && this.tautulliApiKey && !this.tautulliApiKey.startsWith('U2F')) {
-    this.tautulliApiKey = CryptoJS.AES.encrypt(this.tautulliApiKey, encryptionKey).toString();
+  // Encrypt Tautulli API key if modified and not already encrypted with v2:
+  if (this.isModified('tautulliApiKey') && this.tautulliApiKey && !this.tautulliApiKey.startsWith('v2:')) {
+    this.tautulliApiKey = encryptUserData(this.tautulliApiKey, encryptionKey);
   }
 
-  // Encrypt Overseerr API key if modified and not already encrypted
-  if (this.isModified('overseerrApiKey') && this.overseerrApiKey && !this.overseerrApiKey.startsWith('U2F')) {
-    this.overseerrApiKey = CryptoJS.AES.encrypt(this.overseerrApiKey, encryptionKey).toString();
+  // Encrypt Overseerr API key if modified and not already encrypted with v2:
+  if (this.isModified('overseerrApiKey') && this.overseerrApiKey && !this.overseerrApiKey.startsWith('v2:')) {
+    this.overseerrApiKey = encryptUserData(this.overseerrApiKey, encryptionKey);
   }
 
   next();
