@@ -83,6 +83,12 @@ function plexLoginErrorMessage(error: PlexLoginError): string {
   if (error.code === 'PLEX_UNAVAILABLE' || error.statusCode === 503) {
     return 'Plex.tv is unavailable. Please try again later.';
   }
+  if (error.code === 'NO_OWNED_SERVER') {
+    return 'No owned Plex server found. You need to own a Plex Media Server to use this app.';
+  }
+  if (error.code === 'NOT_APPROVED') {
+    return 'Your account is not approved yet. Please wait for an administrator to approve your access.';
+  }
   return error.message;
 }
 
