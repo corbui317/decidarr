@@ -4,6 +4,7 @@ import type { Filters } from '@/types/filters';
 import type { SelectionResultResponse } from '@/types/api/selection';
 import type {
   MediaType,
+  MediaTypeWithEpisode,
   TvSelectionMode,
   AppTheme,
   AnimationStyle,
@@ -311,8 +312,8 @@ export const watchedApi = {
 // Settings API
 export interface UserPreferences {
   theme?: AppTheme;
-  defaultMediaType?: 'movie' | 'show';
-  tvSelectionMode?: 'show' | 'episode';
+  defaultMediaType?: MediaType;
+  tvSelectionMode?: TvSelectionMode;
   animationStyle?: AnimationStyle;
   animationSpeed?: AnimationSpeed;
   selectedLibraries?: string[];
@@ -352,8 +353,8 @@ export interface SettingsResponse {
   syncFrequencyHours: number;
   uiPreferences: {
     theme: AppTheme;
-    defaultMediaType: 'movie' | 'show';
-    tvSelectionMode: 'show' | 'episode';
+    defaultMediaType: MediaType;
+    tvSelectionMode: TvSelectionMode;
     animationStyle: AnimationStyle;
     animationSpeed: AnimationSpeed;
   };
@@ -404,8 +405,8 @@ export const settingsApi = {
     syncFrequencyHours?: number;
     uiPreferences?: {
       theme?: AppTheme;
-      defaultMediaType?: 'movie' | 'show';
-      tvSelectionMode?: 'show' | 'episode';
+      defaultMediaType?: MediaType;
+      tvSelectionMode?: TvSelectionMode;
       animationStyle?: AnimationStyle;
       animationSpeed?: AnimationSpeed;
     };
@@ -484,13 +485,13 @@ export interface SpinHistoryEntry {
   userId: string;
   plexId: string;
   title: string;
-  mediaType: 'movie' | 'show' | 'episode';
+  mediaType: MediaTypeWithEpisode;
   posterUrl?: string;
   thumbPath?: string;
   year?: number;
   libraryIds: string[];
   filtersSnapshot?: Filters;
-  tvSelectionMode?: 'show' | 'episode';
+  tvSelectionMode?: TvSelectionMode;
   poolSizeAtSpin?: number;
   spunAt: string;
   createdAt: string;
@@ -500,12 +501,12 @@ export interface SpinHistoryEntry {
 export interface CreateSpinHistoryPayload {
   plexId: string;
   title: string;
-  mediaType: 'movie' | 'show' | 'episode';
+  mediaType: MediaTypeWithEpisode;
   thumbPath?: string;
   year?: number;
   libraryIds: string[];
   filtersSnapshot?: Filters;
-  tvSelectionMode?: 'show' | 'episode';
+  tvSelectionMode?: TvSelectionMode;
   poolSizeAtSpin?: number;
 }
 

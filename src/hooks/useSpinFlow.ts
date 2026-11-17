@@ -61,7 +61,7 @@ export function useSpinFlow({
         .create({
           plexId: selection.plexId,
           title: selection.title,
-          mediaType: selection.type as MediaType,
+          mediaType: selection.type,
           thumbPath: selection.thumbPath,
           year: selection.year,
           libraryIds: selectedLibraries,

@@ -4,6 +4,8 @@ import { randomBytes, createHash, createCipheriv, createDecipheriv } from 'crypt
 import { createLogger } from '../logger';
 import type {
   AppTheme,
+  MediaType,
+  TvSelectionMode,
   AnimationStyle,
   AnimationSpeed,
 } from '@/types/shared';
@@ -19,8 +21,8 @@ export interface ISpinHistoryPreferences {
 
 export interface IUIPreferences {
   theme: AppTheme;
-  defaultMediaType: 'movie' | 'show';
-  tvSelectionMode: 'show' | 'episode';
+  defaultMediaType: MediaType;
+  tvSelectionMode: TvSelectionMode;
   animationStyle: AnimationStyle;
   animationSpeed: AnimationSpeed;
 }

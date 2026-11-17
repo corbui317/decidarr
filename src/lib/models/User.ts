@@ -1,7 +1,7 @@
 import mongoose, { Document, Model, Types } from 'mongoose';
 import CryptoJS from 'crypto-js';
 import { getOrCreateSettings, encryptUserData, decryptUserData } from './Settings';
-import type { AppTheme, AnimationStyle, AnimationSpeed } from '@/types/shared';
+import type { AppTheme, MediaType, TvSelectionMode, AnimationStyle, AnimationSpeed } from '@/types/shared';
 import { APP_THEMES, ANIMATION_STYLES, ANIMATION_SPEEDS } from '@/types/shared';
 
 // Re-export for backward compatibility
@@ -16,8 +16,8 @@ export interface ISpinHistoryPreferences {
 export interface IUserPreferences {
   theme?: AppTheme;
   selectedLibraries?: string[];
-  defaultMediaType?: 'movie' | 'show';
-  tvSelectionMode?: 'show' | 'episode';
+  defaultMediaType?: MediaType;
+  tvSelectionMode?: TvSelectionMode;
   animationStyle?: AnimationStyle;
   animationSpeed?: AnimationSpeed;
   savedFilters?: {
