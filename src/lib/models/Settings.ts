@@ -2,12 +2,14 @@ import mongoose, { Document, Model, Types } from 'mongoose';
 import CryptoJS from 'crypto-js';
 import { randomBytes, createHash, createCipheriv, createDecipheriv } from 'crypto';
 import { createLogger } from '../logger';
+import type {
+  AppTheme,
+  AnimationStyle,
+  AnimationSpeed,
+} from '@/types/shared';
+import { APP_THEMES, ANIMATION_STYLES, ANIMATION_SPEEDS } from '@/types/shared';
 
 const logger = createLogger('Settings');
-
-export type AppTheme = 'dark' | 'light' | 'vegas' | 'macao' | 'poker';
-export type AnimationStyle = 'slots' | 'roulette' | 'wheel' | 'plinko' | 'random';
-export type AnimationSpeed = 'fast' | 'normal' | 'dramatic';
 
 export interface ISpinHistoryPreferences {
   enabled: boolean;
@@ -238,17 +240,17 @@ const settingsSchema = new mongoose.Schema<ISettings>(
 
     // UI Preferences
     uiPreferences: {
-      theme: { type: String, enum: ['dark', 'light', 'vegas', 'macao', 'poker'], default: 'dark' },
+      theme: { type: String, enum: APP_THEMES, default: 'dark' },
       defaultMediaType: { type: String, enum: ['movie', 'show'], default: 'movie' },
       tvSelectionMode: { type: String, enum: ['show', 'episode'], default: 'show' },
       animationStyle: {
         type: String,
-        enum: ['slots', 'roulette', 'wheel', 'plinko', 'random'],
+        enum: ANIMATION_STYLES,
         default: 'slots',
       },
       animationSpeed: {
         type: String,
-        enum: ['fast', 'normal', 'dramatic'],
+        enum: ANIMATION_SPEEDS,
         default: 'normal',
       },
     },

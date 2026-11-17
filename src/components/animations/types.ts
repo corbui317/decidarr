@@ -1,6 +1,4 @@
-export type AnimationSpeed = 'fast' | 'normal' | 'dramatic';
-
-export type AnimationStyle = 'slots' | 'roulette' | 'wheel' | 'plinko' | 'random';
+import type { AnimationSpeed, AnimationStyle } from '@/types/shared';
 
 export type ResolvedAnimationStyle = Exclude<AnimationStyle, 'random'>;
 

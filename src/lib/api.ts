@@ -2,7 +2,13 @@
 
 import type { Filters } from '@/types/filters';
 import type { SelectionResultResponse } from '@/types/api/selection';
-import type { MediaType, TvSelectionMode } from '@/types/shared';
+import type {
+  MediaType,
+  TvSelectionMode,
+  AppTheme,
+  AnimationStyle,
+  AnimationSpeed,
+} from '@/types/shared';
 import type { WatchedMediaType } from '@/lib/validation/watched';
 
 const API_BASE = '/api';
@@ -312,10 +318,6 @@ export const watchedApi = {
 };
 
 // Settings API
-export type AppTheme = 'dark' | 'light' | 'vegas' | 'macao' | 'poker';
-export type AnimationStyle = 'slots' | 'roulette' | 'wheel' | 'plinko' | 'random';
-export type AnimationSpeed = 'fast' | 'normal' | 'dramatic';
-
 export interface UserPreferences {
   theme?: AppTheme;
   defaultMediaType?: 'movie' | 'show';
