@@ -287,7 +287,7 @@ export const selectionApi = {
       overseerrWarning?: string | null;
     }>('/selection/pool-count', {
       method: 'POST',
-      body: { libraryIds, mediaType, filters },
+      body: params,
       signal,
     }),
 };
