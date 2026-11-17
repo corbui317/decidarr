@@ -94,7 +94,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             type="button"
             onClick={onClose}
             aria-label="Close settings"
-            className="text-decidarr-text-muted hover:text-decidarr-text transition-colors focus:outline-none focus:ring-2 focus:ring-decidarr-primary rounded-lg p-2"
+            className="text-decidarr-text-muted hover:text-decidarr-text transition-colors focus:outline-none focus:ring-2 focus:ring-decidarr-primary rounded-lg p-2 min-w-[44px] min-h-[44px] flex items-center justify-center"
           >
             <svg
               className="w-6 h-6"
