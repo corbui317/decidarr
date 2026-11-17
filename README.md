@@ -31,19 +31,28 @@ Decidarr is a movie roulette application that randomly selects movies or TV show
    cd decidarr
    ```
 
-2. Start the application:
+2. Create a `.env` file with required settings:
+   ```bash
+   cp .env.example .env
+   ```
+   
+   Edit `.env` and set `DECIDARR_SECRET`:
+   ```bash
+   # Required in production
+   DECIDARR_SECRET=$(openssl rand -hex 32)
+   ```
+
+3. Start the application:
    ```bash
    docker compose up -d
    ```
 
-3. Open `http://localhost:3100` in your browser
+4. Open `http://localhost:3100` in your browser
 
-4. Complete the setup wizard:
+5. Complete the setup wizard:
    - Enter your Plex token
    - Your Plex servers will be auto-discovered (or enter manually)
    - Optionally add a TMDB API key for enhanced data
-
-That's it! No `.env` file needed - all configuration is done through the web UI.
 
 ## Configuration
 
@@ -80,16 +89,20 @@ All settings are managed through the **Settings** panel (gear icon in the header
 | **Default Media Type** | Movies or TV Shows |
 | **TV Selection Mode** | Pick a show or pick an episode |
 
-### Environment Variables (Optional)
+### Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | 3100 | Port to expose the application |
 | `LOG_LEVEL` | info | Logging level: debug, info, warn, error |
+| `DECIDARR_SECRET` | _(none)_ | **Required in production** - High-entropy secret for JWT/encryption (generate with `openssl rand -hex 32`) |
+| `DECIDARR_ALLOW_PRIVATE_URLS` | false | **LAN opt-in** - Set to `true` if your Plex/Tautulli/Overseerr are on your local network (192.168.x.x, 10.x.x.x). Private addresses are blocked by default for security. |
 
-To use a different port:
+**Important**: If you change `DECIDARR_SECRET` after initial setup, all encrypted credentials will be invalidated and you'll need to re-enter integration settings (Plex, TMDB, Tautulli, Overseerr) in the Settings UI.
+
+To use a different port or enable LAN access:
 ```bash
-PORT=8080 docker compose up -d
+PORT=8080 DECIDARR_ALLOW_PRIVATE_URLS=true docker compose up -d
 ```
 
 ## Filters

@@ -34,6 +34,7 @@ export default defineConfig({
       E2E_MOCK_PLEX: 'true',
       DECIDARR_ALLOW_PRIVATE_URLS: 'true',
       E2E_TEST_RESET_SECRET: e2eResetSecret,
+      DECIDARR_SECRET: 'e2e-test-secret-key-12345',
     },
   },
 });

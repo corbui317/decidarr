@@ -12,6 +12,9 @@ import CryptoJS from 'crypto-js';
 import {
   getLegacySettingsMasterKey,
   getCurrentSettingsMasterKey,
+  CURRENT_MIGRATION_VERSION,
+  encryptWithAesGcm,
+  decryptVersioned,
 } from './models/Settings';
 import { createLogger } from './logger';
 
@@ -88,26 +91,70 @@ async function migrateTokenizedMediaUrls(): Promise<void> {
 }
 
 async function migrateSettingsMasterKey(settings: Awaited<ReturnType<typeof getOrCreateSettings>>): Promise<void> {
-  if (!process.env.DECIDARR_SECRET?.trim()) return;
+  // Check if migration is needed
+  if (settings.secretsMigrationVersion === CURRENT_MIGRATION_VERSION) {
+    return;
+  }
+
+  // If no DECIDARR_SECRET in non-production, skip migration
+  if (!process.env.DECIDARR_SECRET?.trim() && process.env.NODE_ENV !== 'production') {
+    return;
+  }
 
   const legacyKey = getLegacySettingsMasterKey();
   const newKey = getCurrentSettingsMasterKey();
-  if (legacyKey === newKey) return;
 
-  const reencrypt = (encrypted: string): string => {
-    const plain = CryptoJS.AES.decrypt(encrypted, legacyKey).toString(CryptoJS.enc.Utf8);
-    if (!plain) return encrypted;
-    return CryptoJS.AES.encrypt(plain, newKey).toString();
+  // If keys are the same, we're not using DECIDARR_SECRET, skip migration
+  if (legacyKey === newKey) {
+    settings.secretsMigrationVersion = CURRENT_MIGRATION_VERSION;
+    await settings.save();
+    return;
+  }
+
+  logger.info('Starting secret migration to AES-256-GCM');
+
+  const reencrypt = (encrypted: string, fieldName: string): string => {
+    // If already in v2 format, no migration needed
+    if (encrypted.startsWith('v2:')) {
+      return encrypted;
+    }
+
+    try {
+      // Decrypt with legacy key
+      const plain = decryptVersioned(encrypted, legacyKey);
+      if (!plain) {
+        logger.warn(`Empty decryption result for ${fieldName}, skipping re-encryption`);
+        return encrypted;
+      }
+
+      // Re-encrypt with new key using AES-256-GCM
+      return encryptWithAesGcm(plain, newKey);
+    } catch (err) {
+      logger.error(`Failed to migrate ${fieldName}`, { error: String(err) });
+      throw new Error(`Secret migration failed for ${fieldName}: ${String(err)}`);
+    }
   };
 
-  const newJwtSecret = reencrypt(settings.jwtSecret);
-  const newEncryptionKey = reencrypt(settings.encryptionKey);
+  try {
+    const newJwtSecret = reencrypt(settings.jwtSecret, 'jwtSecret');
+    const newEncryptionKey = reencrypt(settings.encryptionKey, 'encryptionKey');
 
-  if (newJwtSecret !== settings.jwtSecret || newEncryptionKey !== settings.encryptionKey) {
-    settings.jwtSecret = newJwtSecret;
-    settings.encryptionKey = newEncryptionKey;
-    await settings.save();
-    logger.info('Re-encrypted settings master keys with DECIDARR_SECRET');
+    // Only save if values actually changed
+    if (newJwtSecret !== settings.jwtSecret || newEncryptionKey !== settings.encryptionKey) {
+      settings.jwtSecret = newJwtSecret;
+      settings.encryptionKey = newEncryptionKey;
+      settings.secretsMigrationVersion = CURRENT_MIGRATION_VERSION;
+      await settings.save();
+      logger.info('Successfully migrated secrets to AES-256-GCM');
+    } else {
+      // Values didn't change, but mark migration as complete
+      settings.secretsMigrationVersion = CURRENT_MIGRATION_VERSION;
+      await settings.save();
+      logger.info('Secrets already in current format, marked migration complete');
+    }
+  } catch (err) {
+    logger.error('Secret migration failed', { error: String(err) });
+    throw err;
   }
 }
 

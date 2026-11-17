@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import { connectDB } from '@/lib/db';
+import { resetMigrationStateForTests } from '@/lib/migrate';
 
 export async function POST(request: Request) {
   if (process.env.NODE_ENV === 'production') {
@@ -12,11 +13,13 @@ export async function POST(request: Request) {
   }
 
   const resetSecret = process.env.E2E_TEST_RESET_SECRET?.trim();
-  if (resetSecret) {
-    const provided = request.headers.get('X-E2E-Reset-Secret')?.trim();
-    if (!provided || provided !== resetSecret) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
+  if (!resetSecret) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
+  const provided = request.headers.get('X-E2E-Reset-Secret')?.trim();
+  if (!provided || provided !== resetSecret) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
   try {
@@ -30,6 +33,12 @@ export async function POST(request: Request) {
     if (cached) {
       cached.conn = null;
       cached.promise = null;
+    }
+
+    // Reset migration state if requested (for legacy migration testing)
+    const resetMigration = request.headers.get('X-E2E-Reset-Migration');
+    if (resetMigration === 'true') {
+      resetMigrationStateForTests();
     }
 
     return NextResponse.json({ ok: true });
