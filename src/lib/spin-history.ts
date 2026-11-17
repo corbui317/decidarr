@@ -29,6 +29,53 @@ export function normalizeRetentionLimit(value: unknown): number {
   return Math.max(SPIN_HISTORY_MIN_RETENTION, Math.min(SPIN_HISTORY_MAX_RETENTION, parsed));
 }
 
+export function normalizeSpinHistoryPreferences(spinHistory: unknown): ISpinHistoryPreferences {
+  const defaults = getDefaultSpinHistoryPreferences();
+  const prefs = spinHistory as Partial<ISpinHistoryPreferences> | undefined;
+  return {
+    enabled: prefs?.enabled ?? defaults.enabled,
+    retentionLimit: normalizeRetentionLimit(prefs?.retentionLimit ?? defaults.retentionLimit),
+    storeFilterSnapshot: prefs?.storeFilterSnapshot ?? defaults.storeFilterSnapshot,
+  };
+}
+
+/**
+ * Merge a spin history patch into current preferences.
+ * Returns the merged preferences and the previous retention limit for trim comparison.
+ */
+export function mergeSpinHistoryPreferences(
+  current: unknown,
+  patch: { enabled?: boolean; retentionLimit?: number; storeFilterSnapshot?: boolean }
+): { merged: ISpinHistoryPreferences; previousRetention: number } {
+  const normalized = normalizeSpinHistoryPreferences(current);
+  const previousRetention = normalized.retentionLimit;
+
+  const merged: ISpinHistoryPreferences = {
+    enabled: patch.enabled ?? normalized.enabled,
+    retentionLimit:
+      patch.retentionLimit !== undefined
+        ? normalizeRetentionLimit(patch.retentionLimit)
+        : normalized.retentionLimit,
+    storeFilterSnapshot: patch.storeFilterSnapshot ?? normalized.storeFilterSnapshot,
+  };
+
+  return { merged, previousRetention };
+}
+
+/**
+ * Trim spin history if retention limit was reduced.
+ */
+export async function trimHistoryIfRetentionReduced(
+  userId: mongoose.Types.ObjectId,
+  previousRetention: number,
+  nextRetention: number,
+  wasExplicitlySet: boolean
+): Promise<void> {
+  if (wasExplicitlySet && nextRetention < previousRetention) {
+    await trimSpinHistoryToRetention(userId, nextRetention);
+  }
+}
+
 export function sanitizeFilterSnapshot(
   filters: unknown
 ): Record<string, unknown> | undefined {

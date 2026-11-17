@@ -3,24 +3,15 @@ import mongoose from 'mongoose';
 import { connectDB } from '@/lib/db';
 import { requireUser, isAuthError, authErrorStatus } from '@/lib/auth';
 import {
-  getDefaultSpinHistoryPreferences,
-  normalizeRetentionLimit,
-  trimSpinHistoryToRetention,
+  normalizeSpinHistoryPreferences,
+  mergeSpinHistoryPreferences,
+  trimHistoryIfRetentionReduced,
 } from '@/lib/spin-history';
 import { createLogger } from '@/lib/logger';
 import { parsePreferencesPatchBody, parsePreferencesPutBody } from '@/lib/validation/preferences';
 
 const logger = createLogger('API:UserPreferences');
 
-function normalizeSpinHistoryPreferences(spinHistory: unknown) {
-  const defaults = getDefaultSpinHistoryPreferences();
-  const prefs = spinHistory as Partial<typeof defaults> | undefined;
-  return {
-    enabled: prefs?.enabled ?? defaults.enabled,
-    retentionLimit: normalizeRetentionLimit(prefs?.retentionLimit ?? defaults.retentionLimit),
-    storeFilterSnapshot: prefs?.storeFilterSnapshot ?? defaults.storeFilterSnapshot,
-  };
-}
 
 export async function GET() {
   try {
@@ -106,31 +97,22 @@ export async function PUT(request: NextRequest) {
     }
     let previousRetention: number | undefined;
     if (body.spinHistory) {
-      const current = normalizeSpinHistoryPreferences(user.preferences.spinHistory);
-      previousRetention = current.retentionLimit;
-      user.preferences.spinHistory = {
-        enabled: body.spinHistory.enabled ?? current.enabled,
-        retentionLimit:
-          body.spinHistory.retentionLimit !== undefined
-            ? normalizeRetentionLimit(body.spinHistory.retentionLimit)
-            : current.retentionLimit,
-        storeFilterSnapshot:
-          body.spinHistory.storeFilterSnapshot ?? current.storeFilterSnapshot,
-      };
+      const { merged, previousRetention: prevRetention } = mergeSpinHistoryPreferences(
+        user.preferences.spinHistory,
+        body.spinHistory
+      );
+      previousRetention = prevRetention;
+      user.preferences.spinHistory = merged;
     }
 
     await user.save();
 
-    const nextSpinHistory = user.preferences.spinHistory;
-    if (
-      body.spinHistory?.retentionLimit !== undefined &&
-      previousRetention !== undefined &&
-      nextSpinHistory &&
-      nextSpinHistory.retentionLimit < previousRetention
-    ) {
-      await trimSpinHistoryToRetention(
+    if (body.spinHistory && previousRetention !== undefined) {
+      await trimHistoryIfRetentionReduced(
         user._id as mongoose.Types.ObjectId,
-        nextSpinHistory.retentionLimit
+        previousRetention,
+        user.preferences.spinHistory.retentionLimit,
+        body.spinHistory.retentionLimit !== undefined
       );
     }
     logger.debug('Preferences updated', { userId: user._id.toString() });
@@ -158,30 +140,20 @@ export async function PATCH(request: NextRequest) {
 
     const { spinHistory: body } = parsed.data;
 
-    const current = normalizeSpinHistoryPreferences(user.preferences.spinHistory);
-    const previousRetention = current.retentionLimit;
-    user.preferences.spinHistory = {
-      enabled: body.enabled ?? current.enabled,
-      retentionLimit:
-        body.retentionLimit !== undefined
-          ? normalizeRetentionLimit(body.retentionLimit)
-          : current.retentionLimit,
-      storeFilterSnapshot: body.storeFilterSnapshot ?? current.storeFilterSnapshot,
-    };
+    const { merged, previousRetention } = mergeSpinHistoryPreferences(
+      user.preferences.spinHistory,
+      body
+    );
+    user.preferences.spinHistory = merged;
 
     await user.save();
 
-    const nextSpinHistory = user.preferences.spinHistory;
-    if (
-      body.retentionLimit !== undefined &&
-      nextSpinHistory &&
-      nextSpinHistory.retentionLimit < previousRetention
-    ) {
-      await trimSpinHistoryToRetention(
-        user._id as mongoose.Types.ObjectId,
-        nextSpinHistory.retentionLimit
-      );
-    }
+    await trimHistoryIfRetentionReduced(
+      user._id as mongoose.Types.ObjectId,
+      previousRetention,
+      merged.retentionLimit,
+      body.retentionLimit !== undefined
+    );
 
     return NextResponse.json({ spinHistory: nextSpinHistory });
   } catch (error) {
