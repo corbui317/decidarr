@@ -98,7 +98,7 @@ describe('Auth hardening', () => {
       }
     });
 
-    it('returns 429 after many rapid poll attempts on /api/auth/plex/poll', async () => {
+    it('allows normal OAuth polling without rate limiting', async () => {
       const { setTestCookie } = await import('../../helpers/cookies');
       plexOAuthMock.pollAuthPin.mockResolvedValue({ authToken: null });
 
@@ -110,20 +110,52 @@ describe('Auth hardening', () => {
         return plexPollGet(new NextRequest('http://localhost/api/auth/plex/poll?state=test-state-123'));
       };
 
+      // Simulate normal user behavior: 60 polls over 2 minutes (~10s on plex.tv)
+      // Poll limit is 300 per 10 minutes, so this should succeed
       const responses = [];
-      for (let i = 0; i < 25; i++) {
+      for (let i = 0; i < 60; i++) {
         responses.push(await makeRequest());
       }
 
       const statuses = responses.map((r) => r.status);
       const rateLimitedCount = statuses.filter((s) => s === 429).length;
 
+      // Should not hit rate limit with normal polling
+      expect(rateLimitedCount).toBe(0);
+
+      // All responses should be 200 with authorized: false (not yet authorized)
+      const successCount = statuses.filter((s) => s === 200).length;
+      expect(successCount).toBe(60);
+    });
+
+    it('returns 429 after excessive polling attempts on a single pin', async () => {
+      const { setTestCookie } = await import('../../helpers/cookies');
+      plexOAuthMock.pollAuthPin.mockResolvedValue({ authToken: null });
+
+      setTestCookie('decidarr_oauth_pin', '456');
+      setTestCookie('decidarr_oauth_pin_code', 'XYZ789');
+      setTestCookie('decidarr_oauth_state', 'test-state-456');
+
+      const makeRequest = () => {
+        return plexPollGet(new NextRequest('http://localhost/api/auth/plex/poll?state=test-state-456'));
+      };
+
+      // Simulate excessive polling: 301 attempts (exceeds 300 limit)
+      const responses = [];
+      for (let i = 0; i < 301; i++) {
+        responses.push(await makeRequest());
+      }
+
+      const statuses = responses.map((r) => r.status);
+      const rateLimitedCount = statuses.filter((s) => s === 429).length;
+
+      // Should hit rate limit after 300 attempts
       expect(rateLimitedCount).toBeGreaterThan(0);
 
       const rateLimitedResponse = responses.find((r) => r.status === 429);
       if (rateLimitedResponse) {
         const body = await rateLimitedResponse.json();
-        expect(body.error).toMatch(/try again later/i);
+        expect(body.error).toMatch(/try again/i);
         expect(body.code).toBe('RATE_LIMITED');
       }
     });
