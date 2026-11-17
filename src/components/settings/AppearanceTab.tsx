@@ -1,68 +1,153 @@
 'use client';
 
+import { useState, useEffect, useCallback } from 'react';
 import {
   AnimationStyle,
   AnimationSpeed,
+  userPreferencesApi,
+  spinHistoryApi,
 } from '@/lib/api';
 import {
   ANIMATION_STYLE_LABELS,
   ANIMATION_SPEED_LABELS,
 } from '@/components/animations';
-import { THEME_CONFIG, AppTheme } from '@/context/ThemeContext';
+import { THEME_CONFIG, AppTheme, useTheme } from '@/context/ThemeContext';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { inputClass, inputStyle, labelClass } from './shared';
 
-interface AppearanceTabProps {
-  selectedTheme: AppTheme;
-  onThemeChange: (theme: AppTheme) => void;
-  defaultMediaType: 'movie' | 'show';
-  onDefaultMediaTypeChange: (type: 'movie' | 'show') => void;
-  tvSelectionMode: 'show' | 'episode';
-  onTvSelectionModeChange: (mode: 'show' | 'episode') => void;
-  spinHistoryEnabled: boolean;
-  onSpinHistoryEnabledChange: (enabled: boolean) => void;
-  spinHistoryRetention: number;
-  onSpinHistoryRetentionChange: (limit: number) => void;
-  spinHistoryStoreSnapshots: boolean;
-  onSpinHistoryStoreSnapshotsChange: (store: boolean) => void;
-  showClearConfirm: boolean;
-  onShowClearConfirm: (show: boolean) => void;
-  clearingHistory: boolean;
-  onClearSpinHistory: () => void;
-  animationStyle: AnimationStyle;
-  onAnimationStyleChange: (style: AnimationStyle) => void;
-  animationSpeed: AnimationSpeed;
-  onAnimationSpeedChange: (speed: AnimationSpeed) => void;
-  saving: boolean;
-  onSave: () => void;
-}
+export default function AppearanceTab() {
+  const { theme: currentTheme, saveTheme } = useTheme();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
-export default function AppearanceTab({
-  selectedTheme,
-  onThemeChange,
-  defaultMediaType,
-  onDefaultMediaTypeChange,
-  tvSelectionMode,
-  onTvSelectionModeChange,
-  spinHistoryEnabled,
-  onSpinHistoryEnabledChange,
-  spinHistoryRetention,
-  onSpinHistoryRetentionChange,
-  spinHistoryStoreSnapshots,
-  onSpinHistoryStoreSnapshotsChange,
-  showClearConfirm,
-  onShowClearConfirm,
-  clearingHistory,
-  onClearSpinHistory,
-  animationStyle,
-  onAnimationStyleChange,
-  animationSpeed,
-  onAnimationSpeedChange,
-  saving,
-  onSave,
-}: AppearanceTabProps) {
+  const [selectedTheme, setSelectedTheme] = useState<AppTheme>(currentTheme);
+  const [defaultMediaType, setDefaultMediaType] = useState<'movie' | 'show'>('movie');
+  const [tvSelectionMode, setTvSelectionMode] = useState<'show' | 'episode'>('show');
+  const [animationStyle, setAnimationStyle] = useState<AnimationStyle>('slots');
+  const [animationSpeed, setAnimationSpeed] = useState<AnimationSpeed>('normal');
+
+  const [spinHistoryEnabled, setSpinHistoryEnabled] = useState(true);
+  const [spinHistoryRetention, setSpinHistoryRetention] = useState(50);
+  const [spinHistoryStoreSnapshots, setSpinHistoryStoreSnapshots] = useState(true);
+  const [clearingHistory, setClearingHistory] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+
+  useEffect(() => {
+    const loadData = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const prefs = await userPreferencesApi.get();
+
+        if (prefs.preferences.theme) {
+          setSelectedTheme(prefs.preferences.theme as AppTheme);
+        }
+        if (prefs.preferences.defaultMediaType) {
+          setDefaultMediaType(prefs.preferences.defaultMediaType);
+        }
+        if (prefs.preferences.tvSelectionMode) {
+          setTvSelectionMode(prefs.preferences.tvSelectionMode);
+        }
+        setAnimationStyle(prefs.preferences.animationStyle ?? 'slots');
+        setAnimationSpeed(prefs.preferences.animationSpeed ?? 'normal');
+
+        const spinHistory = prefs.spinHistory ?? prefs.preferences.spinHistory;
+        if (spinHistory) {
+          setSpinHistoryEnabled(spinHistory.enabled);
+          setSpinHistoryRetention(spinHistory.retentionLimit);
+          setSpinHistoryStoreSnapshots(spinHistory.storeFilterSnapshot);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to load preferences';
+        setError(message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      await userPreferencesApi.update({
+        theme: selectedTheme,
+        defaultMediaType,
+        tvSelectionMode,
+        animationStyle,
+        animationSpeed,
+        spinHistory: {
+          enabled: spinHistoryEnabled,
+          retentionLimit: spinHistoryRetention,
+          storeFilterSnapshot: spinHistoryStoreSnapshots,
+        },
+      });
+
+      await saveTheme(selectedTheme);
+      setSuccess('Preferences saved successfully');
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to save preferences';
+      setError(message);
+    } finally {
+      setSaving(false);
+    }
+  }, [
+    selectedTheme,
+    defaultMediaType,
+    tvSelectionMode,
+    animationStyle,
+    animationSpeed,
+    spinHistoryEnabled,
+    spinHistoryRetention,
+    spinHistoryStoreSnapshots,
+    saveTheme,
+  ]);
+
+  const handleClearSpinHistory = useCallback(async () => {
+    setClearingHistory(true);
+    setError(null);
+
+    try {
+      await spinHistoryApi.clearAll();
+      setShowClearConfirm(false);
+      setSuccess('Spin history cleared');
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to clear history';
+      setError(message);
+    } finally {
+      setClearingHistory(false);
+    }
+  }, []);
+
+  if (loading) {
+    return (
+      <div id="tab-panel-appearance" role="tabpanel" className="flex justify-center py-8">
+        <LoadingSpinner />
+      </div>
+    );
+  }
+
   return (
     <div id="tab-panel-appearance" role="tabpanel" className="space-y-6">
+      {error && (
+        <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-3 text-red-400 text-sm">
+          {error}
+        </div>
+      )}
+      {success && (
+        <div className="bg-green-500/10 border border-green-500/50 rounded-lg p-3 text-green-400 text-sm">
+          {success}
+        </div>
+      )}
+
       <div>
         <p className={labelClass}>Theme</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -71,7 +156,7 @@ export default function AppearanceTab({
               <button
                 key={themeKey}
                 type="button"
-                onClick={() => onThemeChange(themeKey)}
+                onClick={() => setSelectedTheme(themeKey)}
                 aria-pressed={selectedTheme === themeKey}
                 className={`text-left rounded-xl p-3 border-2 transition-all focus:outline-none focus:ring-2 focus:ring-decidarr-primary ${
                   selectedTheme === themeKey
@@ -121,7 +206,7 @@ export default function AppearanceTab({
         <select
           id="default-media-type"
           value={defaultMediaType}
-          onChange={(e) => onDefaultMediaTypeChange(e.target.value as 'movie' | 'show')}
+          onChange={(e) => setDefaultMediaType(e.target.value as 'movie' | 'show')}
           className={inputClass}
           style={inputStyle}
         >
@@ -137,7 +222,7 @@ export default function AppearanceTab({
         <select
           id="tv-selection-mode"
           value={tvSelectionMode}
-          onChange={(e) => onTvSelectionModeChange(e.target.value as 'show' | 'episode')}
+          onChange={(e) => setTvSelectionMode(e.target.value as 'show' | 'episode')}
           className={inputClass}
           style={inputStyle}
         >
@@ -157,7 +242,7 @@ export default function AppearanceTab({
           <input
             type="checkbox"
             checked={spinHistoryEnabled}
-            onChange={(e) => onSpinHistoryEnabledChange(e.target.checked)}
+            onChange={(e) => setSpinHistoryEnabled(e.target.checked)}
             className="w-4 h-4 rounded border-gray-600 text-decidarr-primary focus:ring-decidarr-primary"
           />
           <span className="text-decidarr-text text-sm">Record spin history</span>
@@ -173,7 +258,7 @@ export default function AppearanceTab({
             min={1}
             max={500}
             value={spinHistoryRetention}
-            onChange={(e) => onSpinHistoryRetentionChange(Number(e.target.value))}
+            onChange={(e) => setSpinHistoryRetention(Number(e.target.value))}
             disabled={!spinHistoryEnabled}
             className={inputClass}
             style={inputStyle}
@@ -187,7 +272,7 @@ export default function AppearanceTab({
           <input
             type="checkbox"
             checked={spinHistoryStoreSnapshots}
-            onChange={(e) => onSpinHistoryStoreSnapshotsChange(e.target.checked)}
+            onChange={(e) => setSpinHistoryStoreSnapshots(e.target.checked)}
             disabled={!spinHistoryEnabled}
             className="w-4 h-4 rounded border-gray-600 text-decidarr-primary focus:ring-decidarr-primary"
           />
@@ -203,7 +288,7 @@ export default function AppearanceTab({
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={onClearSpinHistory}
+                onClick={handleClearSpinHistory}
                 disabled={clearingHistory}
                 className="flex-1 bg-red-600 text-white font-medium py-2 px-4 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
               >
@@ -211,7 +296,7 @@ export default function AppearanceTab({
               </button>
               <button
                 type="button"
-                onClick={() => onShowClearConfirm(false)}
+                onClick={() => setShowClearConfirm(false)}
                 disabled={clearingHistory}
                 className="flex-1 bg-decidarr-surface text-decidarr-text font-medium py-2 px-4 rounded-lg border border-decidarr-border hover:border-decidarr-primary transition-colors"
               >
@@ -222,7 +307,7 @@ export default function AppearanceTab({
         ) : (
           <button
             type="button"
-            onClick={() => onShowClearConfirm(true)}
+            onClick={() => setShowClearConfirm(true)}
             className="w-full bg-decidarr-surface text-red-400 font-medium py-2 px-4 rounded-lg border border-decidarr-border hover:border-red-500/50 transition-colors"
           >
             Clear All Spin History
@@ -237,7 +322,7 @@ export default function AppearanceTab({
         <select
           id="animation-style"
           value={animationStyle}
-          onChange={(e) => onAnimationStyleChange(e.target.value as AnimationStyle)}
+          onChange={(e) => setAnimationStyle(e.target.value as AnimationStyle)}
           className={inputClass}
           style={inputStyle}
         >
@@ -256,7 +341,7 @@ export default function AppearanceTab({
         <select
           id="animation-speed"
           value={animationSpeed}
-          onChange={(e) => onAnimationSpeedChange(e.target.value as AnimationSpeed)}
+          onChange={(e) => setAnimationSpeed(e.target.value as AnimationSpeed)}
           className={inputClass}
           style={inputStyle}
         >
@@ -270,12 +355,19 @@ export default function AppearanceTab({
 
       <button
         type="button"
-        onClick={onSave}
+        onClick={handleSave}
         disabled={saving}
         aria-busy={saving}
         className="w-full bg-decidarr-primary text-black font-medium py-2 px-4 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
       >
-        {saving ? <LoadingSpinner size="sm" /> : 'Save Preferences'}
+        {saving ? (
+          <>
+            <LoadingSpinner size="sm" />
+            Saving...
+          </>
+        ) : (
+          'Save Preferences'
+        )}
       </button>
     </div>
   );

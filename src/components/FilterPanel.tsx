@@ -3,6 +3,14 @@
 import { useState, useEffect, useMemo } from 'react';
 import { libraryApi, selectionApi, PlexCollection } from '@/lib/api';
 import { Filters, DataStats } from '@/types/filters';
+import PoolCountDisplay from './filters/PoolCountDisplay';
+import QuickFilters from './filters/QuickFilters';
+import CollectionsFilter from './filters/CollectionsFilter';
+import GenresFilter from './filters/GenresFilter';
+import YearRangeFilter from './filters/YearRangeFilter';
+import RatingFilter from './filters/RatingFilter';
+import ContentRatingFilter from './filters/ContentRatingFilter';
+import StudiosFilter from './filters/StudiosFilter';
 
 interface RatingCategory {
   id: string;
@@ -35,18 +43,6 @@ interface FilterPanelProps {
   overseerrWarning?: string | null;
 }
 
-function getRatingIcon(icon: string): string {
-  const icons: Record<string, string> = {
-    oscar: '🏆',
-    emmy: '📺',
-    camera: '🎬',
-    popcorn: '🍿',
-    masks: '💎',
-    star: '⭐',
-  };
-  return icons[icon] || '🏅';
-}
-
 // Minimum percentage of items that must have data for a filter to be shown
 const MIN_DATA_THRESHOLD = 10;
 
@@ -73,7 +69,6 @@ export default function FilterPanel({
   });
   const [collections, setCollections] = useState<PlexCollection[]>([]);
   const [isOpen, setIsOpen] = useState(false);
-  const [studioTab, setStudioTab] = useState<'streaming' | 'anime' | 'traditional' | 'library'>('library');
 
   // Load static options (rating categories, popular studios)
   useEffect(() => {
@@ -128,13 +123,22 @@ export default function FilterPanel({
     }
   };
 
-  const toggleGenre = (genre: string) => {
-    const currentGenres = filters.genres;
-    const newGenres = currentGenres.includes(genre)
-      ? currentGenres.filter((g) => g !== genre)
-      : [...currentGenres, genre];
-    onFiltersChange({ ...filters, genres: newGenres });
+  // Shared helper for toggling array filters
+  const toggleArrayItem = <K extends 'genres' | 'contentRatings' | 'studios' | 'collections'>(
+    key: K,
+    item: string
+  ) => {
+    const currentArray = (filters[key] as string[]) || [];
+    const newArray = currentArray.includes(item)
+      ? currentArray.filter((i) => i !== item)
+      : [...currentArray, item];
+    onFiltersChange({ ...filters, [key]: newArray });
   };
+
+  const toggleGenre = (genre: string) => toggleArrayItem('genres', genre);
+  const toggleContentRating = (rating: string) => toggleArrayItem('contentRatings', rating);
+  const toggleStudio = (studio: string) => toggleArrayItem('studios', studio);
+  const toggleCollection = (ratingKey: string) => toggleArrayItem('collections', ratingKey);
 
   const updateYearRange = (key: 'start' | 'end', value: string) => {
     const current = filters.yearRange || { start: yearRange.min, end: yearRange.max };
@@ -142,14 +146,6 @@ export default function FilterPanel({
       ...filters,
       yearRange: { ...current, [key]: parseInt(value) || null },
     });
-  };
-
-  const toggleContentRating = (rating: string) => {
-    const current = filters.contentRatings;
-    const newRatings = current.includes(rating)
-      ? current.filter((r) => r !== rating)
-      : [...current, rating];
-    onFiltersChange({ ...filters, contentRatings: newRatings });
   };
 
   const updateRatingRange = (key: 'min' | 'max', value: string) => {
@@ -170,24 +166,8 @@ export default function FilterPanel({
     });
   };
 
-  const toggleStudio = (studio: string) => {
-    const currentStudios = filters.studios;
-    const newStudios = currentStudios.includes(studio)
-      ? currentStudios.filter((s) => s !== studio)
-      : [...currentStudios, studio];
-    onFiltersChange({ ...filters, studios: newStudios });
-  };
-
   const toggleUnwatched = () => {
     onFiltersChange({ ...filters, unwatchedOnly: !filters.unwatchedOnly });
-  };
-
-  const toggleCollection = (ratingKey: string) => {
-    const current = filters.collections || [];
-    const newCollections = current.includes(ratingKey)
-      ? current.filter((c) => c !== ratingKey)
-      : [...current, ratingKey];
-    onFiltersChange({ ...filters, collections: newCollections });
   };
 
   const clearFilters = () => {
@@ -213,14 +193,6 @@ export default function FilterPanel({
     filters.unwatchedOnly,
     (filters.collections || []).length > 0,
   ].filter(Boolean).length;
-
-  // Get current studio list based on tab
-  const getCurrentStudios = () => {
-    if (studioTab === 'library') return filterOptions.studios;
-    return popularStudios[studioTab] || [];
-  };
-
-  const currentStudios = getCurrentStudios();
 
   // Check if we have libraries selected (to show library-specific filters)
   const hasLibraries = libraryIds.length > 0;
@@ -281,325 +253,77 @@ export default function FilterPanel({
 
           {/* Pool Count Display */}
           {hasLibraries && (
-            <div className={`p-3 rounded-lg ${
-              loadingPoolCount
-                ? 'bg-gray-700/50'
-                : poolCount === 0
-                  ? 'bg-red-900/30 border border-red-700/50'
-                  : 'bg-green-900/30 border border-green-700/50'
-            }`}>
-              {loadingPoolCount ? (
-                <div className="flex items-center gap-2 text-gray-400 text-sm">
-                  <span className="animate-pulse">Calculating...</span>
-                </div>
-              ) : poolCount === 0 ? (
-                <div className="text-sm">
-                  <div className="flex items-center gap-2 text-red-400 font-medium">
-                    <span>No items match your filters</span>
-                  </div>
-                  {emptyReason && (
-                    <p className="text-red-300/70 text-xs mt-1">{emptyReason}</p>
-                  )}
-                </div>
-              ) : (
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-green-400">
-                    <span className="font-bold">{poolCount}</span>
-                    {totalItems && poolCount !== totalItems && (
-                      <span className="text-green-400/70"> / {totalItems}</span>
-                    )}
-                    <span className="ml-1">items match</span>
-                  </span>
-                </div>
-              )}
-            </div>
+            <PoolCountDisplay
+              poolCount={poolCount}
+              totalItems={totalItems}
+              emptyReason={emptyReason}
+              loadingPoolCount={loadingPoolCount}
+            />
           )}
 
           {/* 1. QUICK FILTERS - Always shown at top */}
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-gray-400 mb-2">Quick Filters</label>
-            <button
-              type="button"
-              onClick={toggleUnwatched}
-              aria-pressed={filters.unwatchedOnly}
-              className={`w-full flex items-center justify-between p-3 rounded-lg transition ${
-                filters.unwatchedOnly
-                  ? 'bg-decidarr-primary/20 border-2 border-decidarr-primary'
-                  : 'bg-decidarr-dark border-2 border-transparent'
-              }`}
-            >
-              <span className="text-white">Only show unwatched</span>
-              {filters.unwatchedOnly && <span className="text-decidarr-primary">✓</span>}
-            </button>
-          </div>
+          <QuickFilters
+            unwatchedOnly={filters.unwatchedOnly}
+            onToggleUnwatched={toggleUnwatched}
+          />
 
           {/* 2. COLLECTIONS - Most useful for curated lists (Kometa) */}
-          {collections.length > 0 && (
-            <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">
-                Collections
-                {(filters.collections || []).length > 0 && (
-                  <span className="ml-2 text-decidarr-primary">({filters.collections?.length})</span>
-                )}
-              </label>
-              <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
-                {collections.map((collection) => (
-                  <button
-                    key={collection.ratingKey}
-                    type="button"
-                    onClick={() => toggleCollection(collection.ratingKey)}
-                    aria-pressed={(filters.collections || []).includes(collection.ratingKey)}
-                    className={`px-3 py-1 rounded-full text-sm transition ${
-                      (filters.collections || []).includes(collection.ratingKey)
-                        ? 'bg-decidarr-primary text-decidarr-dark'
-                        : 'bg-decidarr-dark text-gray-300 hover:text-white'
-                    }`}
-                    title={`${collection.childCount} items`}
-                  >
-                    {collection.title}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          <CollectionsFilter
+            collections={collections}
+            selectedCollections={filters.collections || []}
+            onToggleCollection={toggleCollection}
+          />
 
           {/* 3. GENRES - Very commonly used filter */}
           {showGenreFilter && (
-            <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">
-                Genres
-                {filters.genres.length > 0 && (
-                  <span className="ml-2 text-decidarr-primary">({filters.genres.length})</span>
-                )}
-              </label>
-              <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
-                {genres.map((genre) => (
-                  <button
-                    key={genre}
-                    type="button"
-                    onClick={() => toggleGenre(genre)}
-                    aria-pressed={filters.genres.includes(genre)}
-                    className={`px-3 py-1 rounded-full text-sm transition ${
-                      filters.genres.includes(genre)
-                        ? 'bg-decidarr-primary text-decidarr-dark'
-                        : 'bg-decidarr-dark text-gray-300 hover:text-white'
-                    }`}
-                  >
-                    {genre}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <GenresFilter
+              genres={genres}
+              selectedGenres={filters.genres}
+              onToggleGenre={toggleGenre}
+            />
           )}
 
           {/* 4. YEAR RANGE - Commonly used */}
           {showYearFilter && (
-            <div>
-              <span id="year-range-label" className="block text-sm font-medium text-gray-400 mb-2">Year Range</span>
-              <div className="flex items-center gap-2" role="group" aria-labelledby="year-range-label">
-                <label htmlFor="filter-year-start" className="sr-only">Year from</label>
-                <input
-                  id="filter-year-start"
-                  type="number"
-                  placeholder={String(yearRange.min)}
-                  value={filters.yearRange?.start || ''}
-                  onChange={(e) => updateYearRange('start', e.target.value)}
-                  className="w-24 px-3 py-2 bg-decidarr-dark border border-gray-700 rounded-lg
-                           text-white text-center focus:border-decidarr-primary outline-none"
-                />
-                <span className="text-gray-500">to</span>
-                <label htmlFor="filter-year-end" className="sr-only">Year to</label>
-                <input
-                  id="filter-year-end"
-                  type="number"
-                  placeholder={String(yearRange.max)}
-                  value={filters.yearRange?.end || ''}
-                  onChange={(e) => updateYearRange('end', e.target.value)}
-                  className="w-24 px-3 py-2 bg-decidarr-dark border border-gray-700 rounded-lg
-                           text-white text-center focus:border-decidarr-primary outline-none"
-                />
-              </div>
-            </div>
+            <YearRangeFilter
+              yearRange={yearRange}
+              selectedYearRange={filters.yearRange}
+              onUpdateYearRange={updateYearRange}
+            />
           )}
 
           {/* 5. SCORE RATING - Only if sufficient data */}
           {showRatingFilter && (
-            <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">
-                Score Rating
-                {dataAvailability.rating < 80 && (
-                  <span className="ml-2 text-yellow-500 text-xs" title="Percentage of items with rating data">
-                    ({dataAvailability.rating}% have data)
-                  </span>
-                )}
-              </label>
-
-              {/* Preset options */}
-              {ratingCategories.length > 0 && (
-                <div className="grid grid-cols-1 gap-2 mb-3">
-                  {ratingCategories.map((category) => (
-                    <button
-                      key={category.id}
-                      type="button"
-                      onClick={() => toggleRatingFilter(category.id)}
-                      aria-pressed={filters.ratingFilter === category.id}
-                      className={`p-2 rounded-lg text-sm text-left transition flex items-center gap-2 ${
-                        filters.ratingFilter === category.id
-                          ? 'bg-decidarr-primary/20 border-2 border-decidarr-primary'
-                          : 'bg-decidarr-dark border-2 border-transparent hover:border-gray-700'
-                      }`}
-                    >
-                      <span>{getRatingIcon(category.icon)}</span>
-                      <span className="text-white text-xs">{category.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* Custom range */}
-              <div className="flex items-center gap-2" role="group" aria-label="Custom score rating range">
-                <label htmlFor="filter-rating-min" className="sr-only">Minimum score</label>
-                <input
-                  id="filter-rating-min"
-                  type="number"
-                  step="0.5"
-                  min={filterOptions.ratingRange.min}
-                  max={filterOptions.ratingRange.max}
-                  placeholder={String(filterOptions.ratingRange.min)}
-                  value={filters.ratingRange?.min ?? ''}
-                  onChange={(e) => updateRatingRange('min', e.target.value)}
-                  className="w-20 px-3 py-2 bg-decidarr-dark border border-gray-700 rounded-lg
-                           text-white text-center focus:border-decidarr-primary outline-none text-sm"
-                />
-                <span className="text-gray-500 text-sm">to</span>
-                <label htmlFor="filter-rating-max" className="sr-only">Maximum score</label>
-                <input
-                  id="filter-rating-max"
-                  type="number"
-                  step="0.5"
-                  min={filterOptions.ratingRange.min}
-                  max={filterOptions.ratingRange.max}
-                  placeholder={String(filterOptions.ratingRange.max)}
-                  value={filters.ratingRange?.max ?? ''}
-                  onChange={(e) => updateRatingRange('max', e.target.value)}
-                  className="w-20 px-3 py-2 bg-decidarr-dark border border-gray-700 rounded-lg
-                           text-white text-center focus:border-decidarr-primary outline-none text-sm"
-                />
-                <span className="text-gray-500 text-xs">/ 10</span>
-              </div>
-            </div>
+            <RatingFilter
+              ratingCategories={ratingCategories}
+              ratingRange={filterOptions.ratingRange}
+              selectedRatingFilter={filters.ratingFilter}
+              selectedRatingRange={filters.ratingRange}
+              dataAvailability={dataAvailability.rating}
+              onToggleRatingFilter={toggleRatingFilter}
+              onUpdateRatingRange={updateRatingRange}
+            />
           )}
 
           {/* 6. AGE RATING - Only if sufficient data */}
           {showContentRatingFilter && (
-            <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">
-                Age Rating
-                {filters.contentRatings.length > 0 && (
-                  <span className="ml-2 text-decidarr-primary">({filters.contentRatings.length})</span>
-                )}
-                {dataAvailability.contentRating < 80 && (
-                  <span className="ml-2 text-yellow-500 text-xs" title="Percentage of items with age rating data">
-                    ({dataAvailability.contentRating}% have data)
-                  </span>
-                )}
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {filterOptions.contentRatings.map((rating) => (
-                  <button
-                    key={rating}
-                    type="button"
-                    onClick={() => toggleContentRating(rating)}
-                    aria-pressed={filters.contentRatings.includes(rating)}
-                    className={`px-3 py-1 rounded-full text-sm transition ${
-                      filters.contentRatings.includes(rating)
-                        ? 'bg-decidarr-primary text-decidarr-dark'
-                        : 'bg-decidarr-dark text-gray-300 hover:text-white'
-                    }`}
-                  >
-                    {rating}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <ContentRatingFilter
+              contentRatings={filterOptions.contentRatings}
+              selectedContentRatings={filters.contentRatings}
+              dataAvailability={dataAvailability.contentRating}
+              onToggleContentRating={toggleContentRating}
+            />
           )}
 
           {/* 7. STUDIOS/NETWORKS - Only if sufficient data */}
           {showStudioFilter && (
-            <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">
-                Studios / Networks
-                {filters.studios.length > 0 && (
-                  <span className="ml-2 text-decidarr-primary">({filters.studios.length})</span>
-                )}
-                {dataAvailability.studio < 80 && (
-                  <span className="ml-2 text-yellow-500 text-xs" title="Percentage of items with studio/network data">
-                    ({dataAvailability.studio}% have data)
-                  </span>
-                )}
-              </label>
-
-              {/* Studio Tabs - only show tabs if we have library studios */}
-              {filterOptions.studios.length > 0 && (
-                <div className="flex gap-1 mb-2">
-                  <button
-                    onClick={() => setStudioTab('library')}
-                    className={`flex-1 py-1.5 px-2 text-xs rounded-lg transition ${
-                      studioTab === 'library'
-                        ? 'bg-decidarr-primary text-decidarr-dark'
-                        : 'bg-decidarr-dark text-gray-400 hover:text-white'
-                    }`}
-                  >
-                    In Library
-                  </button>
-                  <button
-                    onClick={() => setStudioTab('streaming')}
-                    className={`flex-1 py-1.5 px-2 text-xs rounded-lg transition ${
-                      studioTab === 'streaming'
-                        ? 'bg-decidarr-primary text-decidarr-dark'
-                        : 'bg-decidarr-dark text-gray-400 hover:text-white'
-                    }`}
-                  >
-                    Streaming
-                  </button>
-                  <button
-                    onClick={() => setStudioTab('traditional')}
-                    className={`flex-1 py-1.5 px-2 text-xs rounded-lg transition ${
-                      studioTab === 'traditional'
-                        ? 'bg-decidarr-primary text-decidarr-dark'
-                        : 'bg-decidarr-dark text-gray-400 hover:text-white'
-                    }`}
-                  >
-                    Studios
-                  </button>
-                </div>
-              )}
-
-              {/* Studio List */}
-              <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
-                {currentStudios.length > 0 ? (
-                  currentStudios.map((studio) => (
-                    <button
-                      key={studio}
-                      type="button"
-                      onClick={() => toggleStudio(studio)}
-                      aria-pressed={filters.studios.includes(studio)}
-                      className={`px-3 py-1 rounded-full text-xs transition ${
-                        filters.studios.includes(studio)
-                          ? 'bg-decidarr-primary text-decidarr-dark'
-                          : 'bg-decidarr-dark text-gray-300 hover:text-white'
-                      }`}
-                    >
-                      {studio}
-                    </button>
-                  ))
-                ) : (
-                  <p className="text-gray-500 text-xs py-2">
-                    {studioTab === 'library' ? 'No studios found in selected libraries' : 'No studios available'}
-                  </p>
-                )}
-              </div>
-            </div>
+            <StudiosFilter
+              popularStudios={popularStudios}
+              libraryStudios={filterOptions.studios}
+              selectedStudios={filters.studios}
+              dataAvailability={dataAvailability.studio}
+              onToggleStudio={toggleStudio}
+            />
           )}
 
           {/* Clear Button */}
