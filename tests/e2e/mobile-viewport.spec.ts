@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { resetE2eDatabase, completeSetupWizard } from "./helpers/e2e-test-helpers';
+import { resetE2eDatabase, completeSetupWizard } from './helpers/e2e-test-helpers';
 
 const MOBILE_VIEWPORTS = [
   { name: '375px', width: 375, height: 667 },
