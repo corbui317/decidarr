@@ -56,6 +56,7 @@ export default function StudiosFilter({
         <div className="flex gap-1 mb-2">
           <button
             onClick={() => setStudioTab('library')}
+            aria-pressed={studioTab === 'library'}
             className={`flex-1 py-1.5 px-2 text-xs rounded-lg transition ${
               studioTab === 'library'
                 ? 'bg-decidarr-primary text-decidarr-dark'
@@ -66,6 +67,7 @@ export default function StudiosFilter({
           </button>
           <button
             onClick={() => setStudioTab('streaming')}
+            aria-pressed={studioTab === 'streaming'}
             className={`flex-1 py-1.5 px-2 text-xs rounded-lg transition ${
               studioTab === 'streaming'
                 ? 'bg-decidarr-primary text-decidarr-dark'
@@ -76,6 +78,7 @@ export default function StudiosFilter({
           </button>
           <button
             onClick={() => setStudioTab('traditional')}
+            aria-pressed={studioTab === 'traditional'}
             className={`flex-1 py-1.5 px-2 text-xs rounded-lg transition ${
               studioTab === 'traditional'
                 ? 'bg-decidarr-primary text-decidarr-dark'
