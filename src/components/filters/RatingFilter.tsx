@@ -8,7 +8,7 @@ interface RatingFilterProps {
   ratingCategories: RatingCategory[];
   ratingRange: { min: number; max: number };
   selectedRatingFilter: string | null;
-  selectedRatingRange: { min: number | null; max: number | null } | null;
+  selectedRatingRange: { min?: number; max?: number } | null;
   dataAvailability: number;
   onToggleRatingFilter: (ratingId: string) => void;
   onUpdateRatingRange: (key: 'min' | 'max', value: string) => void;

@@ -1,6 +1,6 @@
 interface YearRangeFilterProps {
   yearRange: { min: number; max: number };
-  selectedYearRange: { start: number | null; end: number | null } | null;
+  selectedYearRange: { start?: number; end?: number } | null;
   onUpdateYearRange: (key: 'start' | 'end', value: string) => void;
 }
 
