@@ -1,7 +1,5 @@
 import type { Filters } from '@/types/filters';
-
-export type MediaType = 'movie' | 'show';
-export type TvSelectionMode = 'show' | 'episode';
+import type { MediaType, TvSelectionMode } from '@/types/shared';
 
 export interface SelectionRequestBody {
   libraryIds: string[];

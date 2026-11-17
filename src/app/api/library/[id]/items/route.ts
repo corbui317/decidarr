@@ -2,11 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireUser, getTmdbApiKey, getSyncFrequencyHours, getAccessibleLibraryIds, isAuthError, authErrorStatus } from '@/lib/auth';
 import { connectDB } from '@/lib/db';
 import { LibraryCache } from '@/lib/models/LibraryCache';
-import { PlexService } from '@/lib/services/plex';
+import { createPlexService } from '@/lib/services/plex-factory';
 import { TMDbService } from '@/lib/services/tmdb';
 import { enrichWithOverseerr } from '@/lib/services/overseerr-sync';
 import type { ILibraryItem } from '@/lib/models/LibraryCache';
 import { sanitizeLibraryItemForClient } from '@/lib/plex-image';
+import { createLogger } from '@/lib/logger';
+
+const logger = createLogger('API:LibraryItems');
 
 const ENRICHMENT_FIELDS = [
   'tmdbId',
@@ -99,7 +102,7 @@ export async function GET(
       }
     }
 
-    const plexService = new PlexService(
+    const plexService = await createPlexService(
       auth.plexToken,
       auth.plexServerUrl,
       auth.settings.plexMachineId
@@ -124,17 +127,17 @@ export async function GET(
     if (tmdbApiKey) {
       const tmdbService = new TMDbService(tmdbApiKey);
       const unenrichedItems = items.filter(isItemUnenriched);
-      const itemsToEnrich = unenrichedItems.slice(0, 50) as unknown as Record<string, unknown>[];
+      const itemsToEnrich = unenrichedItems.slice(0, 50);
 
       if (itemsToEnrich.length > 0) {
         try {
           const enrichments = await tmdbService.enrichBatch(
             itemsToEnrich.map((item) => ({
-              title: item.title as string,
-              year: item.year as number | undefined,
-              contentRating: item.contentRating as string | undefined,
-              rating: item.rating as number | undefined,
-              studio: item.studio as string | undefined,
+              title: item.title,
+              year: item.year,
+              contentRating: item.contentRating,
+              rating: item.rating,
+              studio: item.studio,
             })),
             section.type as 'movie' | 'show'
           );
@@ -176,7 +179,7 @@ export async function GET(
               (candidate) => candidate.plexId === items[i].plexId
             );
             if (enrichIndex === -1) continue;
-            const source = itemsToEnrich[enrichIndex] as unknown as ILibraryItem;
+            const source = itemsToEnrich[enrichIndex];
             if (source.tmdbId && !items[i].tmdbId) {
               items[i].tmdbId = source.tmdbId;
             }
@@ -201,7 +204,7 @@ export async function GET(
             }
           }
         } catch (err) {
-          console.error('Batch enrichment error:', err);
+          logger.error('Batch enrichment error', { error: (err as Error).message });
         }
       }
     }
@@ -237,7 +240,7 @@ export async function GET(
     if (isAuthError(error)) {
       return NextResponse.json({ error: msg }, { status: authErrorStatus(error) });
     }
-    console.error('Get library items error:', error);
+    logger.error('Get library items error', { error: msg });
     return NextResponse.json({ error: 'Failed to get library items' }, { status: 500 });
   }
 }

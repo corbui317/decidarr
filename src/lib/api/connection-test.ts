@@ -1,0 +1,62 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin, isAuthError, authErrorStatus } from '@/lib/auth';
+import { assertSafeServiceUrl, allowPrivateServiceUrls } from '@/lib/security/service-url';
+import type { Logger } from '@/lib/logger';
+
+export interface ConnectionTestService {
+  testConnection(): Promise<{ success: boolean; error?: string; [key: string]: unknown }>;
+}
+
+export async function handleConnectionTest(
+  request: NextRequest,
+  ServiceClass: new (url: string, apiKey: string) => ConnectionTestService,
+  serviceName: string,
+  logger: Logger
+): Promise<NextResponse> {
+  try {
+    await requireAdmin();
+
+    const body = await request.json();
+    const { url, apiKey } = body;
+
+    if (!url || !apiKey) {
+      return NextResponse.json(
+        { error: `${serviceName} URL and API key are required` },
+        { status: 400 }
+      );
+    }
+
+    const urlCheck = await assertSafeServiceUrl(url, {
+      allowPrivateNetworks: allowPrivateServiceUrls(),
+    });
+    if (!urlCheck.valid) {
+      return NextResponse.json(
+        { success: false, error: urlCheck.error || 'Invalid or disallowed service URL' },
+        { status: 400 }
+      );
+    }
+
+    const service = new ServiceClass(urlCheck.normalized || url, apiKey);
+    const result = await service.testConnection();
+
+    if (result.success) {
+      logger.info(`${serviceName} test successful`, result);
+      return NextResponse.json(result);
+    }
+
+    logger.warn(`${serviceName} test failed`, { error: result.error });
+    return NextResponse.json({ success: false, error: result.error });
+  } catch (error) {
+    if (isAuthError(error)) {
+      return NextResponse.json(
+        { error: (error as Error).message },
+        { status: authErrorStatus(error) }
+      );
+    }
+    logger.error(`${serviceName} test error`, { error: (error as Error).message });
+    return NextResponse.json(
+      { success: false, error: `Failed to test ${serviceName} connection` },
+      { status: 500 }
+    );
+  }
+}

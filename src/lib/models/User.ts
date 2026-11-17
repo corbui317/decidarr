@@ -1,10 +1,11 @@
 import mongoose, { Document, Model, Types } from 'mongoose';
 import CryptoJS from 'crypto-js';
 import { getOrCreateSettings } from './Settings';
+import type { AppTheme, AnimationStyle, AnimationSpeed } from '@/types/shared';
+import { APP_THEMES, ANIMATION_STYLES, ANIMATION_SPEEDS } from '@/types/shared';
 
-export type AppTheme = 'dark' | 'light' | 'vegas' | 'macao' | 'poker';
-export type AnimationStyle = 'slots' | 'roulette' | 'wheel' | 'plinko' | 'random';
-export type AnimationSpeed = 'fast' | 'normal' | 'dramatic';
+// Re-export for backward compatibility
+export type { AppTheme, AnimationStyle, AnimationSpeed };
 
 export interface ISpinHistoryPreferences {
   enabled: boolean;
@@ -22,6 +23,10 @@ export interface IUserPreferences {
   savedFilters?: {
     genres?: string[];
     yearRange?: { start?: number; end?: number };
+    contentRatings?: string[];
+    studios?: string[];
+    ratingRange?: { min?: number; max?: number };
+    ratingFilter?: string | null;
     collections?: string[];
     unwatchedOnly?: boolean;
   };
@@ -63,7 +68,7 @@ const userSchema = new mongoose.Schema<IUser>(
     preferences: {
       theme: {
         type: String,
-        enum: ['dark', 'light', 'vegas', 'macao', 'poker'],
+        enum: APP_THEMES,
         default: 'dark',
       },
       selectedLibraries: [String],
@@ -79,17 +84,21 @@ const userSchema = new mongoose.Schema<IUser>(
       },
       animationStyle: {
         type: String,
-        enum: ['slots', 'roulette', 'wheel', 'plinko', 'random'],
+        enum: ANIMATION_STYLES,
         default: 'slots',
       },
       animationSpeed: {
         type: String,
-        enum: ['fast', 'normal', 'dramatic'],
+        enum: ANIMATION_SPEEDS,
         default: 'normal',
       },
       savedFilters: {
         genres: [String],
         yearRange: { start: Number, end: Number },
+        contentRatings: [String],
+        studios: [String],
+        ratingRange: { min: Number, max: Number },
+        ratingFilter: { type: String, default: null },
         collections: [String],
         unwatchedOnly: { type: Boolean, default: false },
       },

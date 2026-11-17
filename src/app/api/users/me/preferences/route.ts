@@ -2,22 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import { connectDB } from '@/lib/db';
 import { requireUser, isAuthError, authErrorStatus } from '@/lib/auth';
-import { AppTheme, AnimationStyle, AnimationSpeed } from '@/lib/models/User';
 import {
   getDefaultSpinHistoryPreferences,
   normalizeRetentionLimit,
   trimSpinHistoryToRetention,
 } from '@/lib/spin-history';
 import { createLogger } from '@/lib/logger';
-import { parsePreferencesPatchBody } from '@/lib/validation/preferences';
+import { parsePreferencesPatchBody, parsePreferencesPutBody } from '@/lib/validation/preferences';
 
 const logger = createLogger('API:UserPreferences');
-
-const validThemes: AppTheme[] = ['dark', 'light', 'vegas', 'macao', 'poker'];
-const validAnimationStyles: AnimationStyle[] = ['slots', 'roulette', 'wheel', 'plinko', 'random'];
-const validAnimationSpeeds: AnimationSpeed[] = ['fast', 'normal', 'dramatic'];
-const validMediaTypes = ['movie', 'show'];
-const validTvSelectionModes = ['show', 'episode'];
 
 function normalizeSpinHistoryPreferences(spinHistory: unknown) {
   const defaults = getDefaultSpinHistoryPreferences();
@@ -57,30 +50,58 @@ export async function PUT(request: NextRequest) {
   try {
     await connectDB();
     const { user } = await requireUser();
-    const body = await request.json();
+    const parsed = parsePreferencesPutBody(await request.json());
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 });
+    }
 
-    if (body.theme && validThemes.includes(body.theme)) {
+    const body = parsed.data;
+
+    if (body.theme !== undefined) {
       user.preferences.theme = body.theme;
     }
-    if (body.defaultMediaType && validMediaTypes.includes(body.defaultMediaType)) {
+    if (body.defaultMediaType !== undefined) {
       user.preferences.defaultMediaType = body.defaultMediaType;
     }
-    if (body.tvSelectionMode && validTvSelectionModes.includes(body.tvSelectionMode)) {
+    if (body.tvSelectionMode !== undefined) {
       user.preferences.tvSelectionMode = body.tvSelectionMode;
     }
-    if (body.savedFilters) {
-      user.preferences.savedFilters = {
-        ...user.preferences.savedFilters,
-        ...body.savedFilters,
-      };
+    if (body.savedFilters !== undefined) {
+      if (!user.preferences.savedFilters) {
+        user.preferences.savedFilters = {};
+      }
+      if (body.savedFilters.genres !== undefined) {
+        user.preferences.savedFilters.genres = body.savedFilters.genres;
+      }
+      if (body.savedFilters.studios !== undefined) {
+        user.preferences.savedFilters.studios = body.savedFilters.studios;
+      }
+      if (body.savedFilters.contentRatings !== undefined) {
+        user.preferences.savedFilters.contentRatings = body.savedFilters.contentRatings;
+      }
+      if (body.savedFilters.collections !== undefined) {
+        user.preferences.savedFilters.collections = body.savedFilters.collections;
+      }
+      if (body.savedFilters.yearRange !== undefined) {
+        user.preferences.savedFilters.yearRange = body.savedFilters.yearRange;
+      }
+      if (body.savedFilters.ratingRange !== undefined) {
+        user.preferences.savedFilters.ratingRange = body.savedFilters.ratingRange;
+      }
+      if (body.savedFilters.ratingFilter !== undefined) {
+        user.preferences.savedFilters.ratingFilter = body.savedFilters.ratingFilter;
+      }
+      if (body.savedFilters.unwatchedOnly !== undefined) {
+        user.preferences.savedFilters.unwatchedOnly = body.savedFilters.unwatchedOnly;
+      }
     }
-    if (Array.isArray(body.selectedLibraries)) {
+    if (body.selectedLibraries !== undefined) {
       user.preferences.selectedLibraries = body.selectedLibraries;
     }
-    if (body.animationStyle && validAnimationStyles.includes(body.animationStyle)) {
+    if (body.animationStyle !== undefined) {
       user.preferences.animationStyle = body.animationStyle;
     }
-    if (body.animationSpeed && validAnimationSpeeds.includes(body.animationSpeed)) {
+    if (body.animationSpeed !== undefined) {
       user.preferences.animationSpeed = body.animationSpeed;
     }
     let previousRetention: number | undefined;

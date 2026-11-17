@@ -9,12 +9,14 @@ import {
 import { connectDB } from '@/lib/db';
 import { LibraryCache } from '@/lib/models/LibraryCache';
 import { WatchedItem } from '@/lib/models/WatchedItem';
-import { PlexService } from '@/lib/services/plex';
+import { createPlexService } from '@/lib/services/plex-factory';
 import { TMDbService } from '@/lib/services/tmdb';
 import { createLogger } from '@/lib/logger';
 import { applyFullFilters, fetchCollectionItemIds } from '@/lib/selection/filters';
 import { sanitizeLibraryItemForClient } from '@/lib/plex-image';
 import { parseSelectionRequestBody } from '@/lib/validation/selection';
+import type { SelectionResultResponse, SanitizedLibraryItem, TmdbMatch } from '@/types/api/selection';
+import type { SelectionError } from '@/types/shared';
 
 const logger = createLogger('API:Random');
 
@@ -57,13 +59,15 @@ export async function POST(request: NextRequest) {
     let allItems = caches.flatMap((cache) => cache.items);
 
     if (allItems.length === 0) {
-      return NextResponse.json(
-        { error: 'No items found in selected libraries', suggestion: 'Try syncing your libraries first' },
-        { status: 404 }
-      );
+      const errorResponse: SelectionError = {
+        code: 'NO_ITEMS_IN_LIBRARIES',
+        message: 'No items found in selected libraries',
+        suggestion: 'Try syncing your libraries first',
+      };
+      return NextResponse.json(errorResponse, { status: 404 });
     }
 
-    const plexService = new PlexService(plexToken, plexServerUrl, settings.plexMachineId);
+    const plexService = await createPlexService(plexToken, plexServerUrl, settings.plexMachineId);
 
     if (!settings.plexMachineId) {
       logger.info('MachineId missing, fetching from server');
@@ -103,10 +107,12 @@ export async function POST(request: NextRequest) {
     );
 
     if (allItems.length === 0) {
-      return NextResponse.json(
-        { error: 'No items match your filters', suggestion: 'Try adjusting your filters' },
-        { status: 404 }
-      );
+      const errorResponse: SelectionError = {
+        code: 'NO_ITEMS_MATCH_FILTERS',
+        message: 'No items match your filters',
+        suggestion: 'Try adjusting your filters',
+      };
+      return NextResponse.json(errorResponse, { status: 404 });
     }
 
     const randomIndex = Math.floor(Math.random() * allItems.length);
@@ -126,24 +132,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({
-      selection: sanitizeLibraryItemForClient({
+    const selectionWithTmdb = {
+      ...sanitizeLibraryItemForClient({
         ...fullDetails,
-        tmdb: tmdbData,
         overseerrStatus: selectedItem.overseerrStatus ?? null,
       } as Record<string, unknown>),
+      tmdb: tmdbData,
+    } as SanitizedLibraryItem & { tmdb?: TmdbMatch | null };
+
+    const response: SelectionResultResponse = {
+      selection: selectionWithTmdb,
       playLinks,
       stats: {
         totalMatches: allItems.length,
       },
       tvSelectionMode,
-    });
+    };
+    return NextResponse.json(response);
   } catch (error) {
     const msg = (error as Error)?.message;
     if (isAuthError(error)) {
       return NextResponse.json({ error: msg }, { status: authErrorStatus(error) });
     }
-    console.error('Random selection error:', error);
+    logger.error('Random selection error', { error: msg });
     return NextResponse.json({ error: 'Failed to get random selection' }, { status: 500 });
   }
 }

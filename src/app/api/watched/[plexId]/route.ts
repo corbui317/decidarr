@@ -1,4 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createLogger } from '@/lib/logger';
+const logger = createLogger('API:plexId');
+
+
 import { requireUser, isAuthError, authErrorStatus } from '@/lib/auth';
 import { connectDB } from '@/lib/db';
 import { WatchedItem } from '@/lib/models/WatchedItem';
@@ -29,7 +33,7 @@ export async function GET(
     if (isAuthError(error)) {
       return NextResponse.json({ error: msg }, { status: authErrorStatus(error) });
     }
-    console.error('Get watched status error:', error);
+    logger.error('Get watched status error:', { error: (error as Error).message });
     return NextResponse.json({ error: 'Failed to get watched status' }, { status: 500 });
   }
 }
@@ -81,7 +85,7 @@ export async function POST(
     if (isAuthError(error)) {
       return NextResponse.json({ error: msg }, { status: authErrorStatus(error) });
     }
-    console.error('Mark watched error:', error);
+    logger.error('Mark watched error:', { error: (error as Error).message });
     return NextResponse.json({ error: 'Failed to mark as watched' }, { status: 500 });
   }
 }
@@ -116,7 +120,7 @@ export async function DELETE(
     if (isAuthError(error)) {
       return NextResponse.json({ error: msg }, { status: authErrorStatus(error) });
     }
-    console.error('Mark unwatched error:', error);
+    logger.error('Mark unwatched error:', { error: (error as Error).message });
     return NextResponse.json({ error: 'Failed to mark as unwatched' }, { status: 500 });
   }
 }

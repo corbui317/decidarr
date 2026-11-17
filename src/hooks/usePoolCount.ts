@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { selectionApi } from '@/lib/api';
 import { Filters, PoolCountResult } from '@/types/filters';
+import type { MediaType } from '@/types/shared';
 
 export interface UsePoolCountResult {
   poolCount: number | null;
@@ -15,7 +16,7 @@ export interface UsePoolCountResult {
 
 export function usePoolCount(
   selectedLibraries: string[],
-  mediaType: string,
+  mediaType: MediaType,
   filters: Filters
 ): UsePoolCountResult {
   const [poolCount, setPoolCount] = useState<number | null>(null);
@@ -44,7 +45,7 @@ export function usePoolCount(
       try {
         const data = await selectionApi.getPoolCount(
           selectedLibraries,
-          mediaType as 'movie' | 'show',
+          mediaType,
           filters,
           controller.signal
         );
