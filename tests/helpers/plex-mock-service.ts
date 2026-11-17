@@ -59,12 +59,57 @@ export class MockPlexService {
     ];
   }
 
-  async getCollections(): Promise<PlexCollection[]> {
+  async getLibrarySections(): Promise<PlexLibrary[]> {
+    return this.getLibraries();
+  }
+
+  async fetchMachineIdFromServer(): Promise<string | null> {
+    return 'e2e-machine';
+  }
+
+  async getCollections(_sectionId: string): Promise<PlexCollection[]> {
     return [];
   }
 
-  async getLibraryItems(): Promise<PlexItem[]> {
+  async getCollectionItems(_collectionRatingKey: string): Promise<PlexItem[]> {
     return [];
+  }
+
+  async getLibraryItems(_sectionId: string): Promise<PlexItem[]> {
+    return [];
+  }
+
+  async getItemMetadata(ratingKey: string): Promise<PlexItem> {
+    return {
+      plexId: ratingKey,
+      title: 'Mock Item',
+      year: 2024,
+      type: 'movie',
+      thumb: '/library/metadata/1/thumb',
+      art: '/library/metadata/1/art',
+      summary: 'Mock summary for E2E testing',
+      rating: 7.5,
+      contentRating: 'PG-13',
+      duration: 7200000,
+      originallyAvailableAt: '2024-01-01',
+      addedAt: new Date('2024-01-01'),
+      updatedAt: new Date('2024-01-01'),
+    } as PlexItem;
+  }
+
+  async getShowEpisodes(_showRatingKey: string): Promise<Record<string, unknown>[]> {
+    return [];
+  }
+
+  buildPlayLinks(ratingKey: string): {
+    plex: string;
+    app: string;
+  } {
+    const baseUrl = this.serverUrl || 'http://192.168.1.10:32400';
+    return {
+      plex: `${baseUrl}/web/index.html#!/server/e2e-machine/details?key=/library/metadata/${ratingKey}`,
+      app: `plex://preplay/?metadataKey=/library/metadata/${ratingKey}&server=e2e-machine`,
+    };
   }
 
   setServerUrl(url: string): void {
