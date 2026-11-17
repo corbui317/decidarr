@@ -34,7 +34,7 @@ interface RequestOptions {
 export class AuthError extends Error {
   public isAuthError = true;
   public statusCode: number;
-  
+
   constructor(message: string, statusCode: number = 401) {
     super(message);
     this.name = 'AuthError';
@@ -45,6 +45,19 @@ export class AuthError extends Error {
 // Helper to check if an error is an auth error
 export function isAuthError(error: unknown): error is AuthError {
   return error instanceof AuthError || (error as AuthError)?.isAuthError === true;
+}
+
+// Custom error class for API errors with status and code
+export class ApiError extends Error {
+  public status: number;
+  public code?: string;
+
+  constructor(message: string, status: number, code?: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+  }
 }
 
 export class PlexLoginError extends Error {
@@ -104,16 +117,17 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ error: 'Request failed' }));
-    const errorMessage = errorData.error || 'Request failed';
-    
+    const errorMessage = errorData.error || errorData.message || 'Request failed';
+    const errorCode = errorData.code;
+
     if (response.status === 401) {
       console.warn(`[API] 401 Unauthorized on ${endpoint}:`, errorMessage);
       // Throw a typed AuthError instead of auto-redirecting
       // This lets components decide how to handle the auth failure
       throw new AuthError(errorMessage, 401);
     }
-    
-    throw new Error(errorMessage);
+
+    throw new ApiError(errorMessage, response.status, errorCode);
   }
 
   return response.json();

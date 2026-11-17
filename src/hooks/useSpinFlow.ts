@@ -74,13 +74,19 @@ export function useSpinFlow({
 
       setPhase('animating');
     } catch (err) {
-      // Check if it's a response error with SelectionError structure
-      if (err && typeof err === 'object' && 'code' in err) {
-        const selectionError = err as SelectionError;
-        if (selectionError.code === 'NO_ITEMS_IN_LIBRARIES' || selectionError.code === 'NO_ITEMS_MATCH_FILTERS') {
+      // Check if it's an ApiError with a code
+      if (err instanceof Error && 'code' in err) {
+        const apiError = err as { code?: string; message: string };
+        if (apiError.code === 'NO_ITEMS_IN_LIBRARIES' || apiError.code === 'NO_ITEMS_MATCH_FILTERS') {
           setError('No items found matching your criteria');
+        } else if (apiError.code === 'NO_LIBRARIES') {
+          setError('At least one library must be selected');
+        } else if (apiError.code === 'NO_ACCESSIBLE_LIBRARIES') {
+          setError('No accessible libraries selected');
+        } else if (apiError.code === 'MACHINE_ID_MISSING') {
+          setError('Plex machine ID not configured');
         } else {
-          setError(selectionError.message || 'Something went wrong. Please try again.');
+          setError(apiError.message || 'Something went wrong. Please try again.');
         }
       } else {
         setError('Something went wrong. Please try again.');

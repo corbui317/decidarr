@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
 
     if (libraryIds.length === 0) {
       return NextResponse.json(
-        { error: 'At least one library must be selected' },
+        { error: 'At least one library must be selected', code: 'NO_LIBRARIES' },
         { status: 400 }
       );
     }
@@ -42,12 +42,12 @@ export async function POST(request: NextRequest) {
     const { settings, plexToken, plexServerUrl, user } = auth;
     const allowedLibraryIds = await getAccessibleLibraryIds(auth, libraryIds);
     if (allowedLibraryIds.length === 0) {
-      return NextResponse.json({ error: 'No accessible libraries selected' }, { status: 403 });
+      return NextResponse.json({ error: 'No accessible libraries selected', code: 'NO_ACCESSIBLE_LIBRARIES' }, { status: 403 });
     }
 
     const machineId = settings.plexMachineId;
     if (!machineId) {
-      return NextResponse.json({ error: 'Plex machine ID not configured' }, { status: 400 });
+      return NextResponse.json({ error: 'Plex machine ID not configured', code: 'MACHINE_ID_MISSING' }, { status: 400 });
     }
 
     const caches = await LibraryCache.find({
@@ -60,8 +60,8 @@ export async function POST(request: NextRequest) {
 
     if (allItems.length === 0) {
       const errorResponse: SelectionError = {
+        error: 'No items found in selected libraries',
         code: 'NO_ITEMS_IN_LIBRARIES',
-        message: 'No items found in selected libraries',
         suggestion: 'Try syncing your libraries first',
       };
       return NextResponse.json(errorResponse, { status: 404 });
@@ -98,8 +98,8 @@ export async function POST(request: NextRequest) {
 
     if (allItems.length === 0) {
       const errorResponse: SelectionError = {
+        error: 'No items match your filters',
         code: 'NO_ITEMS_MATCH_FILTERS',
-        message: 'No items match your filters',
         suggestion: 'Try adjusting your filters',
       };
       return NextResponse.json(errorResponse, { status: 404 });

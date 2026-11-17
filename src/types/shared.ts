@@ -63,7 +63,7 @@ export type SelectionErrorCode =
   | 'INVALID_SELECTION_PARAMS';
 
 export interface SelectionError {
+  error: string;
   code: SelectionErrorCode;
-  message: string;
   suggestion?: string;
 }
