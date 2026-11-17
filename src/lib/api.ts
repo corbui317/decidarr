@@ -13,6 +13,9 @@ import type {
 } from '@/types/shared';
 import type { WatchedMediaType } from '@/lib/validation/watched';
 
+// Re-export commonly used types
+export type { AnimationStyle, AnimationSpeed };
+
 const API_BASE = '/api';
 const SETUP_SECRET_STORAGE_KEY = 'decidarr_setup_secret';
 
