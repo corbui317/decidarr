@@ -244,9 +244,9 @@ Server must reject `posterUrl` containing `X-Plex-Token` or absolute `http` URLs
 
 | Method | Path | Auth (target) |
 |--------|------|---------------|
-| POST | `/api/test/reset` | `NODE_ENV === 'test'` **and** `E2E_MOCK_PLEX === 'true'` **and** `X-E2E-Reset-Secret` matches `E2E_TEST_RESET_SECRET` |
+| POST | `/api/test/reset` | `NODE_ENV !== 'production'` **and** `E2E_MOCK_PLEX === 'true'` **and** `X-E2E-Reset-Secret` matches `E2E_TEST_RESET_SECRET` |
 
-Return `404` in production builds (preferred) or `403` when any guard fails. Never compile route into production standalone output if feasible via build-time exclusion; otherwise runtime guards are mandatory.
+Return `404` when guards fail (e.g., in production or when E2E mode is not active). The `isE2eMockMode()` helper combines the first two checks. Never compile test-only code into production standalone output if feasible via build-time exclusion; otherwise runtime guards are mandatory.
 
 ### 2.6 PlexService response shape changes
 

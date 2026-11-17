@@ -2,7 +2,10 @@
  * Mock Plex OAuth Functions for E2E Tests
  *
  * These are test-only mock implementations for Plex OAuth flow.
- * NEVER imported by production code - only used through factory when E2E_MOCK_PLEX is true.
+ * Imported only when isE2eMockMode() returns true, which requires both
+ * NODE_ENV !== 'production' and E2E_MOCK_PLEX === 'true'. Production builds
+ * dead-code-eliminate the import, and the webpack alias stubs this file to ensure
+ * it never reaches the bundle.
  */
 
 import type { PlexPin, PlexOAuthUser } from '@/lib/services/plex-oauth';

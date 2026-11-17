@@ -11,9 +11,10 @@ import {
   pollAuthPin as realPollAuthPin,
   fetchPlexUser as realFetchPlexUser,
 } from './plex-oauth';
+import { isE2eMockMode } from '@/lib/test-mode';
 
 export async function createAuthPin(): Promise<PlexPin> {
-  if (process.env.E2E_MOCK_PLEX === 'true') {
+  if (isE2eMockMode()) {
     const { mockCreateAuthPin } = await import('../../../tests/helpers/plex-oauth-mocks');
     return mockCreateAuthPin();
   }
@@ -21,7 +22,7 @@ export async function createAuthPin(): Promise<PlexPin> {
 }
 
 export async function pollAuthPin(pinId: number, code: string): Promise<PlexPin> {
-  if (process.env.E2E_MOCK_PLEX === 'true') {
+  if (isE2eMockMode()) {
     const { mockPollAuthPin } = await import('../../../tests/helpers/plex-oauth-mocks');
     return mockPollAuthPin(pinId, code);
   }
@@ -29,7 +30,7 @@ export async function pollAuthPin(pinId: number, code: string): Promise<PlexPin>
 }
 
 export async function fetchPlexUser(authToken: string): Promise<PlexOAuthUser> {
-  if (process.env.E2E_MOCK_PLEX === 'true') {
+  if (isE2eMockMode()) {
     const { mockFetchPlexUser } = await import('../../../tests/helpers/plex-oauth-mocks');
     return mockFetchPlexUser(authToken);
   }

@@ -3,7 +3,8 @@ import jwt from 'jsonwebtoken';
 import { connectDB } from './db';
 import { getOrCreateSettings, ISettings } from './models/Settings';
 import { IUser, loadUserWithToken } from './models/User';
-import { PlexService, PlexLibrary } from './services/plex';
+import { PlexLibrary } from './services/plex';
+import { createPlexService } from './services/plex-factory';
 import { createLogger } from './logger';
 import { runMigrations } from './migrate';
 
@@ -191,7 +192,7 @@ export async function getAccessibleLibraryIds(
     return filterRequestedLibraryIds(cached.ids, requestedIds);
   }
 
-  const plexService = new PlexService(
+  const plexService = await createPlexService(
     auth.plexToken,
     auth.plexServerUrl,
     auth.settings.plexMachineId || null

@@ -2,14 +2,11 @@ import { NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import { connectDB } from '@/lib/db';
 import { resetMigrationStateForTests } from '@/lib/migrate';
+import { isE2eMockMode } from '@/lib/test-mode';
 
 export async function POST(request: Request) {
-  if (process.env.NODE_ENV === 'production') {
+  if (!isE2eMockMode()) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
-  }
-
-  if (process.env.E2E_MOCK_PLEX !== 'true') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
   const resetSecret = process.env.E2E_TEST_RESET_SECRET?.trim();
