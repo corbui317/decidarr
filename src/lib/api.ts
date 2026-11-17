@@ -143,7 +143,7 @@ export interface AuthUser {
 
 export const authApi = {
   getCurrentUser: () =>
-    request<{ user: AuthUser; preferences: UserPreferences }>('/auth/me'),
+    request<{ user: AuthUser; preferences: UserPreferences; expiresAt: number }>('/auth/me'),
   startPlexLogin: () =>
     request<{ authUrl: string; pinId: number; state: string }>('/auth/plex/start', {
       method: 'POST',
@@ -170,7 +170,7 @@ export const authApi = {
       code?: string;
     };
   },
-  refreshSession: () => request<{ success: boolean }>('/auth/refresh', { method: 'POST' }),
+  refreshSession: () => request<{ success: boolean; expiresAt: number }>('/auth/refresh', { method: 'POST' }),
   logout: () => request('/auth/logout', { method: 'DELETE' }),
 };
 

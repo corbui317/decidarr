@@ -16,6 +16,7 @@ export interface AuthContext {
   plexToken: string;
   plexServerUrl: string;
   isAdmin: boolean;
+  expiresAt: number; // Unix timestamp when session expires
 }
 
 export interface SessionPayload {
@@ -23,6 +24,7 @@ export interface SessionPayload {
   plexUserId: string;
   isAdmin: boolean;
   sessionVersion: number;
+  exp: number; // Unix timestamp when session expires
 }
 
 const SESSION_COOKIE = 'decidarr_session';
@@ -125,6 +127,7 @@ export async function requireUser(): Promise<AuthContext> {
     plexToken,
     plexServerUrl: settings.plexServerUrl,
     isAdmin: user.isAdmin,
+    expiresAt: payload.exp * 1000, // Convert to milliseconds
   };
 }
 

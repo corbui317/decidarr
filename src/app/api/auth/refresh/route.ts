@@ -27,8 +27,11 @@ export async function POST() {
 
     await issueSessionCookie(user, settings.getJwtSecret());
 
+    // Calculate expiry (7 days from now, matching issueSessionCookie)
+    const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
+
     logger.debug('Session refreshed', { username: user.plexUsername });
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, expiresAt });
   } catch (error) {
     const msg = (error as Error)?.message;
     if (msg === 'Unauthorized' || msg === 'App not configured') {

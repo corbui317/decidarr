@@ -22,6 +22,7 @@ interface AuthProviderProps {
 
 export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [expiresAt, setExpiresAt] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,6 +32,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       if (!status.setupComplete) {
         setUser(null);
+        setExpiresAt(null);
         setLoading(false);
         return;
       }
@@ -38,12 +40,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
       try {
         const me = await authApi.getCurrentUser();
         setUser(me.user);
+        setExpiresAt(me.expiresAt);
       } catch {
         setUser(null);
+        setExpiresAt(null);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Connection failed');
       setUser(null);
+      setExpiresAt(null);
     } finally {
       setLoading(false);
     }
@@ -53,22 +58,60 @@ export function AuthProvider({ children }: AuthProviderProps) {
     checkAuth();
   }, [checkAuth]);
 
+  // Silent refresh logic: refresh proactively 24h before expiry
   useEffect(() => {
-    if (!user) return;
+    if (!user || !expiresAt) return;
 
-    const SESSION_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
-    const REFRESH_BEFORE_EXPIRY_MS = 6 * 24 * 60 * 60 * 1000;
+    const REFRESH_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
+    const timeUntilExpiry = expiresAt - Date.now();
+    const timeUntilRefresh = timeUntilExpiry - REFRESH_THRESHOLD_MS;
 
-    const refreshTimer = setInterval(async () => {
+    const doRefresh = async () => {
       try {
-        await authApi.refreshSession();
+        const response = await authApi.refreshSession();
+        setExpiresAt(response.expiresAt);
       } catch {
         setUser(null);
+        setExpiresAt(null);
       }
-    }, REFRESH_BEFORE_EXPIRY_MS);
+    };
 
-    return () => clearInterval(refreshTimer);
-  }, [user]);
+    // If less than 24h left, refresh immediately
+    if (timeUntilRefresh <= 0) {
+      doRefresh();
+      return;
+    }
+
+    // Otherwise schedule refresh for expiresAt - 24h
+    const refreshTimer = setTimeout(doRefresh, timeUntilRefresh);
+
+    // Re-check on visibility change (when user returns to tab)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        const remaining = expiresAt - Date.now();
+        if (remaining < REFRESH_THRESHOLD_MS) {
+          doRefresh();
+        }
+      }
+    };
+
+    // Re-check on window focus
+    const handleFocus = () => {
+      const remaining = expiresAt - Date.now();
+      if (remaining < REFRESH_THRESHOLD_MS) {
+        doRefresh();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      clearTimeout(refreshTimer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [user, expiresAt]);
 
   const login = useCallback(async () => {
     setLoading(true);
@@ -95,6 +138,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       // still clear local state
     }
     setUser(null);
+    setExpiresAt(null);
     window.location.href = '/';
   }, []);
 
