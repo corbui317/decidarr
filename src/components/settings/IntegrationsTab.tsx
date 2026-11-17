@@ -1,102 +1,349 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
+  settingsApi,
+  tautulliApi,
+  overseerrApi,
   SettingsResponse,
   PlexTestResponse,
   TautulliUser,
 } from '@/lib/api';
 import LoadingSpinner from '@/components/LoadingSpinner';
-import { inputClass, inputStyle, labelClass } from './shared';
+import { useAuth } from '@/context/AuthContext';
+import PlexIntegration from './integrations/PlexIntegration';
+import TmdbIntegration from './integrations/TmdbIntegration';
+import TautulliIntegration from './integrations/TautulliIntegration';
+import OverseerrIntegration from './integrations/OverseerrIntegration';
 
 type IntegrationSubTab = 'plex' | 'tmdb' | 'tautulli' | 'overseerr';
 
-interface IntegrationsTabProps {
-  settings: SettingsResponse | null;
-  plexToken: string;
-  onPlexTokenChange: (value: string) => void;
-  plexServerUrl: string;
-  onPlexServerUrlChange: (value: string) => void;
-  plexValidation: PlexTestResponse | null;
-  onPlexValidationClear: () => void;
-  availableServers: Array<{ name: string; uri: string }>;
-  tmdbApiKey: string;
-  onTmdbApiKeyChange: (value: string) => void;
-  tmdbValid: boolean | null;
-  onTmdbValidClear: () => void;
-  tautulliUrl: string;
-  onTautulliUrlChange: (value: string) => void;
-  tautulliApiKey: string;
-  onTautulliApiKeyChange: (value: string) => void;
-  tautulliEnabled: boolean;
-  onTautulliEnabledChange: (enabled: boolean) => void;
-  tautulliUsers: TautulliUser[];
-  tautulliValid: boolean | null;
-  syncingTautulli: boolean;
-  overseerrUrl: string;
-  onOverseerrUrlChange: (value: string) => void;
-  overseerrApiKey: string;
-  onOverseerrApiKeyChange: (value: string) => void;
-  overseerrFilterEnabled: boolean;
-  onOverseerrFilterEnabledChange: (enabled: boolean) => void;
-  overseerrValid: boolean | null;
-  overseerrVersion: string | null;
-  saving: boolean;
-  onTestPlex: () => void;
-  onSavePlex: () => void;
-  onTestTmdb: () => void;
-  onSaveTmdb: () => void;
-  onTestTautulli: () => void;
-  onSaveTautulli: () => void;
-  onSyncTautulli: () => void;
-  onTestOverseerr: () => void;
-  onSaveOverseerr: () => void;
-  onClearMessages: () => void;
-}
-
-export default function IntegrationsTab({
-  settings,
-  plexToken,
-  onPlexTokenChange,
-  plexServerUrl,
-  onPlexServerUrlChange,
-  plexValidation,
-  onPlexValidationClear,
-  availableServers,
-  tmdbApiKey,
-  onTmdbApiKeyChange,
-  tmdbValid,
-  onTmdbValidClear,
-  tautulliUrl,
-  onTautulliUrlChange,
-  tautulliApiKey,
-  onTautulliApiKeyChange,
-  tautulliEnabled,
-  onTautulliEnabledChange,
-  tautulliUsers,
-  tautulliValid,
-  syncingTautulli,
-  overseerrUrl,
-  onOverseerrUrlChange,
-  overseerrApiKey,
-  onOverseerrApiKeyChange,
-  overseerrFilterEnabled,
-  onOverseerrFilterEnabledChange,
-  overseerrValid,
-  overseerrVersion,
-  saving,
-  onTestPlex,
-  onSavePlex,
-  onTestTmdb,
-  onSaveTmdb,
-  onTestTautulli,
-  onSaveTautulli,
-  onSyncTautulli,
-  onTestOverseerr,
-  onSaveOverseerr,
-  onClearMessages,
-}: IntegrationsTabProps) {
+export default function IntegrationsTab() {
+  const { isAdmin } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [subTab, setSubTab] = useState<IntegrationSubTab>('plex');
+  const [settings, setSettings] = useState<SettingsResponse | null>(null);
+
+  // Plex state
+  const [plexToken, setPlexToken] = useState('');
+  const [plexServerUrl, setPlexServerUrl] = useState('');
+  const [plexValidation, setPlexValidation] = useState<PlexTestResponse | null>(null);
+  const [availableServers, setAvailableServers] = useState<Array<{ name: string; uri: string }>>([]);
+
+  // TMDB state
+  const [tmdbApiKey, setTmdbApiKey] = useState('');
+  const [tmdbValid, setTmdbValid] = useState<boolean | null>(null);
+
+  // Tautulli state
+  const [tautulliUrl, setTautulliUrl] = useState('');
+  const [tautulliApiKey, setTautulliApiKey] = useState('');
+  const [tautulliEnabled, setTautulliEnabled] = useState(false);
+  const [tautulliUsers, setTautulliUsers] = useState<TautulliUser[]>([]);
+  const [tautulliValid, setTautulliValid] = useState<boolean | null>(null);
+  const [syncingTautulli, setSyncingTautulli] = useState(false);
+
+  // Overseerr state
+  const [overseerrUrl, setOverseerrUrl] = useState('');
+  const [overseerrApiKey, setOverseerrApiKey] = useState('');
+  const [overseerrFilterEnabled, setOverseerrFilterEnabled] = useState(false);
+  const [overseerrValid, setOverseerrValid] = useState<boolean | null>(null);
+  const [overseerrVersion, setOverseerrVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadData = async () => {
+      if (!isAdmin) {
+        setLoading(false);
+        setError('Admin access required');
+        return;
+      }
+
+      setLoading(true);
+      setError(null);
+      try {
+        const data = await settingsApi.getSettings();
+        setSettings(data);
+        setPlexServerUrl(data.plex.serverUrl || '');
+        setTautulliUrl(data.tautulli?.url || '');
+        setTautulliEnabled(data.tautulli?.enabled || false);
+        setOverseerrUrl(data.overseerr?.url || '');
+        setOverseerrFilterEnabled(data.overseerr?.filterEnabled || false);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to load settings';
+        setError(message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, [isAdmin]);
+
+  const clearMessages = useCallback(() => {
+    setError(null);
+    setSuccess(null);
+  }, []);
+
+  // Plex handlers
+  const handleTestPlex = useCallback(async () => {
+    if (!plexToken.trim()) {
+      setError('Please enter a Plex token');
+      return;
+    }
+
+    setSaving(true);
+    clearMessages();
+    try {
+      const validation = await settingsApi.testPlex(plexToken, plexServerUrl || undefined);
+      setPlexValidation(validation);
+      if (validation.valid && validation.servers) {
+        setAvailableServers(validation.servers);
+        if (validation.servers.length > 0 && !plexServerUrl) {
+          setPlexServerUrl(validation.servers[0].uri);
+        }
+      }
+      if (!validation.valid) {
+        setError('Plex token validation failed');
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to test Plex';
+      setError(message);
+    } finally {
+      setSaving(false);
+    }
+  }, [plexToken, plexServerUrl, clearMessages]);
+
+  const handleSavePlex = useCallback(async () => {
+    if (!plexToken.trim() || !plexServerUrl.trim()) {
+      setError('Please provide both Plex token and server URL');
+      return;
+    }
+
+    setSaving(true);
+    clearMessages();
+    try {
+      await settingsApi.updateSettings({
+        plex: {
+          token: plexToken,
+          serverUrl: plexServerUrl,
+        },
+      });
+      setSuccess('Plex settings saved successfully');
+      setTimeout(() => setSuccess(null), 3000);
+
+      // Reload to get updated masked token
+      const data = await settingsApi.getSettings();
+      setSettings(data);
+      setPlexToken('');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to save Plex settings';
+      setError(message);
+    } finally {
+      setSaving(false);
+    }
+  }, [plexToken, plexServerUrl, clearMessages]);
+
+  // TMDB handlers
+  const handleTestTmdb = useCallback(async () => {
+    if (!tmdbApiKey.trim()) {
+      setError('Please enter a TMDB API key');
+      return;
+    }
+
+    setSaving(true);
+    clearMessages();
+    try {
+      const result = await settingsApi.testTmdb(tmdbApiKey);
+      setTmdbValid(result.valid);
+      if (!result.valid) {
+        setError('TMDB API key validation failed');
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to test TMDB';
+      setError(message);
+      setTmdbValid(false);
+    } finally {
+      setSaving(false);
+    }
+  }, [tmdbApiKey, clearMessages]);
+
+  const handleSaveTmdb = useCallback(async () => {
+    if (!tmdbApiKey.trim()) {
+      setError('Please provide a TMDB API key');
+      return;
+    }
+
+    setSaving(true);
+    clearMessages();
+    try {
+      await settingsApi.updateSettings({
+        tmdb: {
+          apiKey: tmdbApiKey,
+        },
+      });
+      setSuccess('TMDB settings saved successfully');
+      setTimeout(() => setSuccess(null), 3000);
+      setTmdbApiKey('');
+
+      // Reload settings
+      const data = await settingsApi.getSettings();
+      setSettings(data);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to save TMDB settings';
+      setError(message);
+    } finally {
+      setSaving(false);
+    }
+  }, [tmdbApiKey, clearMessages]);
+
+  // Tautulli handlers
+  const handleTestTautulli = useCallback(async () => {
+    if (!tautulliUrl.trim() || !tautulliApiKey.trim()) {
+      setError('Please provide both Tautulli URL and API key');
+      return;
+    }
+
+    setSaving(true);
+    clearMessages();
+    try {
+      const result = await tautulliApi.test(tautulliUrl, tautulliApiKey);
+      setTautulliValid(result.success);
+      if (result.success && result.users) {
+        setTautulliUsers(result.users);
+      }
+      if (!result.success) {
+        setError('Tautulli connection test failed');
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to test Tautulli';
+      setError(message);
+      setTautulliValid(false);
+    } finally {
+      setSaving(false);
+    }
+  }, [tautulliUrl, tautulliApiKey, clearMessages]);
+
+  const handleSaveTautulli = useCallback(async () => {
+    if (!tautulliUrl.trim() || !tautulliApiKey.trim()) {
+      setError('Please provide both Tautulli URL and API key');
+      return;
+    }
+
+    setSaving(true);
+    clearMessages();
+    try {
+      await settingsApi.updateSettings({
+        tautulli: {
+          url: tautulliUrl,
+          apiKey: tautulliApiKey,
+          enabled: tautulliEnabled,
+        },
+      });
+      setSuccess('Tautulli settings saved');
+      setTimeout(() => setSuccess(null), 3000);
+
+      // Reload settings
+      const data = await settingsApi.getSettings();
+      setSettings(data);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to save Tautulli settings';
+      setError(message);
+    } finally {
+      setSaving(false);
+    }
+  }, [tautulliUrl, tautulliApiKey, tautulliEnabled, clearMessages]);
+
+  const handleSyncTautulli = useCallback(async () => {
+    setSyncingTautulli(true);
+    clearMessages();
+    try {
+      await tautulliApi.sync();
+      setSuccess('Tautulli watch history synced successfully');
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to sync Tautulli';
+      setError(message);
+    } finally {
+      setSyncingTautulli(false);
+    }
+  }, [clearMessages]);
+
+  // Overseerr handlers
+  const handleTestOverseerr = useCallback(async () => {
+    if (!overseerrUrl.trim() || !overseerrApiKey.trim()) {
+      setError('Please provide both Overseerr URL and API key');
+      return;
+    }
+
+    setSaving(true);
+    clearMessages();
+    try {
+      const result = await overseerrApi.test(overseerrUrl, overseerrApiKey);
+      setOverseerrValid(result.success);
+      if (result.version) {
+        setOverseerrVersion(result.version);
+      }
+      if (!result.success) {
+        setError('Overseerr connection test failed');
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to test Overseerr';
+      setError(message);
+      setOverseerrValid(false);
+    } finally {
+      setSaving(false);
+    }
+  }, [overseerrUrl, overseerrApiKey, clearMessages]);
+
+  const handleSaveOverseerr = useCallback(async () => {
+    if (!overseerrUrl.trim() || !overseerrApiKey.trim()) {
+      setError('Please provide both Overseerr URL and API key');
+      return;
+    }
+
+    setSaving(true);
+    clearMessages();
+    try {
+      await settingsApi.updateSettings({
+        overseerr: {
+          url: overseerrUrl,
+          apiKey: overseerrApiKey,
+          filterEnabled: overseerrFilterEnabled,
+        },
+      });
+      setSuccess('Overseerr settings saved');
+      setTimeout(() => setSuccess(null), 3000);
+
+      // Reload settings
+      const data = await settingsApi.getSettings();
+      setSettings(data);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to save Overseerr settings';
+      setError(message);
+    } finally {
+      setSaving(false);
+    }
+  }, [overseerrUrl, overseerrApiKey, overseerrFilterEnabled, clearMessages]);
+
+  if (loading) {
+    return (
+      <div id="tab-panel-integrations" role="tabpanel" className="flex justify-center py-8">
+        <LoadingSpinner />
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <div id="tab-panel-integrations" role="tabpanel" className="p-4">
+        <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-3 text-red-400 text-sm">
+          Admin access required to manage integrations
+        </div>
+      </div>
+    );
+  }
 
   const subTabs: { id: IntegrationSubTab; label: string }[] = [
     { id: 'plex', label: 'Plex' },
@@ -107,6 +354,17 @@ export default function IntegrationsTab({
 
   return (
     <div id="tab-panel-integrations" role="tabpanel" className="space-y-4">
+      {error && (
+        <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-3 text-red-400 text-sm">
+          {error}
+        </div>
+      )}
+      {success && (
+        <div className="bg-green-500/10 border border-green-500/50 rounded-lg p-3 text-green-400 text-sm">
+          {success}
+        </div>
+      )}
+
       <div className="flex gap-1 border-b border-decidarr-border pb-2" role="tablist" aria-label="Integrations">
         {subTabs.map((tab) => (
           <button
@@ -114,7 +372,10 @@ export default function IntegrationsTab({
             type="button"
             role="tab"
             aria-selected={subTab === tab.id}
-            onClick={() => setSubTab(tab.id)}
+            onClick={() => {
+              setSubTab(tab.id);
+              clearMessages();
+            }}
             className={`flex-1 py-2 text-xs font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-inset focus:ring-decidarr-primary ${
               subTab === tab.id
                 ? 'bg-decidarr-primary/20 text-decidarr-primary'
@@ -127,414 +388,70 @@ export default function IntegrationsTab({
       </div>
 
       {subTab === 'plex' && (
-        <div className="space-y-5">
-          {settings?.plex.hasToken && (
-            <div className="bg-decidarr-dark/50 rounded-lg p-4 border border-decidarr-border">
-              <p className="text-decidarr-text text-sm">
-                <span className="text-decidarr-text-muted">Connected as: </span>
-                <strong>{settings.plex.username || 'Unknown'}</strong>
-              </p>
-              <p className="text-decidarr-text-muted text-sm mt-1">
-                <span>Server: </span>{settings.plex.serverUrl || 'Not set'}
-              </p>
-              <p className="text-decidarr-text-muted text-sm mt-1">
-                <span>Token: </span>{settings.plex.tokenMasked}
-              </p>
-            </div>
-          )}
-
-          <div>
-            <label htmlFor="plex-token" className={labelClass}>
-              {settings?.plex.hasToken ? 'Update Plex Token' : 'Plex Token'}
-            </label>
-            <input
-              id="plex-token"
-              type="password"
-              value={plexToken}
-              onChange={(e) => {
-                onPlexTokenChange(e.target.value);
-                onPlexValidationClear();
-                onClearMessages();
-              }}
-              placeholder="Enter new Plex token"
-              className={inputClass}
-              style={inputStyle}
-            />
-          </div>
-
-          {plexValidation?.valid && (
-            <div role="status" className="bg-green-500/10 border border-green-500/50 rounded-lg p-3">
-              <p className="text-green-400 text-sm">
-                Validated as <strong>{plexValidation.user?.username}</strong>
-              </p>
-            </div>
-          )}
-
-          <div>
-            <label htmlFor="plex-server-url" className={labelClass}>Server URL</label>
-            {availableServers.length > 0 ? (
-              <select
-                id="plex-server-url"
-                value={plexServerUrl}
-                onChange={(e) => onPlexServerUrlChange(e.target.value)}
-                className={inputClass}
-                style={inputStyle}
-              >
-                {availableServers.map((server) => (
-                  <option key={server.uri} value={server.uri}>{server.name}</option>
-                ))}
-              </select>
-            ) : (
-              <input
-                id="plex-server-url"
-                type="url"
-                value={plexServerUrl}
-                onChange={(e) => onPlexServerUrlChange(e.target.value)}
-                placeholder="http://192.168.1.100:32400"
-                className={inputClass}
-                style={inputStyle}
-              />
-            )}
-          </div>
-
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={onTestPlex}
-              disabled={saving || !plexToken.trim()}
-              aria-busy={saving}
-              className="flex-1 bg-decidarr-surface text-decidarr-text font-medium py-2 px-4 rounded-lg border border-decidarr-border hover:border-decidarr-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {saving ? <LoadingSpinner size="sm" /> : 'Test Connection'}
-            </button>
-            <button
-              type="button"
-              onClick={onSavePlex}
-              disabled={saving || (!plexToken.trim() && !plexServerUrl.trim())}
-              aria-busy={saving}
-              className="flex-1 bg-decidarr-primary text-black font-medium py-2 px-4 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-            >
-              {saving ? <LoadingSpinner size="sm" /> : 'Save'}
-            </button>
-          </div>
-        </div>
+        <PlexIntegration
+          settings={settings}
+          plexToken={plexToken}
+          onPlexTokenChange={setPlexToken}
+          plexServerUrl={plexServerUrl}
+          onPlexServerUrlChange={setPlexServerUrl}
+          plexValidation={plexValidation}
+          onPlexValidationClear={() => { setPlexValidation(null); clearMessages(); }}
+          availableServers={availableServers}
+          saving={saving}
+          onTest={handleTestPlex}
+          onSave={handleSavePlex}
+        />
       )}
 
       {subTab === 'tmdb' && (
-        <div className="space-y-5">
-          <div className="bg-decidarr-dark/50 rounded-lg p-4 border border-decidarr-border">
-            <p className="text-decidarr-text text-sm">
-              <span className="text-decidarr-text-muted">Status: </span>
-              {settings?.tmdb.hasKey ? (
-                <span className="text-green-400">Configured</span>
-              ) : (
-                <span className="text-decidarr-text-muted">Not configured</span>
-              )}
-            </p>
-            {settings?.tmdb.keyMasked && (
-              <p className="text-decidarr-text-muted text-sm mt-1">
-                <span>Key: </span>{settings.tmdb.keyMasked}
-              </p>
-            )}
-          </div>
-
-          <div>
-            <label htmlFor="tmdb-key" className={labelClass}>
-              {settings?.tmdb.hasKey ? 'Update TMDB API Key' : 'TMDB API Key'}
-            </label>
-            <input
-              id="tmdb-key"
-              type="password"
-              value={tmdbApiKey}
-              onChange={(e) => {
-                onTmdbApiKeyChange(e.target.value);
-                onTmdbValidClear();
-                onClearMessages();
-              }}
-              placeholder="Enter TMDB API key"
-              className={inputClass}
-              style={inputStyle}
-            />
-            <p className="text-decidarr-text-muted text-xs mt-1">
-              <a
-                href="https://www.themoviedb.org/settings/api"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-decidarr-primary hover:underline"
-              >
-                Get a free TMDB API key
-              </a>
-            </p>
-          </div>
-
-          {tmdbValid === true && (
-            <div role="status" className="bg-green-500/10 border border-green-500/50 rounded-lg p-3">
-              <p className="text-green-400 text-sm">API key is valid</p>
-            </div>
-          )}
-
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={onTestTmdb}
-              disabled={saving || !tmdbApiKey.trim()}
-              className="flex-1 bg-decidarr-surface text-decidarr-text font-medium py-2 px-4 rounded-lg border border-decidarr-border hover:border-decidarr-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Test API Key
-            </button>
-            <button
-              type="button"
-              onClick={onSaveTmdb}
-              disabled={saving}
-              className="flex-1 bg-decidarr-primary text-black font-medium py-2 px-4 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-            >
-              {saving ? <LoadingSpinner size="sm" /> : tmdbApiKey.trim() ? 'Save' : 'Remove Key'}
-            </button>
-          </div>
-        </div>
+        <TmdbIntegration
+          settings={settings}
+          tmdbApiKey={tmdbApiKey}
+          onTmdbApiKeyChange={setTmdbApiKey}
+          tmdbValid={tmdbValid}
+          onTmdbValidClear={() => { setTmdbValid(null); clearMessages(); }}
+          saving={saving}
+          onTest={handleTestTmdb}
+          onSave={handleSaveTmdb}
+        />
       )}
 
       {subTab === 'tautulli' && (
-        <div className="space-y-5">
-          <div className="bg-decidarr-dark/50 rounded-lg p-4 border border-decidarr-border">
-            <p className="text-decidarr-text text-sm">
-              <span className="text-decidarr-text-muted">Status: </span>
-              {settings?.tautulli?.enabled ? (
-                settings?.tautulli?.url && settings?.tautulli?.hasKey ? (
-                  <span className="text-green-400">Enabled</span>
-                ) : (
-                  <span className="text-yellow-400">Enabled (incomplete — save URL and API key)</span>
-                )
-              ) : settings?.tautulli?.hasKey ? (
-                <span className="text-yellow-400">Configured (disabled)</span>
-              ) : (
-                <span className="text-decidarr-text-muted">Not configured</span>
-              )}
-            </p>
-            {settings?.tautulli?.url && (
-              <p className="text-decidarr-text-muted text-sm mt-1">
-                <span>URL: </span>{settings.tautulli.url}
-              </p>
-            )}
-            {settings?.tautulli?.lastSync && (
-              <p className="text-decidarr-text-muted text-sm mt-1">
-                <span>Last sync: </span>{new Date(settings.tautulli.lastSync).toLocaleString()}
-              </p>
-            )}
-          </div>
-
-          <div>
-            <label htmlFor="tautulli-url" className={labelClass}>Tautulli URL</label>
-            <input
-              id="tautulli-url"
-              type="url"
-              value={tautulliUrl}
-              onChange={(e) => {
-                onTautulliUrlChange(e.target.value);
-                onClearMessages();
-              }}
-              placeholder="http://192.168.1.100:8181"
-              className={inputClass}
-              style={inputStyle}
-            />
-          </div>
-
-          <div>
-            <label htmlFor="tautulli-key" className={labelClass}>
-              {settings?.tautulli?.hasKey ? 'Update API Key' : 'API Key'}
-            </label>
-            <input
-              id="tautulli-key"
-              type="password"
-              value={tautulliApiKey}
-              onChange={(e) => {
-                onTautulliApiKeyChange(e.target.value);
-                onClearMessages();
-              }}
-              placeholder="Enter Tautulli API key"
-              className={inputClass}
-              style={inputStyle}
-            />
-            <p className="text-decidarr-text-muted text-xs mt-1">
-              Find your API key in Tautulli Settings &rarr; Web Interface &rarr; API Key
-            </p>
-          </div>
-
-          {tautulliValid && tautulliUsers.length > 0 && (
-            <div role="status" className="bg-green-500/10 border border-green-500/50 rounded-lg p-3">
-              <p className="text-green-400 text-sm mb-1">Connected! Users found:</p>
-              <div className="flex flex-wrap gap-2">
-                {tautulliUsers.map((u) => (
-                  <span key={u.id} className="text-xs bg-green-500/20 px-2 py-1 rounded">
-                    {u.friendlyName || u.username}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={tautulliEnabled}
-                onChange={(e) => onTautulliEnabledChange(e.target.checked)}
-                className="w-4 h-4 rounded border-gray-600 text-decidarr-primary focus:ring-decidarr-primary"
-              />
-              <span className="text-decidarr-text text-sm">Enable Tautulli watch history sync</span>
-            </label>
-          </div>
-
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={onTestTautulli}
-              disabled={saving || !tautulliUrl.trim() || !tautulliApiKey.trim()}
-              className="flex-1 bg-decidarr-surface text-decidarr-text font-medium py-2 px-4 rounded-lg border border-decidarr-border hover:border-decidarr-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Test Connection
-            </button>
-            <button
-              type="button"
-              onClick={onSaveTautulli}
-              disabled={saving}
-              className="flex-1 bg-decidarr-primary text-black font-medium py-2 px-4 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-            >
-              {saving ? <LoadingSpinner size="sm" /> : 'Save'}
-            </button>
-          </div>
-
-          {settings?.tautulli?.enabled && settings?.tautulli?.url && settings?.tautulli?.hasKey && (
-            <button
-              type="button"
-              onClick={onSyncTautulli}
-              disabled={syncingTautulli}
-              className="w-full bg-decidarr-surface text-decidarr-text font-medium py-2 px-4 rounded-lg border border-decidarr-border hover:border-decidarr-primary transition-colors disabled:opacity-50"
-            >
-              {syncingTautulli ? (
-                <span className="flex items-center justify-center gap-2">
-                  <LoadingSpinner size="sm" /> Syncing...
-                </span>
-              ) : (
-                'Sync Watch History Now'
-              )}
-            </button>
-          )}
-        </div>
+        <TautulliIntegration
+          settings={settings}
+          tautulliUrl={tautulliUrl}
+          onTautulliUrlChange={setTautulliUrl}
+          tautulliApiKey={tautulliApiKey}
+          onTautulliApiKeyChange={setTautulliApiKey}
+          tautulliEnabled={tautulliEnabled}
+          onTautulliEnabledChange={setTautulliEnabled}
+          tautulliUsers={tautulliUsers}
+          tautulliValid={tautulliValid}
+          saving={saving}
+          syncingTautulli={syncingTautulli}
+          onTest={handleTestTautulli}
+          onSave={handleSaveTautulli}
+          onSync={handleSyncTautulli}
+          onClearValidation={() => { setTautulliValid(null); clearMessages(); }}
+        />
       )}
 
       {subTab === 'overseerr' && (
-        <div className="space-y-5">
-          <div className="bg-decidarr-dark/50 rounded-lg p-4 border border-decidarr-border">
-            <p className="text-decidarr-text text-sm">
-              <span className="text-decidarr-text-muted">Status: </span>
-              {settings?.overseerr?.filterEnabled ? (
-                <span className="text-green-400">Filter enabled</span>
-              ) : settings?.overseerr?.hasKey ? (
-                <span className="text-yellow-400">Configured (filter off)</span>
-              ) : (
-                <span className="text-decidarr-text-muted">Not configured</span>
-              )}
-            </p>
-            {settings?.overseerr?.url && (
-              <p className="text-decidarr-text-muted text-sm mt-1">
-                <span>URL: </span>{settings.overseerr.url}
-              </p>
-            )}
-            {settings?.overseerr?.lastSyncAt && (
-              <p className="text-decidarr-text-muted text-sm mt-1">
-                <span>Last sync: </span>
-                {new Date(settings.overseerr.lastSyncAt).toLocaleString()}
-                {!settings.overseerr.lastSyncOk && (
-                  <span className="text-yellow-400 ml-2">(stale data)</span>
-                )}
-              </p>
-            )}
-          </div>
-
-          <p className="text-decidarr-text-muted text-sm">
-            Exclude fully available titles from the spin pool. Partially available titles stay in the
-            pool and show a badge on the result card.
-          </p>
-
-          <div>
-            <label htmlFor="overseerr-url" className={labelClass}>Overseerr URL</label>
-            <input
-              id="overseerr-url"
-              type="url"
-              value={overseerrUrl}
-              onChange={(e) => {
-                onOverseerrUrlChange(e.target.value);
-                onClearMessages();
-              }}
-              placeholder="http://192.168.1.100:5055"
-              className={inputClass}
-              style={inputStyle}
-            />
-          </div>
-
-          <div>
-            <label htmlFor="overseerr-key" className={labelClass}>
-              {settings?.overseerr?.hasKey ? 'Update API Key' : 'API Key'}
-            </label>
-            <input
-              id="overseerr-key"
-              type="password"
-              value={overseerrApiKey}
-              onChange={(e) => {
-                onOverseerrApiKeyChange(e.target.value);
-                onClearMessages();
-              }}
-              placeholder="Enter Overseerr API key"
-              className={inputClass}
-              style={inputStyle}
-            />
-            <p className="text-decidarr-text-muted text-xs mt-1">
-              Find your API key in Overseerr Settings &rarr; General
-            </p>
-          </div>
-
-          {overseerrValid && (
-            <div role="status" className="bg-green-500/10 border border-green-500/50 rounded-lg p-3">
-              <p className="text-green-400 text-sm">
-                Connected{overseerrVersion ? ` (v${overseerrVersion})` : ''}
-              </p>
-            </div>
-          )}
-
-          <div>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={overseerrFilterEnabled}
-                onChange={(e) => onOverseerrFilterEnabledChange(e.target.checked)}
-                className="w-4 h-4 rounded border-gray-600 text-decidarr-primary focus:ring-decidarr-primary"
-              />
-              <span className="text-decidarr-text text-sm">
-                Exclude fully available titles from the spin pool
-              </span>
-            </label>
-          </div>
-
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={onTestOverseerr}
-              disabled={saving || !overseerrUrl.trim() || !overseerrApiKey.trim()}
-              className="flex-1 bg-decidarr-surface text-decidarr-text font-medium py-2 px-4 rounded-lg border border-decidarr-border hover:border-decidarr-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Test Connection
-            </button>
-            <button
-              type="button"
-              onClick={onSaveOverseerr}
-              disabled={saving}
-              className="flex-1 bg-decidarr-primary text-black font-medium py-2 px-4 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-            >
-              {saving ? <LoadingSpinner size="sm" /> : 'Save'}
-            </button>
-          </div>
-        </div>
+        <OverseerrIntegration
+          settings={settings}
+          overseerrUrl={overseerrUrl}
+          onOverseerrUrlChange={setOverseerrUrl}
+          overseerrApiKey={overseerrApiKey}
+          onOverseerrApiKeyChange={setOverseerrApiKey}
+          overseerrFilterEnabled={overseerrFilterEnabled}
+          onOverseerrFilterEnabledChange={setOverseerrFilterEnabled}
+          overseerrValid={overseerrValid}
+          overseerrVersion={overseerrVersion}
+          saving={saving}
+          onTest={handleTestOverseerr}
+          onSave={handleSaveOverseerr}
+          onClearValidation={() => { setOverseerrValid(null); clearMessages(); }}
+        />
       )}
     </div>
   );
