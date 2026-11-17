@@ -28,7 +28,7 @@ export { WheelOfFortuneAnimation } from './wheel';
 export { PlinkoAnimation } from './plinko';
 
 import type { RefObject } from 'react';
-import { AnimationSpeed, PlexItem, SpinAnimation } from './types';
+import type { AnimationSpeed, PlexItem, SpinAnimation } from './types';
 import type { SpinAnimationHandle } from './SpinAnimationHandle';
 
 /** Wraps a mounted animation ref as a SpinAnimation (play resolves when the view calls onComplete). */
