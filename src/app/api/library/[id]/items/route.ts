@@ -45,7 +45,7 @@ function mergeExistingEnrichment(
         (Array.isArray(freshValue) && freshValue.length === 0);
 
       if (freshMissing && existingValue != null) {
-        (item as Record<string, unknown>)[field] = existingValue;
+        (item as unknown as Record<string, unknown>)[field] = existingValue;
       }
     }
   }
@@ -95,7 +95,7 @@ export async function GET(
 
       if (cache && !cache.isExpired()) {
         return NextResponse.json({
-          items: cache.items.map((item) => sanitizeLibraryItemForClient(item as Record<string, unknown>)),
+          items: cache.items.map((item) => sanitizeLibraryItemForClient(item as unknown as Record<string, unknown>)),
           fromCache: true,
           lastSyncedAt: cache.lastSyncedAt,
         });
@@ -231,7 +231,7 @@ export async function GET(
     );
 
     return NextResponse.json({
-      items: items.map((item) => sanitizeLibraryItemForClient(item as Record<string, unknown>)),
+      items: items.map((item) => sanitizeLibraryItemForClient(item as unknown as Record<string, unknown>)),
       fromCache: false,
       lastSyncedAt: new Date(),
     });
