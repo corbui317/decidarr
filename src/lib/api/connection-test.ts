@@ -30,8 +30,10 @@ export async function handleConnectionTest(
       allowPrivateNetworks: allowPrivateServiceUrls(),
     });
     if (!urlCheck.valid) {
+      // Log internal reason but return generic error to client (security spec 01 §2.3 step 7)
+      logger.warn(`${serviceName} URL validation failed`, { url, reason: urlCheck.error });
       return NextResponse.json(
-        { success: false, error: urlCheck.error || 'Invalid or disallowed service URL' },
+        { success: false, error: 'Invalid or disallowed service URL' },
         { status: 400 }
       );
     }

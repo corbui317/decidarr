@@ -70,7 +70,9 @@ export function useSpinFlow({
           poolSizeAtSpin: selectionResult.stats?.totalMatches,
         })
         .then(() => onHistoryRecorded?.())
-        .catch((historyErr) => console.error('Failed to record spin history:', historyErr));
+        .catch(() => {
+          // History recording is non-critical - fail silently
+        });
 
       setPhase('animating');
     } catch (err) {

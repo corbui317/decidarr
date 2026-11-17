@@ -1,5 +1,8 @@
 import mongoose from 'mongoose';
 import { runMigrations } from './migrate';
+import { createLogger } from './logger';
+
+const logger = createLogger('DB');
 
 interface MongooseCache {
   conn: typeof mongoose | null;
@@ -29,7 +32,7 @@ export async function connectDB() {
     };
 
     cached.promise = mongoose.connect(MONGODB_URI, opts).then(async (conn) => {
-      console.log('Connected to MongoDB');
+      logger.info('Connected to MongoDB');
       await runMigrations();
       return conn;
     });
