@@ -2,7 +2,11 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { settingsApi, authApi, formatPlexLoginError, setStoredSetupSecret } from '@/lib/api';
-import LoadingSpinner from './LoadingSpinner';
+import StepIndicator from './setup/StepIndicator';
+import WelcomeStep from './setup/WelcomeStep';
+import PlexStep from './setup/PlexStep';
+import TmdbStep from './setup/TmdbStep';
+import CompleteStep from './setup/CompleteStep';
 
 interface SetupWizardProps {
   onComplete: () => void;
@@ -125,185 +129,45 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
   return (
     <div className="min-h-screen bg-decidarr-dark flex items-center justify-center p-4">
       <div className="max-w-md w-full bg-decidarr-secondary rounded-xl shadow-2xl p-8">
-        <div className="flex items-center justify-center mb-8">
-          <div className="flex items-center space-x-2">
-            {['welcome', 'plex', 'tmdb', 'complete'].map((s, i) => (
-              <div key={s} className="flex items-center">
-                <div
-                  className={`w-3 h-3 rounded-full ${
-                    step === s
-                      ? 'bg-decidarr-primary'
-                      : ['welcome', 'plex', 'tmdb', 'complete'].indexOf(step) > i
-                      ? 'bg-decidarr-primary/50'
-                      : 'bg-gray-600'
-                  }`}
-                />
-                {i < 3 && <div className="w-8 h-0.5 bg-gray-600" />}
-              </div>
-            ))}
-          </div>
-        </div>
+        <StepIndicator currentStep={step} />
 
         {step === 'welcome' && (
-          <div className="text-center">
-            <h1 className="text-3xl font-bold text-decidarr-primary mb-4">Welcome to Decidarr</h1>
-            <p className="text-gray-300 mb-2">Your personal movie and TV show randomizer</p>
-            <p className="text-gray-400 text-sm mb-8">
-              Sign in with Plex as the server owner to get started.
-            </p>
-            <button
-              onClick={() => setStep('plex')}
-              className="w-full bg-decidarr-primary text-black font-semibold py-3 px-6 rounded-lg hover:bg-decidarr-primary/90 transition-colors"
-            >
-              Get Started
-            </button>
-          </div>
+          <WelcomeStep onGetStarted={() => setStep('plex')} />
         )}
 
         {step === 'plex' && (
-          <div>
-            <h2 className="text-2xl font-bold text-white mb-2">Connect with Plex</h2>
-            <p className="text-gray-400 text-sm mb-6">
-              Sign in with your Plex account. You must be the owner of the Plex Media Server.
-            </p>
-
-            {error && (
-              <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-3 mb-4">
-                <p className="text-red-400 text-sm">{error}</p>
-              </div>
-            )}
-
-            <div className="mb-4">
-              <label htmlFor="setup-secret" className="block text-sm text-gray-400 mb-1">
-                Setup key (required on public production installs)
-              </label>
-              <input
-                id="setup-secret"
-                type="password"
-                value={setupSecret}
-                onChange={(e) => setSetupSecret(e.target.value)}
-                placeholder="Optional for local development"
-                className="w-full bg-decidarr-dark border border-gray-600 rounded-lg px-3 py-2 text-white text-sm"
-              />
-            </div>
-
-            {plexConnected && plexUsername && (
-              <div className="bg-green-500/10 border border-green-500/50 rounded-lg p-3 mb-4">
-                <p className="text-green-400 text-sm">
-                  Connected as <strong>{plexUsername}</strong>
-                </p>
-              </div>
-            )}
-
-            <div className="flex space-x-3 pt-4">
-              <button
-                onClick={() => setStep('welcome')}
-                className="flex-1 bg-gray-700 text-white font-semibold py-3 px-6 rounded-lg hover:bg-gray-600 transition-colors"
-              >
-                Back
-              </button>
-              {!plexConnected ? (
-                <button
-                  onClick={handlePlexOAuth}
-                  disabled={loading}
-                  className="flex-1 bg-decidarr-primary text-black font-semibold py-3 px-6 rounded-lg hover:bg-decidarr-primary/90 transition-colors disabled:opacity-50 flex items-center justify-center"
-                >
-                  {loading ? <LoadingSpinner size="sm" /> : 'Sign in with Plex'}
-                </button>
-              ) : (
-                <button
-                  onClick={() => setStep('tmdb')}
-                  className="flex-1 bg-decidarr-primary text-black font-semibold py-3 px-6 rounded-lg hover:bg-decidarr-primary/90 transition-colors"
-                >
-                  Next
-                </button>
-              )}
-            </div>
-          </div>
+          <PlexStep
+            error={error}
+            setupSecret={setupSecret}
+            onSetupSecretChange={setSetupSecret}
+            plexConnected={plexConnected}
+            plexUsername={plexUsername}
+            loading={loading}
+            onBack={() => setStep('welcome')}
+            onPlexOAuth={handlePlexOAuth}
+            onNext={() => setStep('tmdb')}
+          />
         )}
 
         {step === 'tmdb' && (
-          <div>
-            <h2 className="text-2xl font-bold text-white mb-2">TMDB Integration</h2>
-            <p className="text-gray-400 text-sm mb-6">
-              Optional: Add your TMDB API key for enhanced movie data and ratings.
-            </p>
-
-            {error && (
-              <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-3 mb-4">
-                <p className="text-red-400 text-sm">{error}</p>
-              </div>
-            )}
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-gray-300 text-sm mb-2">
-                  TMDB API Key <span className="text-gray-500">(Optional)</span>
-                </label>
-                <input
-                  type="password"
-                  value={tmdbApiKey}
-                  onChange={(e) => {
-                    setTmdbApiKey(e.target.value);
-                    setTmdbValid(null);
-                    setError(null);
-                  }}
-                  placeholder="Enter your TMDB API key"
-                  className="w-full bg-decidarr-dark border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-decidarr-primary"
-                />
-              </div>
-
-              {tmdbValid === true && (
-                <div className="bg-green-500/10 border border-green-500/50 rounded-lg p-3">
-                  <p className="text-green-400 text-sm">TMDB API key is valid</p>
-                </div>
-              )}
-
-              <div className="flex space-x-3 pt-4">
-                <button
-                  onClick={() => setStep('plex')}
-                  className="flex-1 bg-gray-700 text-white font-semibold py-3 px-6 rounded-lg hover:bg-gray-600 transition-colors"
-                >
-                  Back
-                </button>
-                {tmdbApiKey.trim() && tmdbValid !== true ? (
-                  <button
-                    onClick={handleTestTmdb}
-                    disabled={loading}
-                    className="flex-1 bg-decidarr-primary text-black font-semibold py-3 px-6 rounded-lg hover:bg-decidarr-primary/90 transition-colors disabled:opacity-50 flex items-center justify-center"
-                  >
-                    {loading ? <LoadingSpinner size="sm" /> : 'Validate'}
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleComplete}
-                    disabled={loading}
-                    className="flex-1 bg-decidarr-primary text-black font-semibold py-3 px-6 rounded-lg hover:bg-decidarr-primary/90 transition-colors disabled:opacity-50 flex items-center justify-center"
-                  >
-                    {loading ? <LoadingSpinner size="sm" /> : tmdbApiKey.trim() ? 'Complete Setup' : 'Skip & Complete'}
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
+          <TmdbStep
+            error={error}
+            tmdbApiKey={tmdbApiKey}
+            onTmdbApiKeyChange={(value) => {
+              setTmdbApiKey(value);
+              setTmdbValid(null);
+              setError(null);
+            }}
+            tmdbValid={tmdbValid}
+            loading={loading}
+            onBack={() => setStep('plex')}
+            onTestTmdb={handleTestTmdb}
+            onComplete={handleComplete}
+          />
         )}
 
         {step === 'complete' && (
-          <div className="text-center">
-            <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
-              <svg className="w-8 h-8 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-            <h2 className="text-2xl font-bold text-white mb-2">You&apos;re All Set!</h2>
-            <p className="text-gray-400 mb-8">Decidarr is ready to help you discover your next watch.</p>
-            <button
-              onClick={onComplete}
-              className="w-full bg-decidarr-primary text-black font-semibold py-3 px-6 rounded-lg hover:bg-decidarr-primary/90 transition-colors"
-            >
-              Start Exploring
-            </button>
-          </div>
+          <CompleteStep onStartExploring={onComplete} />
         )}
       </div>
     </div>
