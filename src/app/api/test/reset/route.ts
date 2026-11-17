@@ -2,10 +2,9 @@ import { NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import { connectDB } from '@/lib/db';
 import { resetMigrationStateForTests } from '@/lib/migrate';
-import { isE2eMockMode } from '@/lib/test-mode';
 
 export async function POST(request: Request) {
-  if (!isE2eMockMode()) {
+  if (process.env.NODE_ENV === 'production' || process.env.E2E_MOCK_PLEX !== 'true') {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
 

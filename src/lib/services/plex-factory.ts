@@ -6,14 +6,13 @@
  */
 
 import { PlexService } from './plex';
-import { isE2eMockMode } from '@/lib/test-mode';
 
 export async function createPlexService(
   authToken: string,
   serverUrl?: string | null,
   machineId?: string | null
 ): Promise<PlexService> {
-  if (isE2eMockMode()) {
+  if (process.env.NODE_ENV !== 'production' && process.env.E2E_MOCK_PLEX === 'true') {
     const { MockPlexService } = await import('../../../tests/helpers/plex-mock-service');
     return new MockPlexService(authToken, serverUrl, machineId) as unknown as PlexService;
   }

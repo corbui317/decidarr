@@ -246,7 +246,7 @@ Server must reject `posterUrl` containing `X-Plex-Token` or absolute `http` URLs
 |--------|------|---------------|
 | POST | `/api/test/reset` | `NODE_ENV !== 'production'` **and** `E2E_MOCK_PLEX === 'true'` **and** `X-E2E-Reset-Secret` matches `E2E_TEST_RESET_SECRET` |
 
-Return `404` when guards fail (e.g., in production or when E2E mode is not active). The `isE2eMockMode()` helper combines the first two checks. Never compile test-only code into production standalone output if feasible via build-time exclusion; otherwise runtime guards are mandatory.
+Return `404` when guards fail (e.g., in production or when E2E mode is not active). Test-only code paths check `NODE_ENV !== 'production' && E2E_MOCK_PLEX === 'true'` inline at each site, which allows Next.js to eliminate the dead code branches at build time since NODE_ENV is inlined as a literal. The webpack alias configuration stubs out test helper modules during production builds.
 
 ### 2.6 PlexService response shape changes
 

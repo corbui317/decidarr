@@ -2,9 +2,9 @@
  * Mock Plex Service Implementation for E2E Tests
  *
  * This is a test-only implementation that provides mock responses for Plex API calls.
- * It is imported only when isE2eMockMode() returns true, which requires both
- * NODE_ENV !== 'production' and E2E_MOCK_PLEX === 'true'. Production builds
- * dead-code-eliminate the import, and the webpack alias stubs this file to ensure
+ * Imported only when NODE_ENV !== 'production' && E2E_MOCK_PLEX === 'true'.
+ * Production builds dead-code-eliminate the import because Next.js inlines
+ * NODE_ENV as a literal, and the webpack alias stubs this file to ensure
  * it never reaches the bundle.
  */
 
