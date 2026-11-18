@@ -1,0 +1,24 @@
+{
+  "pages": [
+    {
+      "results": [
+        { "tmdbId": 1, "status": 5, "mediaType": "movie" },
+        { "tmdbId": 2, "status": 5, "mediaType": "movie" }
+      ],
+      "pageInfo": { "pages": 3 }
+    },
+    {
+      "results": [
+        { "tmdbId": 101, "status": 5, "mediaType": "movie" },
+        { "tmdbId": 102, "status": 5, "mediaType": "tv" }
+      ],
+      "pageInfo": { "pages": 3 }
+    },
+    {
+      "results": [
+        { "tmdbId": 250, "status": 5, "mediaType": "movie" }
+      ],
+      "pageInfo": { "pages": 3 }
+    }
+  ]
+}

@@ -1,0 +1,306 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { connectDB } from '@/lib/db';
+import { getOrCreateSettings } from '@/lib/models/Settings';
+import { requireAdmin, isAuthError, authErrorStatus, invalidateAccessibleLibraryCache } from '@/lib/auth';
+import { createLogger } from '@/lib/logger';
+import { assertSafeServiceUrl, allowPrivateServiceUrls } from '@/lib/security/service-url';
+
+const logger = createLogger('API:Settings');
+
+// Helper to mask sensitive values
+const maskValue = (value: string | undefined): string | null => {
+  if (!value) return null;
+  if (value.length <= 8) return '****';
+  return value.substring(0, 4) + '****' + value.substring(value.length - 4);
+};
+
+// GET /api/settings - Get current settings (masked sensitive values)
+export async function GET() {
+  try {
+    logger.debug('Fetching settings');
+    await connectDB();
+    const { settings } = await requireAdmin();
+
+    // Get decrypted values for masking
+    const plexToken = settings.getDecryptedPlexToken();
+    const tmdbKey = settings.getDecryptedTmdbKey();
+    const tautulliKey = settings.getDecryptedTautulliKey();
+    const overseerrKey = settings.getDecryptedOverseerrKey();
+
+    logger.debug('Settings fetched successfully');
+    return NextResponse.json({
+      setupComplete: settings.setupComplete,
+      plex: {
+        serverUrl: settings.plexServerUrl || null,
+        username: settings.plexUsername || null,
+        machineId: settings.plexMachineId || null,
+        hasToken: !!plexToken,
+        tokenMasked: maskValue(plexToken || undefined),
+      },
+      tmdb: {
+        hasKey: !!tmdbKey,
+        keyMasked: maskValue(tmdbKey || undefined),
+      },
+      tautulli: {
+        url: settings.tautulliUrl || null,
+        enabled: settings.tautulliEnabled,
+        hasKey: !!tautulliKey,
+        keyMasked: maskValue(tautulliKey || undefined),
+        syncIntervalMinutes: settings.tautulliSyncIntervalMinutes,
+        lastSync: settings.tautulliLastSync || null,
+      },
+      overseerr: {
+        url: settings.overseerrUrl || null,
+        filterEnabled: settings.overseerrFilterEnabled ?? false,
+        hasKey: !!overseerrKey,
+        keyMasked: maskValue(overseerrKey || undefined),
+        lastSyncAt: settings.overseerrLastSyncAt || null,
+        lastSyncOk: settings.overseerrLastSyncOk ?? true,
+      },
+      syncFrequencyHours: settings.syncFrequencyHours,
+      uiPreferences: {
+        theme: settings.uiPreferences?.theme ?? 'dark',
+        defaultMediaType: settings.uiPreferences?.defaultMediaType ?? 'movie',
+        tvSelectionMode: settings.uiPreferences?.tvSelectionMode ?? 'show',
+        animationStyle: settings.uiPreferences?.animationStyle ?? 'slots',
+        animationSpeed: settings.uiPreferences?.animationSpeed ?? 'normal',
+      },
+    });
+  } catch (error) {
+    const errorMsg = (error as Error)?.message;
+    
+    if (isAuthError(error)) {
+      logger.warn('Auth error fetching settings', { error: errorMsg });
+      return NextResponse.json(
+        { error: errorMsg === 'Unauthorized' ? 'Session expired' : errorMsg },
+        { status: authErrorStatus(error) }
+      );
+    }
+    
+    logger.error('Failed to get settings', { error: errorMsg });
+    return NextResponse.json({ error: 'Failed to get settings' }, { status: 500 });
+  }
+}
+
+// PUT /api/settings - Update settings
+export async function PUT(request: NextRequest) {
+  try {
+    await connectDB();
+    const { settings } = await requireAdmin();
+    const body = await request.json();
+    let plexServerUrlChanged = false;
+
+    // Update Plex settings if provided
+    if (body.plex) {
+      if (body.plex.token !== undefined) {
+        if (body.plex.token && !body.plex.token.includes('****')) {
+          settings.plexToken = body.plex.token;
+        }
+      }
+      if (body.plex.serverUrl !== undefined && body.plex.serverUrl) {
+        const urlCheck = await assertSafeServiceUrl(body.plex.serverUrl, {
+          allowPrivateNetworks: allowPrivateServiceUrls(),
+        });
+        if (!urlCheck.valid) {
+          return NextResponse.json(
+            { error: urlCheck.error || 'Invalid or disallowed service URL' },
+            { status: 400 }
+          );
+        }
+        const nextServerUrl = urlCheck.normalized || body.plex.serverUrl;
+        plexServerUrlChanged = nextServerUrl !== settings.plexServerUrl;
+        settings.plexServerUrl = nextServerUrl;
+      }
+    }
+
+    // Update TMDB settings if provided
+    if (body.tmdb) {
+      if (body.tmdb.apiKey !== undefined) {
+        // Only update if a new key is provided (not the masked value)
+        if (body.tmdb.apiKey && !body.tmdb.apiKey.includes('****')) {
+          settings.tmdbApiKey = body.tmdb.apiKey;
+        } else if (body.tmdb.apiKey === '') {
+          settings.tmdbApiKey = undefined;
+        }
+      }
+    }
+
+    // Update sync frequency if provided
+    if (body.syncFrequencyHours !== undefined) {
+      settings.syncFrequencyHours = Math.max(1, Math.min(168, body.syncFrequencyHours));
+    }
+
+    if (body.overseerr) {
+      if (body.overseerr.url !== undefined) {
+        if (body.overseerr.url) {
+          const urlCheck = await assertSafeServiceUrl(body.overseerr.url, {
+            allowPrivateNetworks: allowPrivateServiceUrls(),
+          });
+          if (!urlCheck.valid) {
+            return NextResponse.json(
+              { error: urlCheck.error || 'Invalid or disallowed service URL' },
+              { status: 400 }
+            );
+          }
+          settings.overseerrUrl = urlCheck.normalized;
+        } else {
+          settings.overseerrUrl = undefined;
+        }
+      }
+      if (body.overseerr.apiKey !== undefined) {
+        if (body.overseerr.apiKey && !body.overseerr.apiKey.includes('****')) {
+          settings.overseerrApiKey = body.overseerr.apiKey;
+        } else if (body.overseerr.apiKey === '') {
+          settings.overseerrApiKey = undefined;
+        }
+      }
+      if (body.overseerr.filterEnabled !== undefined) {
+        settings.overseerrFilterEnabled = !!body.overseerr.filterEnabled;
+      }
+    }
+
+    // Update Tautulli settings if provided
+    if (body.tautulli) {
+      if (body.tautulli.url !== undefined) {
+        if (body.tautulli.url) {
+          const urlCheck = await assertSafeServiceUrl(body.tautulli.url, {
+            allowPrivateNetworks: allowPrivateServiceUrls(),
+          });
+          if (!urlCheck.valid) {
+            return NextResponse.json(
+              { error: urlCheck.error || 'Invalid or disallowed service URL' },
+              { status: 400 }
+            );
+          }
+          settings.tautulliUrl = urlCheck.normalized;
+        } else {
+          settings.tautulliUrl = undefined;
+        }
+      }
+      if (body.tautulli.apiKey !== undefined) {
+        if (body.tautulli.apiKey && !body.tautulli.apiKey.includes('****')) {
+          settings.tautulliApiKey = body.tautulli.apiKey;
+        } else if (body.tautulli.apiKey === '') {
+          settings.tautulliApiKey = undefined;
+        }
+      }
+      if (body.tautulli.enabled !== undefined) {
+        settings.tautulliEnabled = !!body.tautulli.enabled;
+      }
+      if (body.tautulli.syncIntervalMinutes !== undefined) {
+        settings.tautulliSyncIntervalMinutes = Math.max(5, Math.min(1440, body.tautulli.syncIntervalMinutes));
+      }
+
+      if (settings.tautulliEnabled) {
+        const tautulliKey = settings.getDecryptedTautulliKey();
+        if (!settings.tautulliUrl) {
+          return NextResponse.json(
+            { error: 'Tautulli URL is required when sync is enabled' },
+            { status: 400 }
+          );
+        }
+        if (!tautulliKey) {
+          return NextResponse.json(
+            { error: 'Tautulli API key is required when sync is enabled' },
+            { status: 400 }
+          );
+        }
+      }
+    }
+
+    // Update UI preferences if provided
+    const validThemes = ['dark', 'light', 'vegas', 'macao', 'poker'];
+    const validAnimationStyles = ['slots', 'roulette', 'wheel', 'plinko', 'random'];
+    const validAnimationSpeeds = ['fast', 'normal', 'dramatic'];
+    if (body.uiPreferences) {
+      if (body.uiPreferences.theme && validThemes.includes(body.uiPreferences.theme)) {
+        settings.uiPreferences.theme = body.uiPreferences.theme;
+      }
+      if (body.uiPreferences.defaultMediaType) {
+        settings.uiPreferences.defaultMediaType = body.uiPreferences.defaultMediaType;
+      }
+      if (body.uiPreferences.tvSelectionMode) {
+        settings.uiPreferences.tvSelectionMode = body.uiPreferences.tvSelectionMode;
+      }
+      if (
+        body.uiPreferences.animationStyle &&
+        validAnimationStyles.includes(body.uiPreferences.animationStyle)
+      ) {
+        settings.uiPreferences.animationStyle = body.uiPreferences.animationStyle;
+      }
+      if (
+        body.uiPreferences.animationSpeed &&
+        validAnimationSpeeds.includes(body.uiPreferences.animationSpeed)
+      ) {
+        settings.uiPreferences.animationSpeed = body.uiPreferences.animationSpeed;
+      }
+    }
+
+    await settings.save();
+
+    if (plexServerUrlChanged) {
+      invalidateAccessibleLibraryCache();
+    }
+
+    // Get updated decrypted values for response
+    const plexToken = settings.getDecryptedPlexToken();
+    const tmdbKey = settings.getDecryptedTmdbKey();
+    const tautulliKey = settings.getDecryptedTautulliKey();
+    const overseerrKey = settings.getDecryptedOverseerrKey();
+
+    return NextResponse.json({
+      success: true,
+      settings: {
+        setupComplete: settings.setupComplete,
+        plex: {
+          serverUrl: settings.plexServerUrl || null,
+          username: settings.plexUsername || null,
+          machineId: settings.plexMachineId || null,
+          hasToken: !!plexToken,
+          tokenMasked: maskValue(plexToken || undefined),
+        },
+        tmdb: {
+          hasKey: !!tmdbKey,
+          keyMasked: maskValue(tmdbKey || undefined),
+        },
+        tautulli: {
+          url: settings.tautulliUrl || null,
+          enabled: settings.tautulliEnabled,
+          hasKey: !!tautulliKey,
+          keyMasked: maskValue(tautulliKey || undefined),
+          syncIntervalMinutes: settings.tautulliSyncIntervalMinutes,
+          lastSync: settings.tautulliLastSync || null,
+        },
+        overseerr: {
+          url: settings.overseerrUrl || null,
+          filterEnabled: settings.overseerrFilterEnabled ?? false,
+          hasKey: !!overseerrKey,
+          keyMasked: maskValue(overseerrKey || undefined),
+          lastSyncAt: settings.overseerrLastSyncAt || null,
+          lastSyncOk: settings.overseerrLastSyncOk ?? true,
+        },
+        syncFrequencyHours: settings.syncFrequencyHours,
+        uiPreferences: {
+          theme: settings.uiPreferences?.theme ?? 'dark',
+          defaultMediaType: settings.uiPreferences?.defaultMediaType ?? 'movie',
+          tvSelectionMode: settings.uiPreferences?.tvSelectionMode ?? 'show',
+          animationStyle: settings.uiPreferences?.animationStyle ?? 'slots',
+          animationSpeed: settings.uiPreferences?.animationSpeed ?? 'normal',
+        },
+      },
+    });
+  } catch (error) {
+    const errorMsg = (error as Error)?.message;
+    
+    if (isAuthError(error)) {
+      logger.warn('Auth error updating settings', { error: errorMsg });
+      return NextResponse.json(
+        { error: errorMsg === 'Unauthorized' ? 'Session expired' : errorMsg },
+        { status: 401 }
+      );
+    }
+    
+    logger.error('Failed to update settings', { error: errorMsg });
+    return NextResponse.json({ error: 'Failed to update settings' }, { status: 500 });
+  }
+}

@@ -1,0 +1,352 @@
+import mongoose, { Document, Model, Types } from 'mongoose';
+import CryptoJS from 'crypto-js';
+import crypto from 'crypto';
+import { createLogger } from '../logger';
+
+const logger = createLogger('Settings');
+
+export type AppTheme = 'dark' | 'light' | 'vegas' | 'macao' | 'poker';
+export type AnimationStyle = 'slots' | 'roulette' | 'wheel' | 'plinko' | 'random';
+export type AnimationSpeed = 'fast' | 'normal' | 'dramatic';
+
+export interface ISpinHistoryPreferences {
+  enabled: boolean;
+  retentionLimit: number;
+  storeFilterSnapshot: boolean;
+}
+
+export interface IUIPreferences {
+  theme: AppTheme;
+  defaultMediaType: 'movie' | 'show';
+  tvSelectionMode: 'show' | 'episode';
+  animationStyle: AnimationStyle;
+  animationSpeed: AnimationSpeed;
+}
+
+export interface ISettings extends Omit<Document, '_id'> {
+  // Singleton identifier
+  _id: string;
+
+  // Security keys (auto-generated, stored encrypted with master key)
+  jwtSecret: string;
+  encryptionKey: string;
+
+  // Plex configuration
+  plexToken?: string;
+  plexServerUrl?: string;
+  plexUsername?: string;
+  plexMachineId?: string;
+
+  // TMDB configuration
+  tmdbApiKey?: string;
+
+  // Tautulli configuration
+  tautulliUrl?: string;
+  tautulliApiKey?: string;
+  tautulliEnabled: boolean;
+  tautulliSyncIntervalMinutes: number;
+  tautulliLastSync?: Date;
+
+  // Overseerr configuration
+  overseerrUrl?: string;
+  overseerrApiKey?: string;
+  overseerrFilterEnabled: boolean;
+  overseerrLastSyncAt?: Date;
+  overseerrLastSyncOk: boolean;
+  overseerrLastSyncError?: string;
+
+  // Sync settings
+  syncFrequencyHours: number;
+
+  // UI Preferences
+  uiPreferences: IUIPreferences;
+
+  // Spin history preferences (single-user / installation scope)
+  spinHistoryPreferences: ISpinHistoryPreferences;
+
+  // Multi-user
+  adminUserId?: Types.ObjectId;
+  approvedPlexUserIds: string[];
+
+  // Setup status
+  setupComplete: boolean;
+
+  createdAt: Date;
+  updatedAt: Date;
+
+  // Methods
+  getDecryptedPlexToken(): string | null;
+  getDecryptedTmdbKey(): string | null;
+  getDecryptedTautulliKey(): string | null;
+  getDecryptedOverseerrKey(): string | null;
+  getJwtSecret(): string;
+  getEncryptionKey(): string;
+}
+
+// Master key for encrypting the auto-generated secrets
+const getLegacyMasterKey = (): string => {
+  const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/decidarr';
+  return CryptoJS.SHA256('decidarr-master-' + mongoUri).toString().substring(0, 32);
+};
+
+const getMasterKey = (): string => {
+  const secret = process.env.DECIDARR_SECRET?.trim();
+  if (secret) {
+    return CryptoJS.SHA256('decidarr-secret-' + secret).toString().substring(0, 32);
+  }
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('DECIDARR_SECRET is required in production');
+  }
+  return getLegacyMasterKey();
+};
+
+export function getLegacySettingsMasterKey(): string {
+  return getLegacyMasterKey();
+}
+
+export function getCurrentSettingsMasterKey(): string {
+  return getMasterKey();
+}
+
+const settingsSchema = new mongoose.Schema<ISettings>(
+  {
+    _id: { type: String, default: 'app-settings' },
+
+    // Auto-generated security keys (encrypted)
+    jwtSecret: { type: String, required: true },
+    encryptionKey: { type: String, required: true },
+
+    // Plex configuration (encrypted)
+    plexToken: { type: String },
+    plexServerUrl: { type: String },
+    plexUsername: { type: String },
+    plexMachineId: { type: String },
+
+    // TMDB configuration (encrypted)
+    tmdbApiKey: { type: String },
+
+    // Tautulli configuration
+    tautulliUrl: { type: String },
+    tautulliApiKey: { type: String },
+    tautulliEnabled: { type: Boolean, default: false },
+    tautulliSyncIntervalMinutes: { type: Number, default: 30 },
+    tautulliLastSync: { type: Date },
+
+    // Overseerr configuration
+    overseerrUrl: { type: String },
+    overseerrApiKey: { type: String },
+    overseerrFilterEnabled: { type: Boolean, default: false },
+    overseerrLastSyncAt: { type: Date },
+    overseerrLastSyncOk: { type: Boolean, default: true },
+    overseerrLastSyncError: { type: String },
+
+    // Sync settings
+    syncFrequencyHours: { type: Number, default: 24 },
+
+    // UI Preferences
+    uiPreferences: {
+      theme: { type: String, enum: ['dark', 'light', 'vegas', 'macao', 'poker'], default: 'dark' },
+      defaultMediaType: { type: String, enum: ['movie', 'show'], default: 'movie' },
+      tvSelectionMode: { type: String, enum: ['show', 'episode'], default: 'show' },
+      animationStyle: {
+        type: String,
+        enum: ['slots', 'roulette', 'wheel', 'plinko', 'random'],
+        default: 'slots',
+      },
+      animationSpeed: {
+        type: String,
+        enum: ['fast', 'normal', 'dramatic'],
+        default: 'normal',
+      },
+    },
+
+    spinHistoryPreferences: {
+      enabled: { type: Boolean, default: true },
+      retentionLimit: { type: Number, default: 50, min: 1, max: 500 },
+      storeFilterSnapshot: { type: Boolean, default: true },
+    },
+
+    adminUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    approvedPlexUserIds: { type: [String], default: [] },
+
+    // Setup status
+    setupComplete: { type: Boolean, default: false },
+  },
+  { timestamps: true }
+);
+
+// Generate secure random keys
+const generateSecureKey = (length: number = 64): string => {
+  return crypto.randomBytes(length).toString('hex');
+};
+
+// Encrypt a value with the master key
+const encryptWithMaster = (value: string): string => {
+  const masterKey = getMasterKey();
+  return CryptoJS.AES.encrypt(value, masterKey).toString();
+};
+
+// Decrypt a value with the master key
+const decryptWithMasterKey = (encrypted: string, masterKey: string): string => {
+  const bytes = CryptoJS.AES.decrypt(encrypted, masterKey);
+  return bytes.toString(CryptoJS.enc.Utf8);
+};
+
+const decryptWithMaster = (encrypted: string): string => {
+  const currentKey = getMasterKey();
+  const decrypted = decryptWithMasterKey(encrypted, currentKey);
+  if (decrypted) return decrypted;
+
+  if (process.env.DECIDARR_SECRET?.trim()) {
+    return decryptWithMasterKey(encrypted, getLegacyMasterKey());
+  }
+
+  return decrypted;
+};
+
+// Methods to get decrypted values
+settingsSchema.methods.getDecryptedPlexToken = function(): string | null {
+  if (!this.plexToken) return null;
+  try {
+    const encryptionKey = this.getEncryptionKey();
+    const bytes = CryptoJS.AES.decrypt(this.plexToken, encryptionKey);
+    return bytes.toString(CryptoJS.enc.Utf8);
+  } catch {
+    return null;
+  }
+};
+
+settingsSchema.methods.getDecryptedTmdbKey = function(): string | null {
+  if (!this.tmdbApiKey) return null;
+  try {
+    const encryptionKey = this.getEncryptionKey();
+    const bytes = CryptoJS.AES.decrypt(this.tmdbApiKey, encryptionKey);
+    return bytes.toString(CryptoJS.enc.Utf8);
+  } catch {
+    return null;
+  }
+};
+
+settingsSchema.methods.getDecryptedTautulliKey = function(): string | null {
+  if (!this.tautulliApiKey) return null;
+  try {
+    const encryptionKey = this.getEncryptionKey();
+    const bytes = CryptoJS.AES.decrypt(this.tautulliApiKey, encryptionKey);
+    return bytes.toString(CryptoJS.enc.Utf8);
+  } catch {
+    return null;
+  }
+};
+
+settingsSchema.methods.getDecryptedOverseerrKey = function(): string | null {
+  if (!this.overseerrApiKey) return null;
+  try {
+    const encryptionKey = this.getEncryptionKey();
+    const bytes = CryptoJS.AES.decrypt(this.overseerrApiKey, encryptionKey);
+    return bytes.toString(CryptoJS.enc.Utf8);
+  } catch {
+    return null;
+  }
+};
+
+settingsSchema.methods.getJwtSecret = function(): string {
+  const secret = decryptWithMaster(this.jwtSecret);
+  if (!secret) throw new Error('JWT secret could not be decrypted');
+  return secret;
+};
+
+settingsSchema.methods.getEncryptionKey = function(): string {
+  const key = decryptWithMaster(this.encryptionKey);
+  if (!key) throw new Error('Encryption key could not be decrypted');
+  return key;
+};
+
+// Pre-save hook to encrypt sensitive fields
+settingsSchema.pre('save', function(next) {
+  const encryptionKey = this.getEncryptionKey();
+
+  // Encrypt plex token if modified and not already encrypted
+  if (this.isModified('plexToken') && this.plexToken && !this.plexToken.startsWith('U2F')) {
+    this.plexToken = CryptoJS.AES.encrypt(this.plexToken, encryptionKey).toString();
+  }
+
+  // Encrypt TMDB key if modified and not already encrypted
+  if (this.isModified('tmdbApiKey') && this.tmdbApiKey && !this.tmdbApiKey.startsWith('U2F')) {
+    this.tmdbApiKey = CryptoJS.AES.encrypt(this.tmdbApiKey, encryptionKey).toString();
+  }
+
+  // Encrypt Tautulli API key if modified and not already encrypted
+  if (this.isModified('tautulliApiKey') && this.tautulliApiKey && !this.tautulliApiKey.startsWith('U2F')) {
+    this.tautulliApiKey = CryptoJS.AES.encrypt(this.tautulliApiKey, encryptionKey).toString();
+  }
+
+  // Encrypt Overseerr API key if modified and not already encrypted
+  if (this.isModified('overseerrApiKey') && this.overseerrApiKey && !this.overseerrApiKey.startsWith('U2F')) {
+    this.overseerrApiKey = CryptoJS.AES.encrypt(this.overseerrApiKey, encryptionKey).toString();
+  }
+
+  next();
+});
+
+export const Settings: Model<ISettings> =
+  mongoose.models.Settings || mongoose.model<ISettings>('Settings', settingsSchema);
+
+// Helper function to get or create settings (singleton pattern)
+export async function getOrCreateSettings(): Promise<ISettings> {
+  let settings = await Settings.findById('app-settings');
+
+  if (!settings) {
+    // Generate new secure keys
+    const jwtSecret = generateSecureKey(64);
+    const encryptionKey = generateSecureKey(32);
+
+    try {
+      settings = await Settings.create({
+        _id: 'app-settings',
+        jwtSecret: encryptWithMaster(jwtSecret),
+        encryptionKey: encryptWithMaster(encryptionKey),
+        syncFrequencyHours: 24,
+        uiPreferences: {
+          theme: 'dark',
+          defaultMediaType: 'movie',
+          tvSelectionMode: 'show',
+          animationStyle: 'slots',
+          animationSpeed: 'normal',
+        },
+        spinHistoryPreferences: {
+          enabled: true,
+          retentionLimit: 50,
+          storeFilterSnapshot: true,
+        },
+        approvedPlexUserIds: [],
+        setupComplete: false,
+      });
+    } catch (err) {
+      const duplicate =
+        (err as { code?: number })?.code === 11000 ||
+        String((err as Error).message).includes('E11000');
+      if (duplicate) {
+        settings = await Settings.findById('app-settings');
+        if (!settings) throw err;
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  if (!settings.approvedPlexUserIds) {
+    settings.approvedPlexUserIds = [];
+  }
+
+  return settings;
+}
+
+// Helper to check if app is configured
+export async function isAppConfigured(): Promise<boolean> {
+  try {
+    const settings = await Settings.findById('app-settings');
+    return settings?.setupComplete ?? false;
+  } catch {
+    return false;
+  }
+}
