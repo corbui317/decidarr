@@ -101,10 +101,14 @@ export const getLegacyMasterKey = (): string => {
   return CryptoJS.SHA256('decidarr-master-' + mongoUri).toString().substring(0, 32);
 };
 
+/** Derives the master key that protects jwtSecret and encryptionKey from a DECIDARR_SECRET value. */
+export const masterKeyFromSecret = (secret: string): string =>
+  CryptoJS.SHA256('decidarr-secret-' + secret).toString().substring(0, 32);
+
 export const getMasterKey = (): string => {
   const secret = process.env.DECIDARR_SECRET?.trim();
   if (secret) {
-    return CryptoJS.SHA256('decidarr-secret-' + secret).toString().substring(0, 32);
+    return masterKeyFromSecret(secret);
   }
   if (process.env.NODE_ENV === 'production') {
     throw new Error('DECIDARR_SECRET is required in production');

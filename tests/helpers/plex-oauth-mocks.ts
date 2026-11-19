@@ -14,7 +14,7 @@ const E2E_MOCK_PIN_ID = 424242;
 const E2E_MOCK_PIN_CODE = 'e2e-mock-pin-code';
 const E2E_MOCK_AUTH_TOKEN = 'e2e-test-plex-token-valid';
 
-const E2E_MOCK_OAUTH_USER: PlexOAuthUser = {
+export const E2E_MOCK_OAUTH_USER: PlexOAuthUser = {
   id: 'e2e-user',
   username: 'e2euser',
   email: 'e2e@example.com',

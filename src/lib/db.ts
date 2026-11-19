@@ -53,3 +53,12 @@ export async function connectDB() {
 
   return cached.conn;
 }
+
+/**
+ * @internal Test-only: forget the cached connection so the next connectDB()
+ * takes the boot path again (connect, then run migrations), as after a restart.
+ */
+export function forgetConnectionForTests(): void {
+  cached.conn = null;
+  cached.promise = null;
+}

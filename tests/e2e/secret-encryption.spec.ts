@@ -1,5 +1,22 @@
 import { test, expect } from '@playwright/test';
+import mongoose from 'mongoose';
 import { resetE2eDatabase, completeSetupWizard } from './helpers/e2e-test-helpers';
+import { E2E_DECIDARR_SECRET, E2E_MONGO_URI, E2E_RESET_SECRET } from './e2e-env';
+import {
+  LEGACY_ADMIN_PLEX_USER_ID,
+  LEGACY_PLAINTEXT,
+  type StoredSettings,
+} from '../helpers/legacy-install-seed';
+import { decryptVersioned, masterKeyFromSecret } from '@/lib/models/Settings';
+
+async function withE2eDb(fn: (db: mongoose.mongo.Db) => Promise<void>): Promise<void> {
+  const client = await new mongoose.mongo.MongoClient(E2E_MONGO_URI).connect();
+  try {
+    await fn(client.db());
+  } finally {
+    await client.close();
+  }
+}
 
 /**
  * E2E tests for DECIDARR_SECRET encryption and migration.
@@ -62,115 +79,50 @@ test.describe('DECIDARR_SECRET encryption', () => {
   test('legacy-encrypted install migrates and allows login and spin', async ({ page, request }) => {
     test.setTimeout(90000);
 
-    // This test verifies the critical migration scenario:
-    // An install with legacy CryptoJS-encrypted settings is restarted with
-    // DECIDARR_SECRET set. Migration must happen transparently, and the
-    // app must remain functional after migration.
+    // An install from before DECIDARR_SECRET (CryptoJS, master key from MONGODB_URI)
+    // is restarted with DECIDARR_SECRET set. The seed route writes that legacy data
+    // and then boots it the way the restart would, which runs the migration.
+    const seed = await request.post('/api/test/seed-legacy', {
+      headers: { 'X-E2E-Reset-Secret': E2E_RESET_SECRET },
+    });
+    expect(seed.ok(), await seed.text()).toBeTruthy();
 
-    // Step 1: Reset database and migration state
-    await request.post('/api/test/reset', {
-      headers: {
-        'X-E2E-Reset-Secret': process.env.E2E_TEST_RESET_SECRET || 'decidarr-e2e-reset',
-        'X-E2E-Reset-Migration': 'true',
-      },
+    // Assert the migration on disk before signing in: login re-encrypts the
+    // admin's Plex token with the fresh OAuth token.
+    await withE2eDb(async (db) => {
+      const settings = await db.collection<StoredSettings>('settings').findOne({ _id: 'app-settings' });
+      expect(settings?.secretsMigrationVersion).toBe(2);
+      expect(settings?.jwtSecret).toMatch(/^v2:/);
+      expect(settings?.encryptionKey).toMatch(/^v2:/);
+      expect(settings?.tmdbApiKey).toMatch(/^v2:/);
+
+      const encryptionKey = decryptVersioned(settings!.encryptionKey, masterKeyFromSecret(E2E_DECIDARR_SECRET));
+      expect(decryptVersioned(settings!.tmdbApiKey!, encryptionKey)).toBe(LEGACY_PLAINTEXT.tmdbApiKey);
+
+      const admin = await db.collection('users').findOne({ plexUserId: LEGACY_ADMIN_PLEX_USER_ID });
+      expect(admin?.plexToken).toMatch(/^v2:/);
+      expect(decryptVersioned(admin!.plexToken, encryptionKey)).toBe(LEGACY_PLAINTEXT.plexToken);
     });
 
-    // Step 2: Seed legacy-encrypted settings via test endpoint (uses server's database connection)
-    const seedResponse = await request.post('/api/test/seed-legacy', {
-      headers: {
-        'X-E2E-Reset-Secret': process.env.E2E_TEST_RESET_SECRET || 'decidarr-e2e-reset',
-      },
-    });
-    expect(seedResponse.ok()).toBeTruthy();
-
-    // Step 3: Clear any stale cookies/session before navigating
-    await page.context().clearCookies();
-
-    // Step 4: Navigate to trigger migration on next database connection
+    // setupComplete is true, so the app offers sign-in, not the setup wizard.
     await page.goto('/');
-    await page.waitForLoadState('networkidle', { timeout: 15000 });
+    const signIn = page.getByRole('button', { name: /Sign in with Plex/i });
+    await expect(signIn).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('Welcome to Decidarr')).toHaveCount(0);
 
-    // Step 5: Should see login screen (setupComplete=true, so no setup wizard)
-    await expect(page.getByRole('button', { name: /Sign in with Plex/i })).toBeVisible({ timeout: 15000 });
-
-    // Step 6: Sign in through mock OAuth flow as the legacy user
-    await page.getByRole('button', { name: /Sign in with Plex/i }).click();
-
-    // Step 7: Should reach dashboard after login
-    await expect(page.getByText(/DECIDARR|SPIN/i).first()).toBeVisible({ timeout: 15000 });
-
-    // Step 8: Spin once to verify app is functional
-    const spinButton = page.getByRole('button', { name: /spin/i }).first();
-    await expect(spinButton).toBeVisible({ timeout: 5000 });
-    await expect(spinButton).toBeEnabled({ timeout: 5000 });
+    // Sign in through the mock OAuth flow as the seeded legacy admin and spin once.
+    await signIn.click();
+    await page.waitForURL(/\/dashboard/, { timeout: 30000 });
+    const spinButton = page.getByRole('button', { name: 'Spin for a random pick' });
+    await expect(spinButton).toBeEnabled({ timeout: 15000 });
     await spinButton.click();
+    await expect(page.getByText(/Legacy Movie (One|Two)/).first()).toBeVisible({ timeout: 20000 });
 
-    // Wait for spin animation to complete
-    await page.waitForTimeout(2000);
-
-    // Step 9: Connect to Mongo and assert migration results
-    const mongoose = await import('mongoose');
-    const { E2E_MONGO_URI } = await import('./helpers/legacy-settings-seed');
-    await mongoose.default.connect(E2E_MONGO_URI);
-
-    // Assert settings migration
-    const settings = await mongoose.default.connection.db?.collection('settings').findOne({ _id: 'app-settings' } as any);
-    expect(settings?.secretsMigrationVersion).toBe(2);
-    expect(settings?.jwtSecret).toMatch(/^v2:/);
-    expect(settings?.encryptionKey).toMatch(/^v2:/);
-
-    // Decrypt and verify TMDB API key
-    // We need to decrypt using the same logic as the server
-    const CryptoJS = await import('crypto-js');
-    const { getMasterKey } = await import('./helpers/legacy-settings-seed');
-    const { createHash } = await import('crypto');
-
-    // Derive AES-256-GCM key from master key
-    const masterKey = getMasterKey();
-    const keyBuffer = createHash('sha256').update(masterKey).digest();
-
-    // Parse v2: format
-    const tmdbParts = settings?.tmdbApiKey?.split(':');
-    if (tmdbParts?.[0] !== 'v2' || tmdbParts.length !== 4) {
-      throw new Error('Invalid v2 format');
-    }
-
-    const [_, ivB64, tagB64, cipherB64] = tmdbParts;
-    const iv = Buffer.from(ivB64, 'base64');
-    const authTag = Buffer.from(tagB64, 'base64');
-    const ciphertext = Buffer.from(cipherB64, 'base64');
-
-    // Decrypt
-    const crypto = await import('crypto');
-    const decipher = crypto.createDecipheriv('aes-256-gcm', keyBuffer, iv);
-    decipher.setAuthTag(authTag);
-    const decryptedTmdb = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
-    expect(decryptedTmdb).toBe('test-tmdb-key-legacy');
-
-    // Assert user token migration
-    const user = await mongoose.default.connection.db?.collection('users').findOne({ plexUserId: 'legacy-plex-user-1' });
-    expect(user?.plexToken).toMatch(/^v2:/);
-
-    // Decrypt and verify user Plex token
-    const tokenParts = user?.plexToken?.split(':');
-    if (tokenParts?.[0] !== 'v2' || tokenParts.length !== 4) {
-      throw new Error('Invalid v2 format for user token');
-    }
-
-    const [_v, ivB64Token, tagB64Token, cipherB64Token] = tokenParts;
-    const ivToken = Buffer.from(ivB64Token, 'base64');
-    const authTagToken = Buffer.from(tagB64Token, 'base64');
-    const ciphertextToken = Buffer.from(cipherB64Token, 'base64');
-
-    const decipherToken = crypto.createDecipheriv('aes-256-gcm', keyBuffer, ivToken);
-    decipherToken.setAuthTag(authTagToken);
-    const decryptedToken = Buffer.concat([decipherToken.update(ciphertextToken), decipherToken.final()]).toString('utf8');
-    expect(decryptedToken).toBe('test-plex-token-legacy');
-
-    await mongoose.default.disconnect();
-
-    // This confirms: legacy settings migrated to AES-256-GCM,
-    // all encrypted values have v2: prefix, decryption works correctly,
-    // and app is fully functional (login, dashboard, spin all work)
+    // The legacy admin kept its account and admin rights; no second user was created.
+    await withE2eDb(async (db) => {
+      const users = await db.collection('users').find({}).toArray();
+      expect(users).toHaveLength(1);
+      expect(users[0]).toMatchObject({ plexUserId: LEGACY_ADMIN_PLEX_USER_ID, isAdmin: true });
+    });
   });
 });

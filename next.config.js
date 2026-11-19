@@ -25,6 +25,7 @@ const nextConfig = {
         ...config.resolve.alias,
         [path.resolve(__dirname, 'tests/helpers/plex-mock-service.ts')]: false,
         [path.resolve(__dirname, 'tests/helpers/plex-oauth-mocks.ts')]: false,
+        [path.resolve(__dirname, 'tests/helpers/legacy-install-seed.ts')]: false,
       };
     }
     return config;
