@@ -97,10 +97,14 @@ export default function IntegrationsTab() {
         </div>
       )}
 
-      <div className="flex gap-2 mb-6 border-b border-decidarr-border">
+      <div className="flex gap-2 mb-6 border-b border-decidarr-border" role="tablist" aria-label="Integration types">
         {(['plex', 'tmdb', 'tautulli', 'overseerr'] as const).map((tab) => (
           <button
             key={tab}
+            id={`${tab}-tab`}
+            role="tab"
+            aria-selected={subTab === tab}
+            aria-controls={`${tab}-panel`}
             onClick={() => {
               setSubTab(tab);
               clearMessages();
@@ -117,35 +121,42 @@ export default function IntegrationsTab() {
       </div>
 
       {subTab === 'plex' && (
-        <PlexIntegration
-          settings={settings}
-          onError={handleError}
-          onSuccess={handleSuccess}
-          onClearMessages={clearMessages}
-        />
+        <div role="tabpanel" id="plex-panel" aria-labelledby="plex-tab">
+          <PlexIntegration
+            settings={settings}
+            onError={handleError}
+            onSuccess={handleSuccess}
+            onClearMessages={clearMessages}
+          />
+        </div>
       )}
       {subTab === 'tmdb' && (
-        <TmdbIntegration
-          settings={settings}
-          onError={handleError}
-          onSuccess={handleSuccess}
-          onClearMessages={clearMessages}
-        />
+        <div role="tabpanel" id="tmdb-panel" aria-labelledby="tmdb-tab">
+          <TmdbIntegration
+            settings={settings}
+            onError={handleError}
+            onSuccess={handleSuccess}
+            onClearMessages={clearMessages}
+          />
+        </div>
       )}
       {subTab === 'tautulli' && (
-        <TautulliIntegration
-          settings={settings}
-          onError={handleError}
-          onSuccess={handleSuccess}
-          onClearMessages={clearMessages}
-        />
+        <div role="tabpanel" id="tautulli-panel" aria-labelledby="tautulli-tab">
+          <TautulliIntegration
+            settings={settings}
+            onError={handleError}
+            onSuccess={handleSuccess}
+            onClearMessages={clearMessages}
+          />
+        </div>
       )}
       {subTab === 'overseerr' && (
-        <OverseerrIntegration
-          settings={settings}
-          onError={handleError}
-          onSuccess={handleSuccess}
-          onClearMessages={clearMessages}
+        <div role="tabpanel" id="overseerr-panel" aria-labelledby="overseerr-tab">
+          <OverseerrIntegration
+            settings={settings}
+            onError={handleError}
+            onSuccess={handleSuccess}
+            onClearMessages={clearMessages}
         />
       )}
     </div>

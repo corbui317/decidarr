@@ -35,6 +35,7 @@ export default defineConfig({
       DECIDARR_ALLOW_PRIVATE_URLS: 'true',
       E2E_TEST_RESET_SECRET: e2eResetSecret,
       DECIDARR_SECRET: 'e2e-test-secret-key-12345',
+      MONGODB_URI: process.env.E2E_MONGODB_URI || defaultMongoUri,
     },
   },
 });
