@@ -40,42 +40,41 @@ export async function POST(request: Request) {
     // Create legacy-encrypted data
     const legacyData = createLegacyEncryptedData(legacyMasterKey);
 
+    // Delete any existing settings to start fresh
+    await mongoose.connection.db?.collection('settings').deleteMany({});
+    await mongoose.connection.db?.collection('users').deleteMany({});
+    await mongoose.connection.db?.collection('librarycaches').deleteMany({});
+
     // Create settings with legacy encryption (pre-migration format)
-    const settings = await mongoose.connection.db?.collection('settings').findOneAndUpdate(
-      { _id: 'app-settings' },
-      {
-        $set: {
-          _id: 'app-settings',
-          jwtSecret: legacyData.jwtSecret,
-          encryptionKey: legacyData.encryptionKey,
-          plexToken: legacyData.plexToken,
-          plexServerUrl: 'http://192.168.1.10:32400',
-          plexUsername: 'legacyuser',
-          plexMachineId: 'legacy-machine-1',
-          tmdbApiKey: legacyData.tmdbApiKey,
-          tautulliEnabled: false,
-          overseerrFilterEnabled: false,
-          syncFrequencyHours: 24,
-          setupComplete: true, // Setup already complete so we can test login and spin
-          approvedPlexUserIds: [],
-          uiPreferences: {
-            theme: 'dark',
-            defaultMediaType: 'movie',
-            tvSelectionMode: 'show',
-            animationStyle: 'slots',
-            animationSpeed: 'normal',
-          },
-          spinHistoryPreferences: {
-            enabled: true,
-            retentionLimit: 50,
-            storeFilterSnapshot: true,
-          },
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
+    await mongoose.connection.db?.collection('settings').insertOne({
+      _id: 'app-settings',
+      jwtSecret: legacyData.jwtSecret,
+      encryptionKey: legacyData.encryptionKey,
+      plexToken: legacyData.plexToken,
+      plexServerUrl: 'http://192.168.1.10:32400',
+      plexUsername: 'legacyuser',
+      plexMachineId: 'legacy-machine-1',
+      tmdbApiKey: legacyData.tmdbApiKey,
+      tautulliEnabled: false,
+      overseerrFilterEnabled: false,
+      syncFrequencyHours: 24,
+      setupComplete: true, // Setup already complete so we can test login and spin
+      approvedPlexUserIds: [],
+      uiPreferences: {
+        theme: 'dark',
+        defaultMediaType: 'movie',
+        tvSelectionMode: 'show',
+        animationStyle: 'slots',
+        animationSpeed: 'normal',
       },
-      { upsert: true, returnDocument: 'after' }
-    );
+      spinHistoryPreferences: {
+        enabled: true,
+        retentionLimit: 50,
+        storeFilterSnapshot: true,
+      },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
 
     // Create a legacy admin user
     const userId = new mongoose.Types.ObjectId();
