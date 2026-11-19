@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { runMigrations } from './migrate';
 import { createLogger } from './logger';
+import { assertTestOnly } from './test-only';
 
 const logger = createLogger('DB');
 
@@ -59,6 +60,7 @@ export async function connectDB() {
  * takes the boot path again (connect, then run migrations), as after a restart.
  */
 export function forgetConnectionForTests(): void {
+  assertTestOnly('forgetConnectionForTests');
   cached.conn = null;
   cached.promise = null;
 }

@@ -18,6 +18,7 @@ import {
   decryptUserData,
 } from './models/Settings';
 import { createLogger } from './logger';
+import { assertTestOnly } from './test-only';
 
 const logger = createLogger('Migration');
 
@@ -362,5 +363,6 @@ export async function runMigrations(): Promise<void> {
 
 /** @internal Test-only reset for migration state */
 export function resetMigrationStateForTests(): void {
+  assertTestOnly('resetMigrationStateForTests');
   migrationRan = false;
 }

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { assertTestOnly } from '@/lib/test-only';
 
 interface RateLimitEntry {
   count: number;
@@ -100,6 +101,8 @@ export function enforceRateLimit(
   return null;
 }
 
+/** @internal Test-only: forget every rate-limit bucket. */
 export function clearRateLimitStore(): void {
+  assertTestOnly('clearRateLimitStore');
   store.clear();
 }
