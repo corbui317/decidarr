@@ -104,94 +104,86 @@ describe('AuthContext', () => {
   });
 
   describe('Silent session refresh', () => {
-    it('sets up refresh interval before session expiry when user is authenticated', async () => {
-      const setTimeoutSpy = vi.spyOn(global, 'setTimeout');
+    const HOUR = 60 * 60 * 1000;
+    const DAY = 24 * HOUR;
+    const NOW = new Date('2026-01-10T12:00:00Z').getTime();
 
+    beforeEach(() => {
+      // shouldAdvanceTime lets Testing Library's own short timeouts run, while
+      // the test still jumps days ahead explicitly.
+      vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+      vi.setSystemTime(NOW);
       vi.mocked(settingsApi.getStatus).mockResolvedValue({
         setupComplete: true,
         hasPlexToken: true,
         hasPlexServer: true,
         hasTmdbKey: false,
       });
-      vi.mocked(authApi.getCurrentUser).mockResolvedValue({
-        user: {
-          id: 'user-1',
-          username: 'testuser',
-          serverUrl: 'http://192.168.1.10:32400',
-          isAdmin: false,
-        },
-        preferences: { theme: 'dark', defaultMediaType: 'movie', tvSelectionMode: 'show' },
-        expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
-      });
+      vi.mocked(authApi.refreshSession).mockResolvedValue({ success: true, expiresAt: NOW + 7 * DAY });
+    });
 
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    });
+
+    async function renderSignedIn(expiresAt: number) {
+      vi.mocked(authApi.getCurrentUser).mockResolvedValue({
+        user: { id: 'user-1', username: 'testuser', serverUrl: 'http://192.168.1.10:32400', isAdmin: false },
+        preferences: { theme: 'dark', defaultMediaType: 'movie', tvSelectionMode: 'show' },
+        expiresAt,
+      });
       render(
         <AuthProvider>
           <AuthProbe />
         </AuthProvider>
       );
+      await waitFor(() => expect(screen.getByTestId('auth')).toHaveTextContent('yes'));
+    }
 
-      await waitFor(() => {
-        expect(screen.getByTestId('auth')).toHaveTextContent('yes');
-      });
-
-      const REFRESH_BEFORE_EXPIRY_MS = 6 * 24 * 60 * 60 * 1000;
-      // Check that setTimeout was called with roughly the expected interval (within 1 second)
-      const refreshCalls = setTimeoutSpy.mock.calls.filter(
-        call => typeof call[1] === 'number' && Math.abs(call[1] - REFRESH_BEFORE_EXPIRY_MS) < 1000
-      );
-      expect(refreshCalls.length).toBeGreaterThan(0);
-
-      setTimeoutSpy.mockRestore();
+    it('refreshes at once when the session loads with less than 24h left', async () => {
+      await renderSignedIn(NOW + 2 * HOUR);
+      await waitFor(() => expect(authApi.refreshSession).toHaveBeenCalledTimes(1));
     });
 
-    it('clears user state when refresh fails, sending user to login', async () => {
-      vi.mocked(settingsApi.getStatus).mockResolvedValue({
-        setupComplete: true,
-        hasPlexToken: true,
-        hasPlexServer: true,
-        hasTmdbKey: false,
-      });
-      vi.mocked(authApi.getCurrentUser).mockResolvedValue({
-        user: {
-          id: 'user-1',
-          username: 'testuser',
-          serverUrl: 'http://192.168.1.10:32400',
-          isAdmin: false,
-        },
-        preferences: { theme: 'dark', defaultMediaType: 'movie', tvSelectionMode: 'show' },
-        expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
-      });
+    it('schedules the refresh for 24h before expiry', async () => {
+      await renderSignedIn(NOW + 7 * DAY);
 
-      let refreshCallback: (() => Promise<void>) | null = null;
-      const originalSetTimeout = global.setTimeout;
-      vi.spyOn(global, 'setTimeout').mockImplementation((cb, delay) => {
-        // Only capture the callback if it's a long timeout (> 1 hour)
-        if (typeof delay === 'number' && delay > 60 * 60 * 1000) {
-          refreshCallback = cb as () => Promise<void>;
-        }
-        return originalSetTimeout(cb as TimerHandler, delay) as any;
-      });
+      await vi.advanceTimersByTimeAsync(6 * DAY - HOUR);
+      expect(authApi.refreshSession).not.toHaveBeenCalled();
 
+      await vi.advanceTimersByTimeAsync(HOUR);
+      expect(authApi.refreshSession).toHaveBeenCalledTimes(1);
+    });
+
+    it('refreshes when the tab becomes visible after the 24h threshold passed', async () => {
+      await renderSignedIn(NOW + 7 * DAY);
+
+      // The tab slept: the clock moved past expiry-24h but the timer never ran.
+      vi.setSystemTime(NOW + 6 * DAY + HOUR);
+      vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      await waitFor(() => expect(authApi.refreshSession).toHaveBeenCalledTimes(1));
+    });
+
+    it('does not refresh on a visibility return well before the threshold', async () => {
+      await renderSignedIn(NOW + 7 * DAY);
+
+      vi.setSystemTime(NOW + DAY);
+      vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      expect(authApi.refreshSession).not.toHaveBeenCalled();
+    });
+
+    it('signs the user out when the refresh fails', async () => {
       vi.mocked(authApi.refreshSession).mockRejectedValue(new Error('Session expired'));
+      await renderSignedIn(NOW + 7 * DAY);
 
-      render(
-        <AuthProvider>
-          <AuthProbe />
-        </AuthProvider>
-      );
+      await vi.advanceTimersByTimeAsync(6 * DAY);
 
-      await waitFor(() => {
-        expect(screen.getByTestId('auth')).toHaveTextContent('yes');
-      });
-
-      expect(refreshCallback).toBeTruthy();
-
-      await refreshCallback!();
-
-      await waitFor(() => {
-        expect(screen.getByTestId('auth')).toHaveTextContent('no');
-      });
+      await waitFor(() => expect(screen.getByTestId('auth')).toHaveTextContent('no'));
     });
-
   });
 });
