@@ -180,8 +180,8 @@ describe('Secret migration and encryption', () => {
 
       await connectDB();
 
-      // Create settings manually with a corrupted encrypted value
-      await Settings.create({
+      // Create settings manually with a corrupted encrypted value, bypassing the pre-save hook
+      await Settings.collection.insertOne({
         _id: 'app-settings',
         jwtSecret: 'corrupted-invalid-base64-!!!',
         encryptionKey: 'also-corrupted-!!!',

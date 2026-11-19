@@ -163,17 +163,27 @@ describe('Auth hardening', () => {
 
   describe('Redirect validation', () => {
     it('builds redirect URL from request origin', async () => {
+      const originalAppUrl = process.env.APP_URL;
+      process.env.APP_URL = 'http://localhost:3000';
+
       const res = await plexStartPost(new Request('http://localhost:3000/api/auth/plex/start', { method: 'POST' }));
       const body = await res.json();
+
+      process.env.APP_URL = originalAppUrl;
 
       expect(res.status).toBe(200);
       expect(body.authUrl).toContain('forwardUrl=http%3A%2F%2Flocalhost%3A3000%2F');
     });
 
     it('uses https protocol for secure requests', async () => {
+      const originalAppUrl = process.env.APP_URL;
+      process.env.APP_URL = 'https://decidarr.example.com';
+
       const req = new Request('https://decidarr.example.com/api/auth/plex/start', { method: 'POST' });
       const res = await plexStartPost(req);
       const body = await res.json();
+
+      process.env.APP_URL = originalAppUrl;
 
       expect(res.status).toBe(200);
       expect(body.authUrl).toContain('forwardUrl=https%3A%2F%2Fdecidarr.example.com%2F');

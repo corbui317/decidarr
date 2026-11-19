@@ -22,20 +22,21 @@ if (typeof window !== 'undefined') {
   });
 }
 
+const testCookieStore = new Map<string, string>();
+
 vi.mock('next/headers', () => ({
-  cookies: vi.fn(async () => {
-    const store = new Map<string, string>();
-    return {
-      get: (name: string) => {
-        const value = store.get(name);
-        return value !== undefined ? { name, value } : undefined;
-      },
-      set: (name: string, value: string) => {
-        store.set(name, value);
-      },
-      delete: (name: string) => {
-        store.delete(name);
-      },
-    };
-  }),
+  cookies: vi.fn(async () => ({
+    get: (name: string) => {
+      const value = testCookieStore.get(name);
+      return value !== undefined ? { name, value } : undefined;
+    },
+    set: (name: string, value: string) => {
+      testCookieStore.set(name, value);
+    },
+    delete: (name: string) => {
+      testCookieStore.delete(name);
+    },
+  })),
 }));
+
+export { testCookieStore };

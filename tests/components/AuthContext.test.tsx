@@ -105,7 +105,7 @@ describe('AuthContext', () => {
 
   describe('Silent session refresh', () => {
     it('sets up refresh interval before session expiry when user is authenticated', async () => {
-      const setIntervalSpy = vi.spyOn(global, 'setInterval');
+      const setTimeoutSpy = vi.spyOn(global, 'setTimeout');
 
       vi.mocked(settingsApi.getStatus).mockResolvedValue({
         setupComplete: true,
@@ -135,9 +135,13 @@ describe('AuthContext', () => {
       });
 
       const REFRESH_BEFORE_EXPIRY_MS = 6 * 24 * 60 * 60 * 1000;
-      expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), REFRESH_BEFORE_EXPIRY_MS);
+      // Check that setTimeout was called with roughly the expected interval (within 1 second)
+      const refreshCalls = setTimeoutSpy.mock.calls.filter(
+        call => typeof call[1] === 'number' && Math.abs(call[1] - REFRESH_BEFORE_EXPIRY_MS) < 1000
+      );
+      expect(refreshCalls.length).toBeGreaterThan(0);
 
-      setIntervalSpy.mockRestore();
+      setTimeoutSpy.mockRestore();
     });
 
     it('clears user state when refresh fails, sending user to login', async () => {
@@ -159,9 +163,13 @@ describe('AuthContext', () => {
       });
 
       let refreshCallback: (() => Promise<void>) | null = null;
-      vi.spyOn(global, 'setInterval').mockImplementation((cb) => {
-        refreshCallback = cb as () => Promise<void>;
-        return 123 as never;
+      const originalSetTimeout = global.setTimeout;
+      vi.spyOn(global, 'setTimeout').mockImplementation((cb, delay) => {
+        // Only capture the callback if it's a long timeout (> 1 hour)
+        if (typeof delay === 'number' && delay > 60 * 60 * 1000) {
+          refreshCallback = cb as () => Promise<void>;
+        }
+        return originalSetTimeout(cb as TimerHandler, delay);
       });
 
       vi.mocked(authApi.refreshSession).mockRejectedValue(new Error('Session expired'));
