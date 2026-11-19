@@ -15,7 +15,7 @@ import { createLogger } from '@/lib/logger';
 import { applyFullFilters, fetchCollectionItemIds } from '@/lib/selection/filters';
 import { sanitizeLibraryItemForClient } from '@/lib/plex-image';
 import { parseSelectionRequestBody } from '@/lib/validation/selection';
-import type { SelectionResultResponse, SanitizedLibraryItem, TmdbMatch } from '@/types/api/selection';
+import type { SelectionResultResponse } from '@/types/api/selection';
 import type { SelectionError } from '@/types/shared';
 
 const logger = createLogger('API:Random');
@@ -122,13 +122,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const selectionWithTmdb = {
+    const selectionWithTmdb: SelectionResultResponse['selection'] = {
       ...sanitizeLibraryItemForClient({
         ...fullDetails,
+        type: fullDetails.type ?? mediaType,
         overseerrStatus: selectedItem.overseerrStatus ?? null,
-      } as Record<string, unknown>),
+      }),
       tmdb: tmdbData,
-    } as SanitizedLibraryItem & { tmdb?: TmdbMatch | null };
+    };
 
     const response: SelectionResultResponse = {
       selection: selectionWithTmdb,

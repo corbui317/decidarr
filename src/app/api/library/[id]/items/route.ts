@@ -25,6 +25,10 @@ const ENRICHMENT_FIELDS = [
   'overseerrSyncedAt',
 ] as const;
 
+function copyField<K extends keyof ILibraryItem>(target: ILibraryItem, source: ILibraryItem, field: K): void {
+  target[field] = source[field];
+}
+
 function mergeExistingEnrichment(
   items: ILibraryItem[],
   existingItems?: ILibraryItem[]
@@ -45,8 +49,7 @@ function mergeExistingEnrichment(
         (Array.isArray(freshValue) && freshValue.length === 0);
 
       if (freshMissing && existingValue != null) {
-        // Safe: ILibraryItem fields are dynamically assignable
-        (item as any)[field] = existingValue;
+        copyField(item, existing, field);
       }
     }
   }
@@ -96,7 +99,7 @@ export async function GET(
 
       if (cache && !cache.isExpired()) {
         return NextResponse.json({
-          items: cache.items.map((item) => sanitizeLibraryItemForClient(item as any)),
+          items: cache.toObject().items.map(sanitizeLibraryItemForClient),
           fromCache: true,
           lastSyncedAt: cache.lastSyncedAt,
         });
@@ -232,7 +235,7 @@ export async function GET(
     );
 
     return NextResponse.json({
-      items: items.map((item) => sanitizeLibraryItemForClient(item as any)),
+      items: items.map(sanitizeLibraryItemForClient),
       fromCache: false,
       lastSyncedAt: new Date(),
     });
