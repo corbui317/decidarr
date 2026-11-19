@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
-import { getOrCreateSettings } from '@/lib/models/Settings';
 import { requireAdmin, isAuthError, authErrorStatus, invalidateAccessibleLibraryCache } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
 import { assertSafeServiceUrl, allowPrivateServiceUrls } from '@/lib/security/service-url';

@@ -100,13 +100,11 @@ export interface PlexItem {
 }
 
 export class PlexService {
-  private token: string;
   private serverUrl: string | null;
   private machineId: string | null;
   private headers: Record<string, string>;
 
   constructor(token: string, serverUrl: string | null = null, machineId: string | null = null) {
-    this.token = token;
     this.serverUrl = serverUrl;
     this.machineId = machineId;
     this.headers = {

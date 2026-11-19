@@ -3,7 +3,6 @@ import { clearDatabase } from '../helpers/mongo';
 import { getOrCreateSettings, Settings } from '@/lib/models/Settings';
 import { runMigrations, resetMigrationStateForTests } from '@/lib/migrate';
 import { connectDB } from '@/lib/db';
-import CryptoJS from 'crypto-js';
 
 describe('Secret migration and encryption', () => {
   beforeEach(async () => {

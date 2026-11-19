@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireUser, isAuthError, authErrorStatus } from '@/lib/auth';
+import { requireUser, authErrorStatus } from '@/lib/auth';
 import { connectDB } from '@/lib/db';
 
 export async function GET() {

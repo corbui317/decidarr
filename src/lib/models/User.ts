@@ -1,5 +1,4 @@
 import mongoose, { Document, Model, Types } from 'mongoose';
-import CryptoJS from 'crypto-js';
 import { getOrCreateSettings, encryptUserData, decryptUserData } from './Settings';
 import type { AppTheme, MediaType, TvSelectionMode, AnimationStyle, AnimationSpeed } from '@/types/shared';
 import { APP_THEMES, ANIMATION_STYLES, ANIMATION_SPEEDS } from '@/types/shared';

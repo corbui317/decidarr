@@ -90,9 +90,7 @@ export interface ISettings extends Omit<Document, '_id'> {
   getEncryptionKey(): string;
 }
 
-// Encryption version constants
-const ENCRYPTION_VERSION_LEGACY = 1; // CryptoJS AES
-const ENCRYPTION_VERSION_CURRENT = 2; // AES-256-GCM
+// Secrets migration version: values are AES-256-GCM with a v2: prefix
 const CURRENT_MIGRATION_VERSION = 2;
 /** base64("Salted__"): every CryptoJS passphrase ciphertext starts with it. */
 const CRYPTOJS_SALTED_PREFIX = 'U2FsdGVkX1';

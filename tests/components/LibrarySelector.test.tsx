@@ -1,6 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import LibrarySelector from '@/components/LibrarySelector';
 
 vi.mock('@/lib/api', () => ({

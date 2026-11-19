@@ -5,7 +5,7 @@ import { selectionApi, spinHistoryApi, AnimationStyle } from '@/lib/api';
 import { resolveAnimationStyle, ResolvedAnimationStyle } from '@/components/animations';
 import { Filters } from '@/types/filters';
 import type { SelectionResultResponse } from '@/types/api/selection';
-import type { MediaType, MediaTypeWithEpisode, TvSelectionMode, SelectionError } from '@/types/shared';
+import type { MediaType, MediaTypeWithEpisode, TvSelectionMode } from '@/types/shared';
 
 export type SpinPhase = 'idle' | 'loading' | 'animating' | 'result';
 

@@ -10,7 +10,7 @@ import LoadingSpinner from '@/components/LoadingSpinner';
 
 export default function Home() {
   const { isAuthenticated, loading: authLoading, login, setAuthenticatedUser } = useAuth();
-  const { configured, loading: appLoading, checkStatus, setConfigured, status } = useApp();
+  const { configured, loading: appLoading, checkStatus } = useApp();
   const router = useRouter();
   const [showReconfigure, setShowReconfigure] = useState(false);
 

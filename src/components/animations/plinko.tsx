@@ -7,7 +7,6 @@ import { getAnimationDurationMs, getPosterUrl } from './utils';
 import type { SpinAnimationHandle } from './SpinAnimationHandle';
 
 const ROWS = 6;
-const COLS = 7;
 const SLOT_COUNT = 7;
 
 interface PlinkoAnimationProps {
