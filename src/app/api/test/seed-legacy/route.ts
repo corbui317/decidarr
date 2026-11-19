@@ -28,6 +28,10 @@ export async function POST(request: Request) {
   }
 
   try {
+    // Reset migration state BEFORE connecting to prevent migration from running
+    // during seeding (migration would fail because data is in legacy format)
+    resetMigrationStateForTests();
+
     await connectDB();
 
     // Get the legacy master key (without DECIDARR_SECRET)
@@ -122,7 +126,7 @@ export async function POST(request: Request) {
       updatedAt: new Date(),
     });
 
-    // Reset migration state so it runs on next connection
+    // Reset migration state again so it runs when the test navigates to the page
     resetMigrationStateForTests();
 
     return NextResponse.json({
