@@ -1,6 +1,5 @@
 import { test, expect } from '@playwright/test';
 import { resetE2eDatabase, completeSetupWizard } from './helpers/e2e-test-helpers';
-import { seedLegacyEncryptedSettings } from './helpers/legacy-settings-seed';
 
 /**
  * E2E tests for DECIDARR_SECRET encryption and migration.
@@ -76,8 +75,13 @@ test.describe('DECIDARR_SECRET encryption', () => {
       },
     });
 
-    // Step 2: Seed legacy-encrypted settings with setupComplete=true and library cache
-    const seededData = await seedLegacyEncryptedSettings();
+    // Step 2: Seed legacy-encrypted settings via test endpoint (uses server's database connection)
+    const seedResponse = await request.post('/api/test/seed-legacy', {
+      headers: {
+        'X-E2E-Reset-Secret': process.env.E2E_TEST_RESET_SECRET || 'decidarr-e2e-reset',
+      },
+    });
+    expect(seedResponse.ok()).toBeTruthy();
 
     // Step 3: Clear any stale cookies/session before navigating
     await page.context().clearCookies();
@@ -85,11 +89,6 @@ test.describe('DECIDARR_SECRET encryption', () => {
     // Step 4: Navigate to trigger migration on next database connection
     await page.goto('/');
     await page.waitForLoadState('networkidle', { timeout: 15000 });
-
-    // Debug: Check database state after migration
-    const debugResponse = await request.get('/api/test/debug-settings');
-    const debugData = await debugResponse.json();
-    console.log('[DEBUG] Database state after migration:', JSON.stringify(debugData, null, 2));
 
     // Step 5: Should see login screen (setupComplete=true, so no setup wizard)
     await expect(page.getByRole('button', { name: /Sign in with Plex/i })).toBeVisible({ timeout: 15000 });
