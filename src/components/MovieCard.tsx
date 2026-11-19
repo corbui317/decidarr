@@ -164,6 +164,7 @@ export default function MovieCard({ item, tmdb, isWatched = false, onWatchedChan
       {/* Backdrop/Poster */}
       <div className="relative aspect-video bg-decidarr-dark">
         {backdropUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element -- Plex images come from the cookie-authenticated /api/plex/image proxy, which the next/image optimizer cannot fetch
           <img
             src={backdropUrl}
             alt={item.title}
@@ -174,6 +175,7 @@ export default function MovieCard({ item, tmdb, isWatched = false, onWatchedChan
           />
         ) : posterUrl ? (
           <div className="flex items-center justify-center h-full">
+            {/* eslint-disable-next-line @next/next/no-img-element -- Plex images come from the cookie-authenticated /api/plex/image proxy, which the next/image optimizer cannot fetch */}
             <img
               src={posterUrl}
               alt={item.title}

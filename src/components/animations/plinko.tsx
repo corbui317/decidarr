@@ -137,6 +137,7 @@ export const PlinkoAnimation = forwardRef<SpinAnimationHandle, PlinkoAnimationPr
                   ${i === winnerSlot && landed ? 'bg-decidarr-primary/40 ring-2 ring-decidarr-primary' : 'bg-gray-700/80'}`}
               >
                 {i === winnerSlot && poster ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- Plex images come from the cookie-authenticated /api/plex/image proxy, which the next/image optimizer cannot fetch
                   <img src={poster} alt="" className="absolute inset-0 w-full h-full object-cover opacity-60 rounded" />
                 ) : null}
                 <span className="relative z-[1] text-white line-clamp-2">{label}</span>
