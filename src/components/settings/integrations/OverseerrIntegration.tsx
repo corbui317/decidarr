@@ -139,10 +139,10 @@ export default function OverseerrIntegration({
             onChange={(e) => setOverseerrFilterEnabled(e.target.checked)}
             className="rounded border-decidarr-border bg-decidarr-surface text-decidarr-primary focus:ring-decidarr-primary focus:ring-offset-decidarr-dark"
           />
-          <span className={labelClass} style={{ marginBottom: 0 }}>Filter to Available Items Only</span>
+          <span className={labelClass} style={{ marginBottom: 0 }}>Exclude fully available titles from the spin pool</span>
         </label>
         <p className="text-decidarr-text-muted text-xs mt-1 ml-6">
-          Only spin items that are available in Overseerr
+          Only spin items that are not yet available in Overseerr
         </p>
       </div>
 

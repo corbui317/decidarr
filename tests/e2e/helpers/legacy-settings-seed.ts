@@ -11,21 +11,34 @@ import path from 'path';
 // Read URI the same way playwright.config.ts does for the webServer
 function getE2EMongoURI(): string {
   const uriFile = path.join(process.cwd(), '.e2e-mongo-uri');
+  let uri: string | undefined;
 
   // Try .e2e-mongo-uri file first (written by global-setup)
   if (fs.existsSync(uriFile)) {
-    const uri = fs.readFileSync(uriFile, 'utf-8').trim();
+    uri = fs.readFileSync(uriFile, 'utf-8').trim();
     if (uri) {
-      console.log('[Seed] Using URI from .e2e-mongo-uri file:', uri);
-      return uri;
+      console.log('[Seed] Read URI from .e2e-mongo-uri file:', uri);
     }
   }
 
   // Fall back to environment variables
-  const uri = process.env.E2E_MONGODB_URI ||
-              process.env.MONGODB_URI ||
-              'mongodb://127.0.0.1:27017/decidarr-e2e';
-  console.log('[Seed] Using URI from env/default:', uri);
+  if (!uri) {
+    uri = process.env.E2E_MONGODB_URI ||
+          process.env.MONGODB_URI ||
+          'mongodb://127.0.0.1:27017/decidarr-e2e';
+    console.log('[Seed] Using URI from env/default:', uri);
+  }
+
+  // MongoMemoryServer URIs don't include a database name, so append one if missing
+  if (uri && uri.endsWith('/')) {
+    uri = uri + 'decidarr-e2e';
+    console.log('[Seed] Appended database name to trailing slash:', uri);
+  } else if (uri && !uri.match(/\/[^/]+$/)) {
+    // No path component after the port
+    uri = uri + '/decidarr-e2e';
+    console.log('[Seed] Appended database name:', uri);
+  }
+
   return uri;
 }
 

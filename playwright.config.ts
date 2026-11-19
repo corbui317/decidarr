@@ -35,7 +35,14 @@ export default defineConfig({
       DECIDARR_ALLOW_PRIVATE_URLS: 'true',
       E2E_TEST_RESET_SECRET: e2eResetSecret,
       DECIDARR_SECRET: 'e2e-test-secret-key-12345',
-      MONGODB_URI: process.env.E2E_MONGODB_URI || defaultMongoUri,
+      MONGODB_URI: (() => {
+        const uri = process.env.E2E_MONGODB_URI || defaultMongoUri;
+        // MongoMemoryServer URIs end with / but no database name, so append one
+        if (uri.endsWith('/')) {
+          return uri + 'decidarr-e2e';
+        }
+        return uri;
+      })(),
     },
   },
 });
