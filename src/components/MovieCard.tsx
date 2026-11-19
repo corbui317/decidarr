@@ -69,6 +69,7 @@ interface MovieCardProps {
 
 export default function MovieCard({ item, tmdb, isWatched = false, onWatchedChange, playLinks }: MovieCardProps) {
   const { isAdmin } = useAuth();
+  const [failedImages, setFailedImages] = useState<ReadonlySet<string>>(() => new Set());
   const [watched, setWatched] = useState(isWatched);
   const [updating, setUpdating] = useState(false);
   const [watchedError, setWatchedError] = useState<string | null>(null);
@@ -146,8 +147,13 @@ export default function MovieCard({ item, tmdb, isWatched = false, onWatchedChan
   const rating = tmdb?.voteAverage || item.rating;
   const runtime = tmdb?.runtime || (item.duration ? Math.round(item.duration / 60000) : null);
   const images = resolveItemImageUrls(item);
-  const backdropUrl = images.art;
-  const posterUrl = images.posterUrl;
+  // A Plex image can fail to load (server unreachable, item removed): fall back
+  // from the backdrop to the poster, then to the placeholder.
+  const usable = (url: string | null) => (url && !failedImages.has(url) ? url : null);
+  const backdropUrl = usable(images.art);
+  const posterUrl = usable(images.posterUrl);
+  const markImageFailed = (url: string) =>
+    setFailedImages((failed) => new Set(failed).add(url));
 
   return (
     <motion.div
@@ -164,6 +170,7 @@ export default function MovieCard({ item, tmdb, isWatched = false, onWatchedChan
             className="w-full h-full object-cover"
             loading="lazy"
             decoding="async"
+            onError={() => markImageFailed(backdropUrl)}
           />
         ) : posterUrl ? (
           <div className="flex items-center justify-center h-full">
@@ -173,6 +180,7 @@ export default function MovieCard({ item, tmdb, isWatched = false, onWatchedChan
               className="h-full object-contain"
               loading="lazy"
               decoding="async"
+              onError={() => markImageFailed(posterUrl)}
             />
           </div>
         ) : (
