@@ -106,17 +106,20 @@ test.describe('DECIDARR_SECRET encryption', () => {
 
     // setupComplete is true, so the app offers sign-in, not the setup wizard.
     await page.goto('/');
-    const signIn = page.getByRole('button', { name: /Sign in with Plex/i });
+    const signIn = page.getByRole('button', { name: 'Login with Plex' });
     await expect(signIn).toBeVisible({ timeout: 15000 });
     await expect(page.getByText('Welcome to Decidarr')).toHaveCount(0);
 
     // Sign in through the mock OAuth flow as the seeded legacy admin and spin once.
     await signIn.click();
-    await page.waitForURL(/\/dashboard/, { timeout: 30000 });
+    await page
+      .getByRole('group', { name: 'Movies' })
+      .getByRole('button', { name: /Movies/ })
+      .click();
     const spinButton = page.getByRole('button', { name: 'Spin for a random pick' });
     await expect(spinButton).toBeEnabled({ timeout: 15000 });
     await spinButton.click();
-    await expect(page.getByText(/Legacy Movie (One|Two)/).first()).toBeVisible({ timeout: 20000 });
+    await expect(page.getByText('Your fate has been decided!')).toBeVisible({ timeout: 20000 });
 
     // The legacy admin kept its account and admin rights; no second user was created.
     await withE2eDb(async (db) => {

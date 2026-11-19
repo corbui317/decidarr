@@ -56,7 +56,7 @@ export async function seedLegacyInstall(
     isAdmin: true,
     isApproved: true,
     sessionVersion: 0,
-    preferences: { selectedLibraries: [LEGACY_LIBRARY_ID] },
+    preferences: {},
     createdAt: now,
     updatedAt: now,
   });
