@@ -10,6 +10,12 @@ export async function GET() {
 
   try {
     await connectDB();
+
+    // Debug: Log database connection info
+    const mongoose = await import('mongoose');
+    const dbName = mongoose.default.connection.db?.databaseName;
+    const mongoUri = process.env.MONGODB_URI;
+
     const settings = await getOrCreateSettings();
 
     // Try to decrypt various fields
@@ -45,6 +51,10 @@ export async function GET() {
     }
 
     return NextResponse.json({
+      connection: {
+        dbName,
+        mongoUri,
+      },
       settings: {
         setupComplete: settings.setupComplete,
         hasPlexToken: !!settings.plexToken,
