@@ -177,7 +177,7 @@ describe('parsePreferencesPutBody', () => {
   describe('selectedLibraries', () => {
     it('rejects non-array', () => {
       const result = parsePreferencesPutBody({ selectedLibraries: 'lib-1' });
-      expect(result).toEqual({ ok: false, error: 'selectedLibraries must be an array' });
+      expect(result).toEqual({ ok: false, error: 'selectedLibraries must be an array of strings' });
     });
 
     it('rejects array with non-string elements', () => {
@@ -306,7 +306,7 @@ describe('parsePreferencesPutBody', () => {
     describe('genres', () => {
       it('rejects non-array genres', () => {
         const result = parsePreferencesPutBody({ savedFilters: { genres: 'Action' } });
-        expect(result).toEqual({ ok: false, error: 'savedFilters.genres must be an array' });
+        expect(result).toEqual({ ok: false, error: 'savedFilters.genres must be an array of strings' });
       });
 
       it('rejects genres with non-string elements', () => {
@@ -326,7 +326,7 @@ describe('parsePreferencesPutBody', () => {
     describe('studios', () => {
       it('rejects non-array studios', () => {
         const result = parsePreferencesPutBody({ savedFilters: { studios: 'Warner Bros' } });
-        expect(result).toEqual({ ok: false, error: 'savedFilters.studios must be an array' });
+        expect(result).toEqual({ ok: false, error: 'savedFilters.studios must be an array of strings' });
       });
 
       it('rejects studios with non-string elements', () => {
@@ -346,7 +346,7 @@ describe('parsePreferencesPutBody', () => {
     describe('contentRatings', () => {
       it('rejects non-array contentRatings', () => {
         const result = parsePreferencesPutBody({ savedFilters: { contentRatings: 'PG-13' } });
-        expect(result).toEqual({ ok: false, error: 'savedFilters.contentRatings must be an array' });
+        expect(result).toEqual({ ok: false, error: 'savedFilters.contentRatings must be an array of strings' });
       });
 
       it('rejects contentRatings with non-string elements', () => {
@@ -366,7 +366,7 @@ describe('parsePreferencesPutBody', () => {
     describe('collections', () => {
       it('rejects non-array collections', () => {
         const result = parsePreferencesPutBody({ savedFilters: { collections: 'col-1' } });
-        expect(result).toEqual({ ok: false, error: 'savedFilters.collections must be an array' });
+        expect(result).toEqual({ ok: false, error: 'savedFilters.collections must be an array of strings' });
       });
 
       it('rejects collections with non-string elements', () => {

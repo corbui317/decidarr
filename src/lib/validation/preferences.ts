@@ -1,7 +1,7 @@
 import type { MediaType, TvSelectionMode, AppTheme, AnimationStyle, AnimationSpeed } from '@/types/shared';
 import { APP_THEMES, ANIMATION_STYLES, ANIMATION_SPEEDS } from '@/types/shared';
 
-type ParseResult<T> = { ok: true; data: T } | { ok: false; error: string };
+import { type ParseResult, parseStringArray } from './common';
 
 const VALID_THEMES = APP_THEMES;
 const VALID_ANIMATION_STYLES = ANIMATION_STYLES;
@@ -110,43 +110,27 @@ function validateSavedFilters(filters: unknown): ParseResult<SavedFilters> {
   const validated: SavedFilters = {};
 
   if ('genres' in raw) {
-    if (!Array.isArray(raw.genres)) {
-      return { ok: false, error: 'savedFilters.genres must be an array' };
-    }
-    if (!raw.genres.every((g) => typeof g === 'string')) {
-      return { ok: false, error: 'savedFilters.genres must be an array of strings' };
-    }
-    validated.genres = raw.genres as string[];
+    const genres = parseStringArray(raw.genres, 'savedFilters.genres');
+    if (!genres.ok) return genres;
+    validated.genres = genres.data;
   }
 
   if ('studios' in raw) {
-    if (!Array.isArray(raw.studios)) {
-      return { ok: false, error: 'savedFilters.studios must be an array' };
-    }
-    if (!raw.studios.every((s) => typeof s === 'string')) {
-      return { ok: false, error: 'savedFilters.studios must be an array of strings' };
-    }
-    validated.studios = raw.studios as string[];
+    const studios = parseStringArray(raw.studios, 'savedFilters.studios');
+    if (!studios.ok) return studios;
+    validated.studios = studios.data;
   }
 
   if ('contentRatings' in raw) {
-    if (!Array.isArray(raw.contentRatings)) {
-      return { ok: false, error: 'savedFilters.contentRatings must be an array' };
-    }
-    if (!raw.contentRatings.every((c) => typeof c === 'string')) {
-      return { ok: false, error: 'savedFilters.contentRatings must be an array of strings' };
-    }
-    validated.contentRatings = raw.contentRatings as string[];
+    const contentRatings = parseStringArray(raw.contentRatings, 'savedFilters.contentRatings');
+    if (!contentRatings.ok) return contentRatings;
+    validated.contentRatings = contentRatings.data;
   }
 
   if ('collections' in raw) {
-    if (!Array.isArray(raw.collections)) {
-      return { ok: false, error: 'savedFilters.collections must be an array' };
-    }
-    if (!raw.collections.every((c) => typeof c === 'string')) {
-      return { ok: false, error: 'savedFilters.collections must be an array of strings' };
-    }
-    validated.collections = raw.collections as string[];
+    const collections = parseStringArray(raw.collections, 'savedFilters.collections');
+    if (!collections.ok) return collections;
+    validated.collections = collections.data;
   }
 
   if ('yearRange' in raw) {
@@ -244,13 +228,9 @@ export function parsePreferencesPutBody(body: unknown): ParseResult<PreferencesP
   }
 
   if ('selectedLibraries' in raw) {
-    if (!Array.isArray(raw.selectedLibraries)) {
-      return { ok: false, error: 'selectedLibraries must be an array' };
-    }
-    if (!raw.selectedLibraries.every((lib) => typeof lib === 'string')) {
-      return { ok: false, error: 'selectedLibraries must be an array of strings' };
-    }
-    validated.selectedLibraries = raw.selectedLibraries as string[];
+    const selectedLibraries = parseStringArray(raw.selectedLibraries, 'selectedLibraries');
+    if (!selectedLibraries.ok) return selectedLibraries;
+    validated.selectedLibraries = selectedLibraries.data;
   }
 
   if ('animationStyle' in raw) {
