@@ -169,7 +169,7 @@ describe('AuthContext', () => {
         if (typeof delay === 'number' && delay > 60 * 60 * 1000) {
           refreshCallback = cb as () => Promise<void>;
         }
-        return originalSetTimeout(cb as TimerHandler, delay);
+        return originalSetTimeout(cb as TimerHandler, delay) as any;
       });
 
       vi.mocked(authApi.refreshSession).mockRejectedValue(new Error('Session expired'));
