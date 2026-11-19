@@ -72,7 +72,7 @@ export async function GET() {
     if (isAuthError(error)) {
       logger.warn('Auth error fetching settings', { error: errorMsg });
       return NextResponse.json(
-        { error: errorMsg === 'Unauthorized' ? 'Session expired' : errorMsg },
+        { error: error.code === 'UNAUTHORIZED' ? 'Session expired' : errorMsg },
         { status: authErrorStatus(error) }
       );
     }
@@ -292,7 +292,7 @@ export async function PUT(request: NextRequest) {
     if (isAuthError(error)) {
       logger.warn('Auth error updating settings', { error: errorMsg });
       return NextResponse.json(
-        { error: errorMsg === 'Unauthorized' ? 'Session expired' : errorMsg },
+        { error: error.code === 'UNAUTHORIZED' ? 'Session expired' : errorMsg },
         { status: 401 }
       );
     }

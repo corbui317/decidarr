@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireUser, authErrorStatus } from '@/lib/auth';
+import { requireUser, isAuthError, authErrorStatus } from '@/lib/auth';
 import { connectDB } from '@/lib/db';
 
 export async function GET() {
@@ -21,7 +21,7 @@ export async function GET() {
   } catch (error) {
     const status = authErrorStatus(error);
     return NextResponse.json(
-      { error: (error as Error).message === 'App not configured' ? 'App not configured' : 'Unauthorized' },
+      { error: isAuthError(error) && error.code === 'APP_NOT_CONFIGURED' ? 'App not configured' : 'Unauthorized' },
       { status }
     );
   }
