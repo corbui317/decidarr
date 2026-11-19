@@ -86,6 +86,11 @@ test.describe('DECIDARR_SECRET encryption', () => {
     await page.goto('/');
     await page.waitForLoadState('networkidle', { timeout: 15000 });
 
+    // Debug: Check database state after migration
+    const debugResponse = await request.get('/api/test/debug-settings');
+    const debugData = await debugResponse.json();
+    console.log('[DEBUG] Database state after migration:', JSON.stringify(debugData, null, 2));
+
     // Step 5: Should see login screen (setupComplete=true, so no setup wizard)
     await expect(page.getByRole('button', { name: /Sign in with Plex/i })).toBeVisible({ timeout: 15000 });
 
