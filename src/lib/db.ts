@@ -32,7 +32,10 @@ export async function connectDB() {
     };
 
     cached.promise = mongoose.connect(MONGODB_URI, opts).then(async (conn) => {
-      logger.info('Connected to MongoDB');
+      logger.info('Connected to MongoDB', {
+        uri: MONGODB_URI,
+        dbName: conn.connection.db?.databaseName
+      });
       try {
         await runMigrations();
       } catch (err) {

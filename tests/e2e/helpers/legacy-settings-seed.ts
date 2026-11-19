@@ -1,14 +1,36 @@
 import mongoose from 'mongoose';
 import CryptoJS from 'crypto-js';
+import fs from 'fs';
+import path from 'path';
 
 /**
  * Seeds the E2E database with legacy-encrypted settings (pre-migration format).
  * This must be called BEFORE the server starts so the migration runs on startup.
  */
+
+// Read URI the same way playwright.config.ts does for the webServer
+function getE2EMongoURI(): string {
+  const uriFile = path.join(process.cwd(), '.e2e-mongo-uri');
+
+  // Try .e2e-mongo-uri file first (written by global-setup)
+  if (fs.existsSync(uriFile)) {
+    const uri = fs.readFileSync(uriFile, 'utf-8').trim();
+    if (uri) {
+      console.log('[Seed] Using URI from .e2e-mongo-uri file:', uri);
+      return uri;
+    }
+  }
+
+  // Fall back to environment variables
+  const uri = process.env.E2E_MONGODB_URI ||
+              process.env.MONGODB_URI ||
+              'mongodb://127.0.0.1:27017/decidarr-e2e';
+  console.log('[Seed] Using URI from env/default:', uri);
+  return uri;
+}
+
 // Shared Mongo URI constant used by both seed and server
-export const E2E_MONGO_URI = process.env.E2E_MONGODB_URI ||
-                              process.env.MONGODB_URI ||
-                              'mongodb://127.0.0.1:27017/decidarr-e2e';
+export const E2E_MONGO_URI = getE2EMongoURI();
 
 // Export getMasterKey for E2E test decryption assertions
 export function getMasterKey(): string {
@@ -21,6 +43,9 @@ export function getMasterKey(): string {
 
 export async function seedLegacyEncryptedSettings() {
   const mongoUri = E2E_MONGO_URI;
+
+  console.log('[Seed] Connecting to:', mongoUri);
+  console.log('[Seed] Database name:', new URL(mongoUri).pathname.substring(1));
 
   await mongoose.connect(mongoUri);
 

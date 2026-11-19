@@ -159,8 +159,7 @@ export default function TautulliIntegration({
 
       {tautulliValid === true && tautulliUsers.length > 0 && (
         <div role="status" className="bg-green-500/10 border border-green-500/50 rounded-lg p-3">
-          <p className="text-green-400 text-sm mb-2">Connection successful!</p>
-          <p className="text-decidarr-text-muted text-xs">Found {tautulliUsers.length} user(s)</p>
+          <p className="text-green-400 text-sm">Connected! Found {tautulliUsers.length} users</p>
         </div>
       )}
       {tautulliValid === false && (
