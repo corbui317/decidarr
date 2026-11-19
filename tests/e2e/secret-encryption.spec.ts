@@ -79,20 +79,23 @@ test.describe('DECIDARR_SECRET encryption', () => {
     // Step 2: Seed legacy-encrypted settings with setupComplete=true and library cache
     const seededData = await seedLegacyEncryptedSettings();
 
-    // Step 3: Navigate to trigger migration on next database connection
+    // Step 3: Clear any stale cookies/session before navigating
+    await page.context().clearCookies();
+
+    // Step 4: Navigate to trigger migration on next database connection
     await page.goto('/');
     await page.waitForLoadState('networkidle', { timeout: 15000 });
 
-    // Step 4: Should see login screen (setupComplete=true, so no setup wizard)
+    // Step 5: Should see login screen (setupComplete=true, so no setup wizard)
     await expect(page.getByRole('button', { name: /Sign in with Plex/i })).toBeVisible({ timeout: 15000 });
 
-    // Step 5: Sign in through mock OAuth flow as the legacy user
+    // Step 6: Sign in through mock OAuth flow as the legacy user
     await page.getByRole('button', { name: /Sign in with Plex/i }).click();
 
-    // Step 6: Should reach dashboard after login
+    // Step 7: Should reach dashboard after login
     await expect(page.getByText(/DECIDARR|SPIN/i).first()).toBeVisible({ timeout: 15000 });
 
-    // Step 7: Spin once to verify app is functional
+    // Step 8: Spin once to verify app is functional
     const spinButton = page.getByRole('button', { name: /spin/i }).first();
     await expect(spinButton).toBeVisible({ timeout: 5000 });
     await expect(spinButton).toBeEnabled({ timeout: 5000 });
@@ -101,7 +104,7 @@ test.describe('DECIDARR_SECRET encryption', () => {
     // Wait for spin animation to complete
     await page.waitForTimeout(2000);
 
-    // Step 8: Connect to Mongo and assert migration results
+    // Step 9: Connect to Mongo and assert migration results
     const mongoose = await import('mongoose');
     const { E2E_MONGO_URI } = await import('./helpers/legacy-settings-seed');
     await mongoose.default.connect(E2E_MONGO_URI);
