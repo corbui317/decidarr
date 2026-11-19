@@ -1,9 +1,11 @@
-import { vi, describe, it, expect } from 'vitest';
+import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import MovieCard from '@/components/MovieCard';
 
+const auth = vi.hoisted(() => ({ isAdmin: false }));
+
 vi.mock('@/context/AuthContext', () => ({
-  useAuth: () => ({ isAdmin: false }),
+  useAuth: () => auth,
 }));
 
 vi.mock('@/lib/api', () => ({
@@ -33,5 +35,22 @@ describe('MovieCard hero image', () => {
     fireEvent.error(poster);
     expect(screen.queryByRole('img', { name: 'Inception' })).toBeNull();
     expect(screen.getByText('🎬')).toBeTruthy();
+  });
+});
+
+describe('MovieCard watched toggle', () => {
+  beforeEach(() => {
+    auth.isAdmin = false;
+  });
+
+  it('is hidden from friends (non-admin users)', () => {
+    render(<MovieCard item={item} />);
+    expect(screen.queryByRole('button', { name: /Mark as (un)?watched/ })).toBeNull();
+  });
+
+  it('is shown to the admin (server owner)', () => {
+    auth.isAdmin = true;
+    render(<MovieCard item={item} />);
+    expect(screen.getByRole('button', { name: 'Mark as watched' })).toBeTruthy();
   });
 });
