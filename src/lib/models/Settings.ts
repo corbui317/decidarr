@@ -94,6 +94,8 @@ export interface ISettings extends Omit<Document, '_id'> {
 const ENCRYPTION_VERSION_LEGACY = 1; // CryptoJS AES
 const ENCRYPTION_VERSION_CURRENT = 2; // AES-256-GCM
 const CURRENT_MIGRATION_VERSION = 2;
+/** base64("Salted__"): every CryptoJS passphrase ciphertext starts with it. */
+const CRYPTOJS_SALTED_PREFIX = 'U2FsdGVkX1';
 
 // Master key for encrypting the auto-generated secrets
 export const getLegacyMasterKey = (): string => {
@@ -183,7 +185,13 @@ function decryptVersioned(encrypted: string, masterKey: string): string {
     }
   }
 
-  // Legacy CryptoJS format (v1 or unversioned)
+  // Legacy CryptoJS format (v1 or unversioned). CryptoJS passphrase ciphertext is
+  // base64 of "Salted__" + salt + ciphertext; without that header CryptoJS would
+  // pick a random salt and sometimes "decrypt" garbage into a non-empty string.
+  if (!encrypted.startsWith(CRYPTOJS_SALTED_PREFIX)) {
+    logger.error('Value is neither v2 nor CryptoJS passphrase ciphertext');
+    throw new Error('Failed to decrypt value');
+  }
   try {
     const bytes = CryptoJS.AES.decrypt(encrypted, masterKey);
     const decrypted = bytes.toString(CryptoJS.enc.Utf8);

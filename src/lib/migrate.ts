@@ -8,7 +8,6 @@ import {
   extractThumbPathFromUrl,
   containsPlexToken,
 } from './plex-image';
-import CryptoJS from 'crypto-js';
 import {
   getLegacyMasterKey,
   getMasterKey,
@@ -186,13 +185,8 @@ async function migrateIntegrationCredentials(settings: Awaited<ReturnType<typeof
     if (encrypted.startsWith('v2:')) return encrypted;
 
     try {
-      // Decrypt with legacy CryptoJS format
-      const bytes = CryptoJS.AES.decrypt(encrypted, encryptionKey);
-      const plain = bytes.toString(CryptoJS.enc.Utf8);
-      if (!plain) {
-        logger.warn(`Empty decryption result for ${fieldName}, leaving as-is`);
-        return encrypted;
-      }
+      // Legacy CryptoJS ciphertext, validated and decrypted with the encryption key
+      const plain = decryptUserData(encrypted, encryptionKey);
 
       // Re-encrypt with AES-256-GCM
       return encryptUserData(plain, encryptionKey);
