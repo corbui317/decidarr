@@ -157,7 +157,8 @@ export default function IntegrationsTab() {
             onError={handleError}
             onSuccess={handleSuccess}
             onClearMessages={clearMessages}
-        />
+          />
+        </div>
       )}
     </div>
   );
