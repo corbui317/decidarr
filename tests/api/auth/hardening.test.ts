@@ -162,6 +162,34 @@ describe('Auth hardening', () => {
   });
 
   describe('Redirect validation', () => {
+    it('omits forwardUrl when the Host header does not match APP_URL', async () => {
+      vi.stubEnv('APP_URL', 'https://decidarr.example.com');
+
+      // Next builds request.url from the Host header, so a spoofed Host changes its origin.
+      const res = await plexStartPost(
+        new Request('https://evil.example/api/auth/plex/start', {
+          method: 'POST',
+          headers: { host: 'evil.example' },
+        })
+      );
+      const body = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(body.authUrl).not.toContain('forwardUrl');
+      expect(body.authUrl).not.toContain('evil.example');
+    });
+
+    it('omits forwardUrl when APP_URL is not configured', async () => {
+      vi.stubEnv('APP_URL', '');
+      vi.stubEnv('NEXTAUTH_URL', '');
+
+      const res = await plexStartPost(new Request('http://localhost:3000/api/auth/plex/start', { method: 'POST' }));
+      const body = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(body.authUrl).not.toContain('forwardUrl');
+    });
+
     it('builds redirect URL from request origin', async () => {
       const originalAppUrl = process.env.APP_URL;
       process.env.APP_URL = 'http://localhost:3000';
