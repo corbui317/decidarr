@@ -5,12 +5,17 @@ process.env.E2E_TEST_RESET_SECRET = e2eResetSecret;
 
 const defaultMongoUri = 'mongodb://127.0.0.1:27017/decidarr-e2e';
 const mongoUriShell =
-  'echo "[WebServer] E2E_MONGODB_URI=${E2E_MONGODB_URI}" >&2; ' +
-  'echo "[WebServer] File exists: $(test -f .e2e-mongo-uri && echo yes || echo no)" >&2; ' +
-  'export MONGODB_URI="${E2E_MONGODB_URI:-$(test -f .e2e-mongo-uri && cat .e2e-mongo-uri || echo ' +
+  '(' +
+  '  for i in $(seq 1 30); do ' +
+  '    test -f .e2e-mongo-uri && break; ' +
+  '    echo "[WebServer] Waiting for .e2e-mongo-uri file... (${i}/30)" >&2; ' +
+  '    sleep 1; ' +
+  '  done; ' +
+  '  export MONGODB_URI="${E2E_MONGODB_URI:-$(test -f .e2e-mongo-uri && cat .e2e-mongo-uri || echo ' +
   defaultMongoUri +
   ')}"; ' +
-  'echo "[WebServer] MONGODB_URI=${MONGODB_URI}" >&2';
+  '  echo "[WebServer] MONGODB_URI=${MONGODB_URI}" >&2' +
+  ')';
 
 export default defineConfig({
   testDir: './tests/e2e',
