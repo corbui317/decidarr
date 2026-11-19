@@ -11,16 +11,31 @@ async function hasUsablePlexToken(
   settings: Awaited<ReturnType<typeof getOrCreateSettings>>
 ): Promise<boolean> {
   const legacyToken = settings.getDecryptedPlexToken();
+  logger.info('[DEBUG] hasUsablePlexToken check', {
+    hasSettingsToken: !!settings.plexToken,
+    legacyTokenDecrypted: !!legacyToken,
+    hasAdminUserId: !!settings.adminUserId,
+    adminUserId: settings.adminUserId?.toString(),
+  });
   if (legacyToken) return true;
 
   if (!settings.adminUserId) return false;
 
   const adminUser = await loadUserWithToken(settings.adminUserId);
+  logger.info('[DEBUG] Admin user check', {
+    adminUserFound: !!adminUser,
+    hasAdminToken: !!adminUser?.plexToken,
+  });
   if (!adminUser) return false;
 
   try {
-    return !!adminUser.getDecryptedToken();
-  } catch {
+    const decryptedToken = adminUser.getDecryptedToken();
+    logger.info('[DEBUG] Admin token decryption', {
+      tokenDecrypted: !!decryptedToken,
+    });
+    return !!decryptedToken;
+  } catch (err) {
+    logger.error('[DEBUG] Admin token decryption failed', { error: String(err) });
     return false;
   }
 }
@@ -34,6 +49,14 @@ export async function GET() {
     const hasPlexToken = await hasUsablePlexToken(settings);
     const hasPlexServer = !!settings.plexServerUrl;
     const setupComplete = settings.setupComplete && hasPlexToken && hasPlexServer;
+
+    logger.info('[DEBUG] Status API result', {
+      dbSetupComplete: settings.setupComplete,
+      hasPlexToken,
+      hasPlexServer,
+      finalSetupComplete: setupComplete,
+      migrationVersion: settings.secretsMigrationVersion,
+    });
 
     return NextResponse.json({
       setupComplete,
