@@ -12,6 +12,8 @@ import {
 import { settingsApi, authApi, userPreferencesApi } from '@/lib/api';
 import type { AppTheme } from '@/types/shared';
 
+export type { AppTheme };
+
 interface ThemeContextType {
   theme: AppTheme;
   setTheme: (theme: AppTheme) => void;

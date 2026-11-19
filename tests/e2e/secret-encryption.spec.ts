@@ -107,14 +107,37 @@ test.describe('DECIDARR_SECRET encryption', () => {
     await mongoose.default.connect(E2E_MONGO_URI);
 
     // Assert settings migration
-    const settings = await mongoose.default.connection.db?.collection('settings').findOne({ _id: 'app-settings' });
+    const settings = await mongoose.default.connection.db?.collection('settings').findOne({ _id: 'app-settings' } as any);
     expect(settings?.secretsMigrationVersion).toBe(2);
     expect(settings?.jwtSecret).toMatch(/^v2:/);
     expect(settings?.encryptionKey).toMatch(/^v2:/);
 
     // Decrypt and verify TMDB API key
-    const { decryptUserData } = await import('../../../src/lib/models/Settings');
-    const decryptedTmdb = decryptUserData(settings?.tmdbApiKey);
+    // We need to decrypt using the same logic as the server
+    const CryptoJS = await import('crypto-js');
+    const { getMasterKey } = await import('./helpers/legacy-settings-seed');
+    const { createHash } = await import('crypto');
+
+    // Derive AES-256-GCM key from master key
+    const masterKey = getMasterKey();
+    const keyBuffer = createHash('sha256').update(masterKey).digest();
+
+    // Parse v2: format
+    const tmdbParts = settings?.tmdbApiKey?.split(':');
+    if (tmdbParts?.[0] !== 'v2' || tmdbParts.length !== 4) {
+      throw new Error('Invalid v2 format');
+    }
+
+    const [_, ivB64, tagB64, cipherB64] = tmdbParts;
+    const iv = Buffer.from(ivB64, 'base64');
+    const authTag = Buffer.from(tagB64, 'base64');
+    const ciphertext = Buffer.from(cipherB64, 'base64');
+
+    // Decrypt
+    const crypto = await import('crypto');
+    const decipher = crypto.createDecipheriv('aes-256-gcm', keyBuffer, iv);
+    decipher.setAuthTag(authTag);
+    const decryptedTmdb = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
     expect(decryptedTmdb).toBe('test-tmdb-key-legacy');
 
     // Assert user token migration
@@ -122,7 +145,19 @@ test.describe('DECIDARR_SECRET encryption', () => {
     expect(user?.plexToken).toMatch(/^v2:/);
 
     // Decrypt and verify user Plex token
-    const decryptedToken = decryptUserData(user?.plexToken);
+    const tokenParts = user?.plexToken?.split(':');
+    if (tokenParts?.[0] !== 'v2' || tokenParts.length !== 4) {
+      throw new Error('Invalid v2 format for user token');
+    }
+
+    const [_v, ivB64Token, tagB64Token, cipherB64Token] = tokenParts;
+    const ivToken = Buffer.from(ivB64Token, 'base64');
+    const authTagToken = Buffer.from(tagB64Token, 'base64');
+    const ciphertextToken = Buffer.from(cipherB64Token, 'base64');
+
+    const decipherToken = crypto.createDecipheriv('aes-256-gcm', keyBuffer, ivToken);
+    decipherToken.setAuthTag(authTagToken);
+    const decryptedToken = Buffer.concat([decipherToken.update(ciphertextToken), decipherToken.final()]).toString('utf8');
     expect(decryptedToken).toBe('test-plex-token-legacy');
 
     await mongoose.default.disconnect();

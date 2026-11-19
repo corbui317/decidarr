@@ -10,6 +10,15 @@ export const E2E_MONGO_URI = process.env.E2E_MONGODB_URI ||
                               process.env.MONGODB_URI ||
                               'mongodb://127.0.0.1:27017/decidarr-e2e';
 
+// Export getMasterKey for E2E test decryption assertions
+export function getMasterKey(): string {
+  const secret = process.env.DECIDARR_SECRET?.trim();
+  if (secret) {
+    return CryptoJS.SHA256('decidarr-secret-' + secret).toString().substring(0, 32);
+  }
+  return CryptoJS.SHA256('decidarr-master-' + E2E_MONGO_URI).toString().substring(0, 32);
+}
+
 export async function seedLegacyEncryptedSettings() {
   const mongoUri = E2E_MONGO_URI;
 

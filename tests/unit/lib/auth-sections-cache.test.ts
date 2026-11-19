@@ -24,6 +24,7 @@ function createAuthContext(overrides?: Partial<AuthContext>): AuthContext {
     plexToken: 'token',
     plexServerUrl: 'http://plex.local:32400',
     isAdmin: false,
+    expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
     ...overrides,
   };
 }

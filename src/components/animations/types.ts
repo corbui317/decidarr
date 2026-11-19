@@ -1,5 +1,8 @@
 import type { AnimationSpeed, AnimationStyle } from '@/types/shared';
 
+// Re-export types for local use
+export type { AnimationSpeed, AnimationStyle };
+
 export type ResolvedAnimationStyle = Exclude<AnimationStyle, 'random'>;
 
 export interface PlexItem {

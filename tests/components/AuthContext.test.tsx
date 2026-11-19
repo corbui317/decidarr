@@ -67,6 +67,7 @@ describe('AuthContext', () => {
         isAdmin: false,
       },
       preferences: { theme: 'dark', defaultMediaType: 'movie', tvSelectionMode: 'show' },
+      expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
     });
 
     render(
@@ -120,6 +121,7 @@ describe('AuthContext', () => {
           isAdmin: false,
         },
         preferences: { theme: 'dark', defaultMediaType: 'movie', tvSelectionMode: 'show' },
+        expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
       });
 
       render(
@@ -153,6 +155,7 @@ describe('AuthContext', () => {
           isAdmin: false,
         },
         preferences: { theme: 'dark', defaultMediaType: 'movie', tvSelectionMode: 'show' },
+        expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
       });
 
       let refreshCallback: (() => Promise<void>) | null = null;

@@ -422,7 +422,7 @@ export async function recoverFromSecretChange(): Promise<ISettings> {
   // Generate fresh security keys and encrypt with the NEW master key
   const newJwtSecret = generateSecureKey(64);
   const newEncryptionKey = generateSecureKey(32);
-  const masterKey = getCurrentSettingsMasterKey();
+  const masterKey = getMasterKey();
 
   settings.jwtSecret = encryptWithAesGcm(newJwtSecret, masterKey);
   settings.encryptionKey = encryptWithAesGcm(newEncryptionKey, masterKey);
