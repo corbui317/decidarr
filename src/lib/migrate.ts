@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { getOrCreateSettings } from './models/Settings';
+import { getOrCreateSettings, recoverFromSecretChange } from './models/Settings';
 import { User } from './models/User';
 import { WatchedItem } from './models/WatchedItem';
 import { LibraryCache } from './models/LibraryCache';
@@ -160,10 +160,36 @@ async function migrateSettingsMasterKey(settings: Awaited<ReturnType<typeof getO
     });
 
     // Trigger recovery: generate fresh keys, clear encrypted fields
-    const { recoverFromSecretChange } = await import('./models/Settings');
     await recoverFromSecretChange();
 
     logger.info('Recovery complete - admin can now re-login to re-enter credentials');
+  }
+}
+
+/**
+ * After the one-time migration, the stored jwtSecret and encryptionKey are
+ * wrapped with the key derived from DECIDARR_SECRET. If they no longer decrypt,
+ * the operator changed DECIDARR_SECRET: start over with fresh keys rather than
+ * failing every request.
+ */
+async function recoverIfSecretChanged(
+  settings: Awaited<ReturnType<typeof getOrCreateSettings>>
+): Promise<Awaited<ReturnType<typeof getOrCreateSettings>>> {
+  if (settings.secretsMigrationVersion !== CURRENT_MIGRATION_VERSION) {
+    return settings;
+  }
+
+  try {
+    settings.getJwtSecret();
+    settings.getEncryptionKey();
+    return settings;
+  } catch {
+    logger.error(
+      'Stored secrets cannot be decrypted with the current DECIDARR_SECRET (it changed). ' +
+        'Generating fresh keys and clearing stored credentials: sign in again with Plex as the ' +
+        'server owner and re-enter integration credentials in Settings.'
+    );
+    return recoverFromSecretChange();
   }
 }
 
@@ -257,9 +283,10 @@ async function migrateIntegrationCredentials(settings: Awaited<ReturnType<typeof
 export async function runMigrations(): Promise<void> {
   if (migrationRan) return;
 
-  const settings = await getOrCreateSettings();
+  await migrateSettingsMasterKey(await getOrCreateSettings());
+  // Re-read: the master-key migration or its recovery may have replaced the document.
+  const settings = await recoverIfSecretChanged(await getOrCreateSettings());
 
-  await migrateSettingsMasterKey(settings);
   await migrateIntegrationCredentials(settings);
   await migrateTokenizedMediaUrls();
 

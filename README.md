@@ -98,7 +98,9 @@ All settings are managed through the **Settings** panel (gear icon in the header
 | `DECIDARR_SECRET` | _(none)_ | **Required in production** - High-entropy secret for JWT/encryption (generate with `openssl rand -hex 32`) |
 | `DECIDARR_ALLOW_PRIVATE_URLS` | false | **LAN opt-in** - Set to `true` if your Plex/Tautulli/Overseerr are on your local network (192.168.x.x, 10.x.x.x). Private addresses are blocked by default for security. |
 
-**Important**: If you change `DECIDARR_SECRET` after initial setup, all encrypted credentials will be invalidated and you'll need to re-enter integration settings (Plex, TMDB, Tautulli, Overseerr) in the Settings UI.
+**Important**: If you change `DECIDARR_SECRET` after initial setup, the stored credentials can no longer be decrypted.
+On the next start Decidarr logs this, generates fresh internal keys, clears the stored Plex tokens and integration keys, and signs everyone out; user accounts are kept.
+To recover, sign in again with Plex as the server owner, then re-enter the TMDB, Tautulli and Overseerr settings in the Settings UI.
 
 To use a different port or enable LAN access:
 ```bash

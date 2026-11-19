@@ -126,3 +126,48 @@ describe('POST /api/test/seed-legacy', () => {
     expect((await getOrCreateSettings()).getDecryptedTmdbKey()).toBe(LEGACY_PLAINTEXT.tmdbApiKey);
   });
 });
+
+describe('Restarting with a different DECIDARR_SECRET', () => {
+  beforeEach(async () => {
+    await clearDatabase();
+    clearTestCookies();
+    vi.stubEnv('NODE_ENV', 'development');
+    vi.stubEnv('E2E_MOCK_PLEX', 'true');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('keeps the status API up and lets the admin sign in again', async () => {
+    // A configured install under secret A.
+    vi.stubEnv('DECIDARR_SECRET', 'secret-a');
+    simulateRestart();
+    await connectDB();
+    const settings = await getOrCreateSettings();
+    const admin = new User({ plexUserId: LEGACY_ADMIN_PLEX_USER_ID, plexUsername: 'admin', isAdmin: true, isApproved: true });
+    admin.setEncryptedToken('admin-plex-token', settings.getEncryptionKey());
+    await admin.save();
+    settings.plexServerUrl = 'http://192.168.1.10:32400';
+    settings.plexMachineId = 'machine-a';
+    settings.tmdbApiKey = 'tmdb-key-a';
+    settings.adminUserId = admin._id;
+    settings.setupComplete = true;
+    await settings.save();
+
+    // The operator restarts with secret B.
+    vi.stubEnv('DECIDARR_SECRET', 'secret-b');
+    simulateRestart();
+
+    const before = await statusGet();
+    expect(before.status).toBe(200);
+
+    const login = await completePlexLogin('e2e-test-plex-token-valid');
+    expect(login).toMatchObject({ success: true, user: { isAdmin: true } });
+    expect(getTestCookie('decidarr_session')).toBeTruthy();
+
+    const after = await statusGet();
+    expect(after.status).toBe(200);
+    expect(await after.json()).toMatchObject({ setupComplete: true, hasPlexToken: true });
+  });
+});
