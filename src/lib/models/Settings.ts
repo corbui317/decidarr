@@ -96,12 +96,12 @@ const ENCRYPTION_VERSION_CURRENT = 2; // AES-256-GCM
 const CURRENT_MIGRATION_VERSION = 2;
 
 // Master key for encrypting the auto-generated secrets
-const getLegacyMasterKey = (): string => {
+export const getLegacyMasterKey = (): string => {
   const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/decidarr';
   return CryptoJS.SHA256('decidarr-master-' + mongoUri).toString().substring(0, 32);
 };
 
-const getMasterKey = (): string => {
+export const getMasterKey = (): string => {
   const secret = process.env.DECIDARR_SECRET?.trim();
   if (secret) {
     return CryptoJS.SHA256('decidarr-secret-' + secret).toString().substring(0, 32);
@@ -111,14 +111,6 @@ const getMasterKey = (): string => {
   }
   return getLegacyMasterKey();
 };
-
-export function getLegacySettingsMasterKey(): string {
-  return getLegacyMasterKey();
-}
-
-export function getCurrentSettingsMasterKey(): string {
-  return getMasterKey();
-}
 
 export { CURRENT_MIGRATION_VERSION, encryptWithAesGcm, decryptVersioned, encryptUserData, decryptUserData };
 

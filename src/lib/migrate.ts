@@ -10,8 +10,8 @@ import {
 } from './plex-image';
 import CryptoJS from 'crypto-js';
 import {
-  getLegacySettingsMasterKey,
-  getCurrentSettingsMasterKey,
+  getLegacyMasterKey,
+  getMasterKey,
   CURRENT_MIGRATION_VERSION,
   encryptWithAesGcm,
   decryptVersioned,
@@ -103,8 +103,8 @@ async function migrateSettingsMasterKey(settings: Awaited<ReturnType<typeof getO
     return;
   }
 
-  const legacyKey = getLegacySettingsMasterKey();
-  const newKey = getCurrentSettingsMasterKey();
+  const legacyKey = getLegacyMasterKey();
+  const newKey = getMasterKey();
 
   // If keys are the same, we're not using DECIDARR_SECRET, skip migration
   if (legacyKey === newKey) {

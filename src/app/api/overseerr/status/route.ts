@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server';
-import { createLogger } from '@/lib/logger';
-const logger = createLogger('API:status');
-
-
 import { connectDB } from '@/lib/db';
 import { getOrCreateSettings } from '@/lib/models/Settings';
 import { getOverseerrConfig, requireUser, isAuthError, authErrorStatus } from '@/lib/auth';
 import { OverseerrService } from '@/lib/services/overseerr';
+import { createLogger } from '@/lib/logger';
+
+const logger = createLogger('API:OverseerrStatus');
 
 export async function GET() {
   try {

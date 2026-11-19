@@ -6,13 +6,13 @@ export type AuthErrorCode =
   | 'AUTH_FAILED'
   | 'PLEX_UNAVAILABLE';
 
-export interface AuthError {
+export interface LoginFailure {
   code: AuthErrorCode;
   message: string;
   detailedReason?: string;
 }
 
-export function createAuthError(code: AuthErrorCode, detailedReason: string): AuthError {
+export function createAuthError(code: AuthErrorCode, detailedReason: string): LoginFailure {
   return {
     code,
     message: 'Authentication failed',

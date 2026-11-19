@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createLogger } from '@/lib/logger';
-const logger = createLogger('API:watched');
-
-
 import { requireUser, isAuthError, authErrorStatus } from '@/lib/auth';
 import { connectDB } from '@/lib/db';
 import { WatchedItem } from '@/lib/models/WatchedItem';
+import { createLogger } from '@/lib/logger';
+
+const logger = createLogger('API:Watched');
 
 export async function GET(request: NextRequest) {
   try {

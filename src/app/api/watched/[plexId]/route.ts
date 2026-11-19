@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createLogger } from '@/lib/logger';
-const logger = createLogger('API:plexId');
-
-
 import { requireUser, isAuthError, authErrorStatus } from '@/lib/auth';
 import { connectDB } from '@/lib/db';
 import { WatchedItem } from '@/lib/models/WatchedItem';
 import { parsePlexIdParam, parseWatchedCreateBody } from '@/lib/validation/watched';
+import { createLogger } from '@/lib/logger';
+
+const logger = createLogger('API:WatchedItem');
 
 export async function GET(
   _request: NextRequest,
