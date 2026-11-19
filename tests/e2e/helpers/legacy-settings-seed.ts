@@ -5,13 +5,16 @@ import CryptoJS from 'crypto-js';
  * Seeds the E2E database with legacy-encrypted settings (pre-migration format).
  * This must be called BEFORE the server starts so the migration runs on startup.
  */
+// Shared Mongo URI constant used by both seed and server
+export const E2E_MONGO_URI = process.env.E2E_MONGODB_URI ||
+                              process.env.MONGODB_URI ||
+                              'mongodb://127.0.0.1:27017/decidarr-e2e';
+
 export async function seedLegacyEncryptedSettings() {
-  const mongoUri = process.env.E2E_MONGODB_URI || 
-                   process.env.MONGODB_URI || 
-                   'mongodb://127.0.0.1:27017/decidarr-e2e';
-  
+  const mongoUri = E2E_MONGO_URI;
+
   await mongoose.connect(mongoUri);
-  
+
   // Create legacy master key (without DECIDARR_SECRET)
   const legacyMasterKey = CryptoJS.SHA256('decidarr-master-' + mongoUri).toString().substring(0, 32);
   
@@ -41,7 +44,7 @@ export async function seedLegacyEncryptedSettings() {
     tautulliEnabled: false,
     overseerrFilterEnabled: false,
     syncFrequencyHours: 24,
-    setupComplete: false, // Allow E2E test to go through setup wizard
+    setupComplete: true, // Setup already complete so we can test login and spin
     approvedPlexUserIds: [],
     uiPreferences: {
       theme: 'dark',
@@ -81,7 +84,35 @@ export async function seedLegacyEncryptedSettings() {
     { _id: 'app-settings' } as any,
     { $set: { adminUserId: userId } } as any
   );
-  
+
+  // Seed a library cache entry so spinning is possible
+  await mongoose.connection.db?.collection('librarycaches').insertOne({
+    plexMachineId: 'legacy-machine-1',
+    libraryId: '1',
+    libraryName: 'Movies',
+    mediaType: 'movie',
+    items: [
+      {
+        plexId: 'movie-1',
+        title: 'Test Movie',
+        year: 2020,
+        thumbPath: '/library/metadata/1/thumb',
+        type: 'movie',
+      },
+      {
+        plexId: 'movie-2',
+        title: 'Another Movie',
+        year: 2021,
+        thumbPath: '/library/metadata/2/thumb',
+        type: 'movie',
+      },
+    ],
+    lastSyncedAt: new Date(),
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  } as any);
+
   await mongoose.disconnect();
   
   return {

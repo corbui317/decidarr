@@ -60,7 +60,7 @@ test.describe('DECIDARR_SECRET encryption', () => {
     await expect(spinButton).toBeVisible({ timeout: 5000 });
   });
 
-  test('legacy-encrypted install migrates and allows new login', async ({ page, request }) => {
+  test('legacy-encrypted install migrates and allows login and spin', async ({ page, request }) => {
     test.setTimeout(90000);
 
     // This test verifies the critical migration scenario:
@@ -76,35 +76,59 @@ test.describe('DECIDARR_SECRET encryption', () => {
       },
     });
 
-    // Step 2: Seed legacy-encrypted settings (pre-migration format)
-    await seedLegacyEncryptedSettings();
+    // Step 2: Seed legacy-encrypted settings with setupComplete=true and library cache
+    const seededData = await seedLegacyEncryptedSettings();
 
     // Step 3: Navigate to trigger migration on next database connection
-    // The server will run migration when it connects to handle this request
     await page.goto('/');
     await page.waitForLoadState('networkidle', { timeout: 15000 });
 
-    // Step 4: Should see setup wizard (setupComplete=false in seeded data)
-    // Migration has already happened server-side at this point
-    await expect(page.getByText('Welcome to Decidarr')).toBeVisible({ timeout: 15000 });
+    // Step 4: Should see login screen (setupComplete=true, so no setup wizard)
+    await expect(page.getByRole('button', { name: /Sign in with Plex/i })).toBeVisible({ timeout: 15000 });
 
-    // Step 5: Complete setup with mock Plex (tests that migration worked)
-    // If migration failed, decryption would fail and setup would error
-    await completeSetupWizard(page);
+    // Step 5: Sign in through mock OAuth flow as the legacy user
+    await page.getByRole('button', { name: /Sign in with Plex/i }).click();
 
-    // Step 6: Verify we reach the dashboard
-    // This confirms migration was successful and app is functional
+    // Step 6: Should reach dashboard after login
     await expect(page.getByText(/DECIDARR|SPIN/i).first()).toBeVisible({ timeout: 15000 });
 
-    // Step 7: Verify spin button is present
+    // Step 7: Spin once to verify app is functional
     const spinButton = page.getByRole('button', { name: /spin/i }).first();
     await expect(spinButton).toBeVisible({ timeout: 5000 });
+    await expect(spinButton).toBeEnabled({ timeout: 5000 });
+    await spinButton.click();
 
-    // Step 8: Verify settings are accessible (final validation)
-    await page.getByRole('button', { name: /settings/i }).click();
-    await expect(page.getByRole('heading', { name: /Settings/i })).toBeVisible({ timeout: 5000 });
+    // Wait for spin animation to complete
+    await page.waitForTimeout(2000);
+
+    // Step 8: Connect to Mongo and assert migration results
+    const mongoose = await import('mongoose');
+    const { E2E_MONGO_URI } = await import('./helpers/legacy-settings-seed');
+    await mongoose.default.connect(E2E_MONGO_URI);
+
+    // Assert settings migration
+    const settings = await mongoose.default.connection.db?.collection('settings').findOne({ _id: 'app-settings' });
+    expect(settings?.secretsMigrationVersion).toBe(2);
+    expect(settings?.jwtSecret).toMatch(/^v2:/);
+    expect(settings?.encryptionKey).toMatch(/^v2:/);
+
+    // Decrypt and verify TMDB API key
+    const { decryptUserData } = await import('../../../src/lib/models/Settings');
+    const decryptedTmdb = decryptUserData(settings?.tmdbApiKey);
+    expect(decryptedTmdb).toBe('test-tmdb-key-legacy');
+
+    // Assert user token migration
+    const user = await mongoose.default.connection.db?.collection('users').findOne({ plexUserId: 'legacy-plex-user-1' });
+    expect(user?.plexToken).toMatch(/^v2:/);
+
+    // Decrypt and verify user Plex token
+    const decryptedToken = decryptUserData(user?.plexToken);
+    expect(decryptedToken).toBe('test-plex-token-legacy');
+
+    await mongoose.default.disconnect();
 
     // This confirms: legacy settings migrated to AES-256-GCM,
-    // decryption works correctly, and app is fully functional
+    // all encrypted values have v2: prefix, decryption works correctly,
+    // and app is fully functional (login, dashboard, spin all work)
   });
 });
