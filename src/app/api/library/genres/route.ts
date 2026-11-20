@@ -4,6 +4,9 @@ import { connectDB } from '@/lib/db';
 import { LibraryCache } from '@/lib/models/LibraryCache';
 import { createLogger } from '@/lib/logger';
 
+// Reads the session and database on every request; never prerender at build time.
+export const dynamic = 'force-dynamic';
+
 const logger = createLogger('API:LibraryGenres');
 
 export async function GET(request: NextRequest) {

@@ -16,6 +16,9 @@ import {
 } from '@/lib/plex-image';
 import { emitSyncChange, toSpinHistoryContract } from '@/lib/sync/service';
 
+// Reads the session and database on every request; never prerender at build time.
+export const dynamic = 'force-dynamic';
+
 const logger = createLogger('API:SpinHistory');
 
 export async function GET(request: NextRequest) {

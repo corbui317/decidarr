@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createLogger } from '@/lib/logger';
+
+// Reads the session and database on every request; never prerender at build time.
+export const dynamic = 'force-dynamic';
 const logger = createLogger('API:years');
 
 

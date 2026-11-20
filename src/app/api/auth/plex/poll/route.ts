@@ -13,6 +13,9 @@ import { createLogger } from '@/lib/logger';
 import { assertSetupSecretAllowed } from '@/lib/security/setup-secret';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 
+// Reads the session and database on every request; never prerender at build time.
+export const dynamic = 'force-dynamic';
+
 const logger = createLogger('API:PlexAuthPoll');
 
 // Per-pin rate limit: allow ~300 polls over 10 minutes (polling every 2s)

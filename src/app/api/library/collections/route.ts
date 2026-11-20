@@ -3,6 +3,9 @@ import { requireUser, getAccessibleLibraryIds, isAuthError, authErrorStatus } fr
 import { createPlexService } from '@/lib/services/plex-factory';
 import { createLogger } from '@/lib/logger';
 
+// Reads the session and database on every request; never prerender at build time.
+export const dynamic = 'force-dynamic';
+
 const logger = createLogger('API:Collections');
 
 export async function GET(request: NextRequest) {

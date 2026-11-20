@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import { requireUser, isAuthError, authErrorStatus } from '@/lib/auth';
 import { connectDB } from '@/lib/db';
 
+// Reads the session and database on every request; never prerender at build time.
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     await connectDB();

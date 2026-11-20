@@ -4,6 +4,9 @@ import { connectDB } from '@/lib/db';
 import { WatchedItem } from '@/lib/models/WatchedItem';
 import { createLogger } from '@/lib/logger';
 
+// Reads the session and database on every request; never prerender at build time.
+export const dynamic = 'force-dynamic';
+
 const logger = createLogger('API:Watched');
 
 export async function GET(request: NextRequest) {

@@ -6,6 +6,9 @@ import { getChanges } from '@/lib/sync/service';
 import { SYNC_SCHEMA_VERSION } from '@decidarr/api-contracts';
 import { createLogger } from '@/lib/logger';
 
+// Reads the session and database on every request; never prerender at build time.
+export const dynamic = 'force-dynamic';
+
 const logger = createLogger('API:SyncChanges');
 
 export async function GET(request: NextRequest) {

@@ -11,6 +11,9 @@ import { createLogger } from '@/lib/logger';
 import { parsePreferencesPatchBody, parsePreferencesPutBody } from '@/lib/validation/preferences';
 import { emitSyncChange, toPreferenceContract } from '@/lib/sync/service';
 
+// Reads the session and database on every request; never prerender at build time.
+export const dynamic = 'force-dynamic';
+
 const logger = createLogger('API:UserPreferences');
 
 

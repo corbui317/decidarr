@@ -5,6 +5,9 @@ import { createLogger } from '@/lib/logger';
 import { assertSafeServiceUrl, allowPrivateServiceUrls } from '@/lib/security/service-url';
 import { APP_THEMES, ANIMATION_STYLES, ANIMATION_SPEEDS } from '@/types/shared';
 
+// Reads the session and database on every request; never prerender at build time.
+export const dynamic = 'force-dynamic';
+
 const logger = createLogger('API:Settings');
 
 // Helper to mask sensitive values

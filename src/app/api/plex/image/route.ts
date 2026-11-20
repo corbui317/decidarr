@@ -3,6 +3,9 @@ import { requireUser, isAuthError, authErrorStatus } from '@/lib/auth';
 import { normalizeAndValidatePlexImagePath } from '@/lib/plex-image';
 import { createLogger } from '@/lib/logger';
 
+// Reads the session and database on every request; never prerender at build time.
+export const dynamic = 'force-dynamic';
+
 const logger = createLogger('API:PlexImage');
 
 export async function GET(request: NextRequest) {

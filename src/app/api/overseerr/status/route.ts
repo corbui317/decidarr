@@ -5,6 +5,9 @@ import { getOverseerrConfig, requireUser, isAuthError, authErrorStatus } from '@
 import { OverseerrService } from '@/lib/services/overseerr';
 import { createLogger } from '@/lib/logger';
 
+// Reads the session and database on every request; never prerender at build time.
+export const dynamic = 'force-dynamic';
+
 const logger = createLogger('API:OverseerrStatus');
 
 export async function GET() {

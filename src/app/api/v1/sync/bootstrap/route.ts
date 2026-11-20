@@ -5,6 +5,9 @@ import { isAuthError, authErrorStatus } from '@/lib/auth';
 import { buildBootstrap, backfillSyncRevisions } from '@/lib/sync/service';
 import { createLogger } from '@/lib/logger';
 
+// Reads the session and database on every request; never prerender at build time.
+export const dynamic = 'force-dynamic';
+
 const logger = createLogger('API:SyncBootstrap');
 
 export async function GET(request: NextRequest) {

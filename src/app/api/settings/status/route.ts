@@ -5,6 +5,9 @@ import { loadUserWithToken } from '@/lib/models/User';
 import { isSetupSecretRequired, getConfiguredSetupSecret } from '@/lib/security/setup-secret';
 import { createLogger } from '@/lib/logger';
 
+// Reads the session and database on every request; never prerender at build time.
+export const dynamic = 'force-dynamic';
+
 const logger = createLogger('API:SettingsStatus');
 
 async function hasUsablePlexToken(
