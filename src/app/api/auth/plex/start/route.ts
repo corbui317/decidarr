@@ -12,6 +12,7 @@ import {
 import { createLogger } from '@/lib/logger';
 import { assertSetupSecretAllowed } from '@/lib/security/setup-secret';
 import { enforceRateLimit } from '@/lib/security/rate-limit';
+import { resolveOAuthForwardUrl } from '@/lib/security/oauth-redirect';
 
 const logger = createLogger('API:PlexAuthStart');
 
@@ -39,31 +40,7 @@ export async function POST(request: Request) {
     const state = generateOAuthState();
     const pin = await createAuthPin();
 
-    // Validate redirect origin against APP_URL to prevent Host header injection
-    let forwardUrl: string | undefined;
-    try {
-      const requestOrigin = new URL(request.url).origin;
-      const appUrl = process.env.APP_URL?.trim() || process.env.NEXTAUTH_URL?.trim();
-
-      if (appUrl) {
-        const allowedOrigin = new URL(appUrl).origin;
-        if (requestOrigin === allowedOrigin) {
-          forwardUrl = `${requestOrigin}/`;
-        } else {
-          logger.warn('OAuth redirect origin mismatch', {
-            requested: requestOrigin,
-            allowed: allowedOrigin,
-          });
-          forwardUrl = undefined;
-        }
-      } else {
-        // No APP_URL configured, omit forwardUrl for safety
-        forwardUrl = undefined;
-      }
-    } catch {
-      forwardUrl = undefined;
-    }
-
+    const forwardUrl = resolveOAuthForwardUrl(request);
     const authUrl = buildPlexAuthUrl(pin.code, { forwardUrl });
 
     const cookieOptions = getOAuthCookieOptions();
