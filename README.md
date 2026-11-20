@@ -98,6 +98,8 @@ All settings are managed through the **Settings** panel (gear icon in the header
 | `SECURE_COOKIES` | `true` in production | Set `false` only for local HTTP development |
 | `DECIDARR_SECRET` | _(none)_ | **Required in production** - High-entropy secret for JWT/encryption (generate with `openssl rand -hex 32`) |
 | `DECIDARR_ALLOW_PRIVATE_URLS` | false | **LAN opt-in** - Set to `true` if your Plex/Tautulli/Overseerr are on your local network (192.168.x.x, 10.x.x.x). Private addresses are blocked by default for security. |
+| `APP_URL` | _(none)_ | Public origin users open Decidarr at (for example `https://decidarr.example.com`). After Plex sign-in, Plex sends the browser back only to this origin; without it, sign-in still works but the Plex window does not return to Decidarr on its own. |
+| `TRUST_PROXY` | false | Set to `true` only behind a reverse proxy that sets `X-Forwarded-For`, so sign-in rate limits are counted per client. Otherwise they are keyed by `X-Real-IP`, and clients without it share one limit. |
 
 **Important**: If you change `DECIDARR_SECRET` after initial setup, the stored credentials can no longer be decrypted.
 On the next start Decidarr logs this, generates fresh internal keys, clears the stored Plex tokens and integration keys, and signs everyone out; user accounts are kept.
