@@ -1,47 +1,49 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { MobileAuthCode } from '@/lib/models/MobileAuthCode';
-import {
-  createAuthPin,
-  buildPlexAuthUrl,
-  pollAuthPin,
-} from '@/lib/services/plex-oauth';
+import { buildPlexAuthUrl } from '@/lib/services/plex-oauth';
+import { createAuthPin } from '@/lib/services/plex-oauth-factory';
 import {
   authCodeExpiresAt,
   generateDeviceCode,
   redactToken,
 } from '@/lib/mobile-auth/tokens';
+import { enforceRateLimit } from '@/lib/security/rate-limit';
+import { resolveOAuthForwardUrl } from '@/lib/security/oauth-redirect';
+import { assertSetupSecretAllowed } from '@/lib/security/setup-secret';
 import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('API:MobileAuthStart');
 
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
-const RATE_LIMIT_WINDOW_MS = 60_000;
-const RATE_LIMIT_MAX = 10;
-
-function checkRateLimit(ip: string): boolean {
-  const now = Date.now();
-  const entry = rateLimitMap.get(ip);
-  if (!entry || entry.resetAt < now) {
-    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
-    return true;
-  }
-  if (entry.count >= RATE_LIMIT_MAX) return false;
-  entry.count += 1;
-  return true;
-}
+/** Same budget as the browser sign-in start (POST /api/auth/plex/start). */
+const RATE_LIMIT_CONFIG = {
+  windowMs: 15 * 60 * 1000,
+  maxAttempts: 5,
+};
 
 export async function POST(request: NextRequest) {
   try {
-    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
-    if (!checkRateLimit(ip)) {
-      return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
+    const rateLimitResponse = enforceRateLimit(request, 'mobile-auth:start', RATE_LIMIT_CONFIG);
+    if (rateLimitResponse) {
+      logger.warn('Rate limit exceeded for mobile auth start');
+      return rateLimitResponse;
     }
 
     await connectDB();
-    const body = await request.json();
-    const deviceId = typeof body.deviceId === 'string' ? body.deviceId.trim() : '';
-    const deviceName = typeof body.deviceName === 'string' ? body.deviceName.trim() : undefined;
+
+    // A mobile sign-in on a server that has not finished setup would make the caller the
+    // admin, so it needs the same setup secret as the browser flow.
+    const setupCheck = await assertSetupSecretAllowed(request);
+    if (!setupCheck.ok) {
+      return NextResponse.json(
+        { error: setupCheck.error, code: setupCheck.code },
+        { status: setupCheck.status }
+      );
+    }
+
+    const body = await request.json().catch(() => null);
+    const deviceId = typeof body?.deviceId === 'string' ? body.deviceId.trim() : '';
+    const deviceName = typeof body?.deviceName === 'string' ? body.deviceName.trim() : undefined;
 
     if (!deviceId || deviceId.length < 8) {
       return NextResponse.json({ error: 'deviceId is required' }, { status: 400 });
@@ -51,15 +53,7 @@ export async function POST(request: NextRequest) {
     const deviceCode = generateDeviceCode();
     const expiresAt = authCodeExpiresAt();
 
-    let forwardUrl: string | undefined;
-    try {
-      const origin = new URL(request.url).origin;
-      forwardUrl = `${origin}/`;
-    } catch {
-      forwardUrl = undefined;
-    }
-
-    const authUrl = buildPlexAuthUrl(pin.code, { forwardUrl });
+    const authUrl = buildPlexAuthUrl(pin.code, { forwardUrl: resolveOAuthForwardUrl(request) });
 
     await MobileAuthCode.create({
       deviceCode,
@@ -86,7 +80,7 @@ export async function POST(request: NextRequest) {
     const msg = (err as Error).message;
     if (msg === 'PLEX_UNAVAILABLE') {
       return NextResponse.json(
-        { error: 'Plex.tv is unavailable. Please try again later.' },
+        { error: 'Plex.tv is unavailable. Please try again later.', code: 'PLEX_UNAVAILABLE' },
         { status: 503 }
       );
     }

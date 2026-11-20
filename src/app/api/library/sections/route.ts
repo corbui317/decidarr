@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server';
 import { requireUser, isAuthError, authErrorStatus } from '@/lib/auth';
-import { PlexService } from '@/lib/services/plex';
+import { createPlexService } from '@/lib/services/plex-factory';
 import { createLogger } from '@/lib/logger';
 import { connectDB } from '@/lib/db';
+
+// Reads the session and database on every request; never prerender at build time.
+export const dynamic = 'force-dynamic';
 
 const logger = createLogger('API:Sections');
 
@@ -12,7 +15,7 @@ export async function GET() {
     logger.debug('Fetching library sections');
     const auth = await requireUser();
 
-    const plexService = new PlexService(
+    const plexService = await createPlexService(
       auth.plexToken,
       auth.plexServerUrl,
       auth.settings.plexMachineId || null
@@ -31,7 +34,7 @@ export async function GET() {
     if (isAuthError(error)) {
       logger.warn('Auth error fetching sections', { error: errorMsg });
       return NextResponse.json(
-        { error: errorMsg === 'Unauthorized' ? 'Session expired' : errorMsg },
+        { error: error.code === 'UNAUTHORIZED' ? 'Session expired' : errorMsg },
         { status: authErrorStatus(error) }
       );
     }

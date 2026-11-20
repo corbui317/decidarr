@@ -6,6 +6,7 @@ import { POST as refreshPost } from '@/app/api/mobile/auth/refresh/route';
 import { GET as bootstrapGet } from '@/app/api/v1/sync/bootstrap/route';
 import { seedConfiguredSettings, seedTestUser } from '../helpers/auth';
 import { clearDatabase } from '../helpers/mongo';
+import { clearRateLimitStore } from '@/lib/security/rate-limit';
 
 vi.mock('@/lib/services/plex-oauth', () => ({
   createAuthPin: vi.fn().mockResolvedValue({ id: 12345, code: 'ABCD' }),
@@ -28,6 +29,7 @@ vi.mock('@/lib/auth-login', () => ({
 describe('mobile auth and sync API', () => {
   beforeEach(async () => {
     await clearDatabase();
+    clearRateLimitStore();
     await seedConfiguredSettings();
   });
 

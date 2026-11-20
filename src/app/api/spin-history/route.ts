@@ -11,11 +11,13 @@ import {
 import { createLogger } from '@/lib/logger';
 import {
   containsPlexToken,
-  plexImageUrl,
   resolveItemImageUrls,
   sanitizeThumbPathInput,
 } from '@/lib/plex-image';
 import { emitSyncChange, toSpinHistoryContract } from '@/lib/sync/service';
+
+// Reads the session and database on every request; never prerender at build time.
+export const dynamic = 'force-dynamic';
 
 const logger = createLogger('API:SpinHistory');
 

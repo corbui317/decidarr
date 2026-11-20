@@ -34,7 +34,7 @@ export const RouletteAnimation = forwardRef<SpinAnimationHandle, RouletteAnimati
   function RouletteAnimation({ result, speed, reducedMotion, onComplete }, ref) {
     const { pockets, winnerIndex } = useMemo(
       () => buildPockets(result),
-      [result.plexId, result.title]
+      [result]
     );
     const [rotation, setRotation] = useState(0);
     const [stopped, setStopped] = useState(false);

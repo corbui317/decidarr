@@ -1,17 +1,18 @@
 import mongoose, { Document, Model, Types } from 'mongoose';
+import type { MediaTypeWithEpisode, TvSelectionMode } from '@/types/shared';
 
 export interface ISpinHistoryEntry extends Document {
   userId: Types.ObjectId;
   plexId: string;
   title: string;
-  mediaType: 'movie' | 'show' | 'episode';
+  mediaType: MediaTypeWithEpisode;
   /** @deprecated Use thumbPath */
   posterUrl?: string;
   thumbPath?: string;
   year?: number;
   libraryIds: string[];
   filtersSnapshot?: Record<string, unknown>;
-  tvSelectionMode?: 'show' | 'episode';
+  tvSelectionMode?: TvSelectionMode;
   poolSizeAtSpin?: number;
   spunAt: Date;
   createdAt: Date;

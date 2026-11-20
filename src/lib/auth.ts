@@ -3,10 +3,15 @@ import jwt from 'jsonwebtoken';
 import { connectDB } from './db';
 import { getOrCreateSettings, ISettings } from './models/Settings';
 import { IUser, loadUserWithToken } from './models/User';
-import { PlexService, PlexLibrary } from './services/plex';
+import { PlexLibrary } from './services/plex';
+import { createPlexService } from './services/plex-factory';
 import { createLogger } from './logger';
 import { runMigrations } from './migrate';
 import { verifyAccessToken } from './mobile-auth/tokens';
+import { SessionError } from './auth-errors';
+
+export { SessionError, isAuthError, authErrorStatus } from './auth-errors';
+export type { SessionErrorCode } from './auth-errors';
 
 const logger = createLogger('Auth');
 
@@ -16,6 +21,7 @@ export interface AuthContext {
   plexToken: string;
   plexServerUrl: string;
   isAdmin: boolean;
+  expiresAt: number; // Unix timestamp when session expires
 }
 
 export interface SessionPayload {
@@ -23,6 +29,7 @@ export interface SessionPayload {
   plexUserId: string;
   isAdmin: boolean;
   sessionVersion: number;
+  exp: number; // Unix timestamp when session expires
 }
 
 const SESSION_COOKIE = 'decidarr_session';
@@ -74,6 +81,7 @@ async function parseBearerSession(): Promise<SessionPayload | null> {
       plexUserId: payload.plexUserId,
       isAdmin: payload.isAdmin,
       sessionVersion: payload.sessionVersion,
+      exp: payload.exp,
     };
   } catch {
     return null;
@@ -92,43 +100,55 @@ async function parseSession(): Promise<SessionPayload> {
   const settings = await getOrCreateSettings();
 
   if (!settings.setupComplete) {
-    throw new Error('App not configured');
+    throw new SessionError('APP_NOT_CONFIGURED');
   }
 
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE)?.value;
   if (!token) {
-    throw new Error('Unauthorized');
+    throw new SessionError('UNAUTHORIZED');
   }
 
-  const jwtSecret = settings.getJwtSecret();
-  const payload = jwt.verify(token, jwtSecret) as SessionPayload;
+  let payload: SessionPayload;
+  try {
+    payload = jwt.verify(token, settings.getJwtSecret()) as SessionPayload;
+  } catch {
+    // Expired, tampered with, or signed before a DECIDARR_SECRET change.
+    throw new SessionError('UNAUTHORIZED');
+  }
 
   if (!payload.sub || payload.sessionVersion === undefined) {
-    throw new Error('Unauthorized');
+    throw new SessionError('UNAUTHORIZED');
   }
 
   return payload;
 }
 
 export async function requireUser(): Promise<AuthContext> {
-  const payload = await parseSession();
+  return authContextForSession(await parseSession());
+}
+
+/**
+ * Loads the user behind a verified session (web cookie or mobile bearer token) and
+ * checks it is still valid: user exists, session not revoked, user approved, Plex token readable.
+ */
+export async function authContextForSession(payload: SessionPayload): Promise<AuthContext> {
   const settings = await getOrCreateSettings();
 
   const user = await loadUserWithToken(payload.sub);
   if (!user) {
     logger.warn('Auth failed: user not found', { sub: payload.sub });
-    throw new Error('Unauthorized');
+    throw new SessionError('UNAUTHORIZED');
   }
 
   if (user.sessionVersion !== payload.sessionVersion) {
     logger.warn('Auth failed: session revoked', { sub: payload.sub });
-    throw new Error('Unauthorized');
+    throw new SessionError('UNAUTHORIZED');
   }
 
   if (!user.isApproved && !user.isAdmin) {
     logger.warn('Auth failed: user not approved', { sub: payload.sub });
-    throw new Error('Unauthorized');
+    throw new SessionError('UNAUTHORIZED');
   }
 
   if (!settings.plexServerUrl) {
@@ -139,11 +159,11 @@ export async function requireUser(): Promise<AuthContext> {
   try {
     plexToken = user.getDecryptedToken();
   } catch {
-    throw new Error('Unauthorized');
+    throw new SessionError('UNAUTHORIZED');
   }
 
   if (!plexToken) {
-    throw new Error('Unauthorized');
+    throw new SessionError('UNAUTHORIZED');
   }
 
   return {
@@ -152,6 +172,7 @@ export async function requireUser(): Promise<AuthContext> {
     plexToken,
     plexServerUrl: settings.plexServerUrl,
     isAdmin: user.isAdmin,
+    expiresAt: payload.exp * 1000, // Convert to milliseconds
   };
 }
 
@@ -159,7 +180,7 @@ export async function requireAdmin(): Promise<AuthContext> {
   const ctx = await requireUser();
   if (!ctx.isAdmin) {
     logger.warn('Admin auth failed', { sub: ctx.user._id.toString() });
-    throw new Error('Forbidden');
+    throw new SessionError('FORBIDDEN');
   }
   return ctx;
 }
@@ -219,7 +240,7 @@ export async function getAccessibleLibraryIds(
     return filterRequestedLibraryIds(cached.ids, requestedIds);
   }
 
-  const plexService = new PlexService(
+  const plexService = await createPlexService(
     auth.plexToken,
     auth.plexServerUrl,
     auth.settings.plexMachineId || null
@@ -302,52 +323,4 @@ export function normalizeUrl(url: string): string {
     return trimmed.replace(/\/+$/, '');
   }
   return `http://${trimmed}`.replace(/\/+$/, '');
-}
-
-export function validatePlexUrl(url: string): { valid: boolean; error?: string; normalized?: string } {
-  const normalized = normalizeUrl(url);
-
-  let parsed: URL;
-  try {
-    parsed = new URL(normalized);
-  } catch {
-    return { valid: false, error: 'Invalid URL format' };
-  }
-
-  if (!['http:', 'https:'].includes(parsed.protocol)) {
-    return { valid: false, error: 'Only http and https URLs are allowed' };
-  }
-
-  const hostname = parsed.hostname.toLowerCase();
-
-  if (
-    hostname === 'localhost' ||
-    hostname === '127.0.0.1' ||
-    hostname === '::1' ||
-    hostname.startsWith('127.')
-  ) {
-    return { valid: false, error: 'Loopback addresses are not permitted' };
-  }
-
-  if (hostname.startsWith('169.254.')) {
-    return { valid: false, error: 'Link-local addresses are not permitted' };
-  }
-
-  if (hostname === '::1' || hostname.startsWith('fe80:')) {
-    return { valid: false, error: 'Link-local IPv6 addresses are not permitted' };
-  }
-
-  return { valid: true, normalized };
-}
-
-export function isAuthError(error: unknown): boolean {
-  const msg = (error as Error)?.message;
-  return msg === 'App not configured' || msg === 'Unauthorized' || msg === 'Forbidden';
-}
-
-export function authErrorStatus(error: unknown): number {
-  const msg = (error as Error)?.message;
-  if (msg === 'Forbidden') return 403;
-  if (msg === 'App not configured' || msg === 'Unauthorized') return 401;
-  return 500;
 }

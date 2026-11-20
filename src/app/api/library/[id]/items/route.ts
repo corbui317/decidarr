@@ -2,11 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireUser, getTmdbApiKey, getSyncFrequencyHours, getAccessibleLibraryIds, isAuthError, authErrorStatus } from '@/lib/auth';
 import { connectDB } from '@/lib/db';
 import { LibraryCache } from '@/lib/models/LibraryCache';
-import { PlexService } from '@/lib/services/plex';
+import { createPlexService } from '@/lib/services/plex-factory';
 import { TMDbService } from '@/lib/services/tmdb';
 import { enrichWithOverseerr } from '@/lib/services/overseerr-sync';
 import type { ILibraryItem } from '@/lib/models/LibraryCache';
 import { sanitizeLibraryItemForClient } from '@/lib/plex-image';
+import { createLogger } from '@/lib/logger';
+
+const logger = createLogger('API:LibraryItems');
 
 const ENRICHMENT_FIELDS = [
   'tmdbId',
@@ -17,9 +20,14 @@ const ENRICHMENT_FIELDS = [
   'networks',
   'studios',
   'enrichedAt',
+  'attemptedEnrichmentAt',
   'overseerrStatus',
   'overseerrSyncedAt',
 ] as const;
+
+function copyField<K extends keyof ILibraryItem>(target: ILibraryItem, source: ILibraryItem, field: K): void {
+  target[field] = source[field];
+}
 
 function mergeExistingEnrichment(
   items: ILibraryItem[],
@@ -41,14 +49,27 @@ function mergeExistingEnrichment(
         (Array.isArray(freshValue) && freshValue.length === 0);
 
       if (freshMissing && existingValue != null) {
-        (item as unknown as Record<string, unknown>)[field] = existingValue;
+        copyField(item, existing, field);
       }
     }
   }
 }
 
+const ENRICHMENT_RETRY_HOURS = 24;
+
 function isItemUnenriched(item: ILibraryItem): boolean {
-  return !item.enrichedAt || !item.tmdbId;
+  if (item.enrichedAt && item.tmdbId) {
+    return false;
+  }
+
+  if (item.attemptedEnrichmentAt) {
+    const hoursSinceAttempt = (Date.now() - item.attemptedEnrichmentAt.getTime()) / (1000 * 60 * 60);
+    if (hoursSinceAttempt < ENRICHMENT_RETRY_HOURS) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 export async function GET(
@@ -78,14 +99,14 @@ export async function GET(
 
       if (cache && !cache.isExpired()) {
         return NextResponse.json({
-          items: cache.items.map((item) => sanitizeLibraryItemForClient(item as unknown as Record<string, unknown>)),
+          items: cache.toObject().items.map(sanitizeLibraryItemForClient),
           fromCache: true,
           lastSyncedAt: cache.lastSyncedAt,
         });
       }
     }
 
-    const plexService = new PlexService(
+    const plexService = await createPlexService(
       auth.plexToken,
       auth.plexServerUrl,
       auth.settings.plexMachineId
@@ -110,25 +131,28 @@ export async function GET(
     if (tmdbApiKey) {
       const tmdbService = new TMDbService(tmdbApiKey);
       const unenrichedItems = items.filter(isItemUnenriched);
-      const itemsToEnrich = unenrichedItems.slice(0, 50) as unknown as Record<string, unknown>[];
+      const itemsToEnrich = unenrichedItems.slice(0, 50);
 
       if (itemsToEnrich.length > 0) {
         try {
           const enrichments = await tmdbService.enrichBatch(
             itemsToEnrich.map((item) => ({
-              title: item.title as string,
-              year: item.year as number | undefined,
-              contentRating: item.contentRating as string | undefined,
-              rating: item.rating as number | undefined,
-              studio: item.studio as string | undefined,
+              title: item.title,
+              year: item.year,
+              contentRating: item.contentRating,
+              rating: item.rating,
+              studio: item.studio,
             })),
             section.type as 'movie' | 'show'
           );
 
           enrichments.forEach((enrichment, i) => {
             const item = itemsToEnrich[i];
+            let enriched = false;
+
             if (enrichment.tmdbId && !item.tmdbId) {
               item.tmdbId = String(enrichment.tmdbId);
+              enriched = true;
             }
             if (enrichment.certification && !item.contentRating) {
               item.contentRating = enrichment.certification;
@@ -146,7 +170,12 @@ export async function GET(
                 item.studios = enrichment.studios;
               }
             }
-            item.enrichedAt = new Date();
+
+            if (enriched) {
+              item.enrichedAt = new Date();
+            } else {
+              item.attemptedEnrichmentAt = new Date();
+            }
           });
 
           for (let i = 0; i < items.length; i++) {
@@ -154,7 +183,7 @@ export async function GET(
               (candidate) => candidate.plexId === items[i].plexId
             );
             if (enrichIndex === -1) continue;
-            const source = itemsToEnrich[enrichIndex] as unknown as ILibraryItem;
+            const source = itemsToEnrich[enrichIndex];
             if (source.tmdbId && !items[i].tmdbId) {
               items[i].tmdbId = source.tmdbId;
             }
@@ -179,7 +208,7 @@ export async function GET(
             }
           }
         } catch (err) {
-          console.error('Batch enrichment error:', err);
+          logger.error('Batch enrichment error', { error: (err as Error).message });
         }
       }
     }
@@ -206,7 +235,7 @@ export async function GET(
     );
 
     return NextResponse.json({
-      items: items.map((item) => sanitizeLibraryItemForClient(item as unknown as Record<string, unknown>)),
+      items: items.map(sanitizeLibraryItemForClient),
       fromCache: false,
       lastSyncedAt: new Date(),
     });
@@ -215,7 +244,7 @@ export async function GET(
     if (isAuthError(error)) {
       return NextResponse.json({ error: msg }, { status: authErrorStatus(error) });
     }
-    console.error('Get library items error:', error);
+    logger.error('Get library items error', { error: msg });
     return NextResponse.json({ error: 'Failed to get library items' }, { status: 500 });
   }
 }

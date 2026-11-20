@@ -11,7 +11,9 @@ services:
       - SECURE_COOKIES=true
       - DECIDARR_SECRET=${DECIDARR_SECRET}
       - DECIDARR_SETUP_SECRET=${DECIDARR_SETUP_SECRET}
-      - DECIDARR_ALLOW_PRIVATE_URLS=${DECIDARR_ALLOW_PRIVATE_URLS:-true}
+      - DECIDARR_ALLOW_PRIVATE_URLS=${DECIDARR_ALLOW_PRIVATE_URLS:-false}
+      - APP_URL=${APP_URL:-}
+      - TRUST_PROXY=${TRUST_PROXY:-false}
     depends_on:
       - mongo
     networks:

@@ -1,22 +1,21 @@
 import { NextResponse } from 'next/server';
 import mongoose from 'mongoose';
-import { connectDB } from '@/lib/db';
+import { connectDB, forgetConnectionForTests } from '@/lib/db';
+import { resetMigrationStateForTests } from '@/lib/migrate';
 
 export async function POST(request: Request) {
-  if (process.env.NODE_ENV === 'production') {
+  if (process.env.NODE_ENV === 'production' || process.env.E2E_MOCK_PLEX !== 'true') {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
 
-  if (process.env.E2E_MOCK_PLEX !== 'true') {
+  const resetSecret = process.env.E2E_TEST_RESET_SECRET?.trim();
+  if (!resetSecret) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const resetSecret = process.env.E2E_TEST_RESET_SECRET?.trim();
-  if (resetSecret) {
-    const provided = request.headers.get('X-E2E-Reset-Secret')?.trim();
-    if (!provided || provided !== resetSecret) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
+  const provided = request.headers.get('X-E2E-Reset-Secret')?.trim();
+  if (!provided || provided !== resetSecret) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
   try {
@@ -25,12 +24,9 @@ export async function POST(request: Request) {
       await mongoose.connection.dropDatabase();
     }
 
-    const cached = (global as typeof global & { mongoose?: { conn: null; promise: null } })
-      .mongoose;
-    if (cached) {
-      cached.conn = null;
-      cached.promise = null;
-    }
+    // An empty database should behave like a fresh install on a fresh process.
+    forgetConnectionForTests();
+    resetMigrationStateForTests();
 
     return NextResponse.json({ ok: true });
   } catch (error) {

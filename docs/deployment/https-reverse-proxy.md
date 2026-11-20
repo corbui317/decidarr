@@ -31,8 +31,13 @@ Choose a single canonical origin. Accessing the same instance by raw LAN IP and 
 NODE_ENV=production
 SECURE_COOKIES=true
 DECIDARR_SECRET=<openssl rand -hex 32>
+APP_URL=https://decidarr.example.com
+TRUST_PROXY=true
 PORT=3100
 ```
+
+`APP_URL` must be the canonical origin: Plex sign-in (browser and mobile) only redirects back to it.
+`TRUST_PROXY=true` makes the sign-in rate limits use the client address your proxy appends to `X-Forwarded-For`; set it only when every request reaches Decidarr through that proxy.
 
 ### Local development (HTTP only)
 

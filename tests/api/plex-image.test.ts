@@ -91,4 +91,28 @@ describe('GET /api/plex/image', () => {
     expect(body.error).toMatch(/invalid image path/i);
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it('rejects percent-encoded traversal without fetching upstream', async () => {
+    await seedConfiguredSettings();
+    await authenticateTestSession();
+
+    const res = await plexImageGet(imageRequest('/library/%2e%2e/identity'));
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.error).toMatch(/invalid image path/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects path that normalizes outside /library/ without fetching upstream', async () => {
+    await seedConfiguredSettings();
+    await authenticateTestSession();
+
+    const res = await plexImageGet(imageRequest('/library/foo/../../identity'));
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.error).toMatch(/invalid image path/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

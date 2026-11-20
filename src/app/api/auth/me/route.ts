@@ -2,10 +2,13 @@ import { NextResponse } from 'next/server';
 import { requireUser, isAuthError, authErrorStatus } from '@/lib/auth';
 import { connectDB } from '@/lib/db';
 
+// Reads the session and database on every request; never prerender at build time.
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     await connectDB();
-    const { user, settings, isAdmin } = await requireUser();
+    const { user, settings, isAdmin, expiresAt } = await requireUser();
 
     return NextResponse.json({
       user: {
@@ -16,11 +19,12 @@ export async function GET() {
         isAdmin,
       },
       preferences: user.preferences,
+      expiresAt,
     });
   } catch (error) {
     const status = authErrorStatus(error);
     return NextResponse.json(
-      { error: (error as Error).message === 'App not configured' ? 'App not configured' : 'Unauthorized' },
+      { error: isAuthError(error) && error.code === 'APP_NOT_CONFIGURED' ? 'App not configured' : 'Unauthorized' },
       { status }
     );
   }

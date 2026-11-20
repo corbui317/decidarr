@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
-import { getOrCreateSettings } from '@/lib/models/Settings';
 import { requireAdmin, isAuthError, authErrorStatus, invalidateAccessibleLibraryCache } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
 import { assertSafeServiceUrl, allowPrivateServiceUrls } from '@/lib/security/service-url';
+import { APP_THEMES, ANIMATION_STYLES, ANIMATION_SPEEDS } from '@/types/shared';
+
+// Reads the session and database on every request; never prerender at build time.
+export const dynamic = 'force-dynamic';
 
 const logger = createLogger('API:Settings');
 
@@ -72,7 +75,7 @@ export async function GET() {
     if (isAuthError(error)) {
       logger.warn('Auth error fetching settings', { error: errorMsg });
       return NextResponse.json(
-        { error: errorMsg === 'Unauthorized' ? 'Session expired' : errorMsg },
+        { error: error.code === 'UNAUTHORIZED' ? 'Session expired' : errorMsg },
         { status: authErrorStatus(error) }
       );
     }
@@ -209,11 +212,8 @@ export async function PUT(request: NextRequest) {
     }
 
     // Update UI preferences if provided
-    const validThemes = ['dark', 'light', 'vegas', 'macao', 'poker'];
-    const validAnimationStyles = ['slots', 'roulette', 'wheel', 'plinko', 'random'];
-    const validAnimationSpeeds = ['fast', 'normal', 'dramatic'];
     if (body.uiPreferences) {
-      if (body.uiPreferences.theme && validThemes.includes(body.uiPreferences.theme)) {
+      if (body.uiPreferences.theme && APP_THEMES.includes(body.uiPreferences.theme)) {
         settings.uiPreferences.theme = body.uiPreferences.theme;
       }
       if (body.uiPreferences.defaultMediaType) {
@@ -224,13 +224,13 @@ export async function PUT(request: NextRequest) {
       }
       if (
         body.uiPreferences.animationStyle &&
-        validAnimationStyles.includes(body.uiPreferences.animationStyle)
+        ANIMATION_STYLES.includes(body.uiPreferences.animationStyle)
       ) {
         settings.uiPreferences.animationStyle = body.uiPreferences.animationStyle;
       }
       if (
         body.uiPreferences.animationSpeed &&
-        validAnimationSpeeds.includes(body.uiPreferences.animationSpeed)
+        ANIMATION_SPEEDS.includes(body.uiPreferences.animationSpeed)
       ) {
         settings.uiPreferences.animationSpeed = body.uiPreferences.animationSpeed;
       }
@@ -295,7 +295,7 @@ export async function PUT(request: NextRequest) {
     if (isAuthError(error)) {
       logger.warn('Auth error updating settings', { error: errorMsg });
       return NextResponse.json(
-        { error: errorMsg === 'Unauthorized' ? 'Session expired' : errorMsg },
+        { error: error.code === 'UNAUTHORIZED' ? 'Session expired' : errorMsg },
         { status: 401 }
       );
     }

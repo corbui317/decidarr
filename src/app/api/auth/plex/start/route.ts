@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { createAuthPin } from '@/lib/services/plex-oauth-factory';
 import {
-  createAuthPin,
   buildPlexAuthUrl,
   generateOAuthState,
   OAUTH_STATE_COOKIE,
@@ -11,11 +11,24 @@ import {
 } from '@/lib/services/plex-oauth';
 import { createLogger } from '@/lib/logger';
 import { assertSetupSecretAllowed } from '@/lib/security/setup-secret';
+import { enforceRateLimit } from '@/lib/security/rate-limit';
+import { resolveOAuthForwardUrl } from '@/lib/security/oauth-redirect';
 
 const logger = createLogger('API:PlexAuthStart');
 
+const RATE_LIMIT_CONFIG = {
+  windowMs: 15 * 60 * 1000,
+  maxAttempts: 5,
+};
+
 export async function POST(request: Request) {
   try {
+    const rateLimitResponse = enforceRateLimit(request, 'auth:start', RATE_LIMIT_CONFIG);
+    if (rateLimitResponse) {
+      logger.warn('Rate limit exceeded for auth start');
+      return rateLimitResponse;
+    }
+
     const setupCheck = await assertSetupSecretAllowed(request);
     if (!setupCheck.ok) {
       return NextResponse.json(
@@ -27,14 +40,7 @@ export async function POST(request: Request) {
     const state = generateOAuthState();
     const pin = await createAuthPin();
 
-    let forwardUrl: string | undefined;
-    try {
-      const origin = new URL(request.url).origin;
-      forwardUrl = `${origin}/`;
-    } catch {
-      forwardUrl = undefined;
-    }
-
+    const forwardUrl = resolveOAuthForwardUrl(request);
     const authUrl = buildPlexAuthUrl(pin.code, { forwardUrl });
 
     const cookieOptions = getOAuthCookieOptions();

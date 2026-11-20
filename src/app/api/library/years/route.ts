@@ -1,4 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createLogger } from '@/lib/logger';
+
+// Reads the session and database on every request; never prerender at build time.
+export const dynamic = 'force-dynamic';
+const logger = createLogger('API:years');
+
+
 import { requireUser, getAccessibleLibraryIds, isAuthError, authErrorStatus } from '@/lib/auth';
 import { connectDB } from '@/lib/db';
 import { LibraryCache } from '@/lib/models/LibraryCache';
@@ -45,7 +52,7 @@ export async function GET(request: NextRequest) {
     if (isAuthError(error)) {
       return NextResponse.json({ error: (error as Error).message }, { status: authErrorStatus(error) });
     }
-    console.error('Get years error:', error);
+    logger.error('Get years error:', { error: (error as Error).message });
     return NextResponse.json({ error: 'Failed to get years' }, { status: 500 });
   }
 }

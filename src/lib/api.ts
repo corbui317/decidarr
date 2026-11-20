@@ -1,9 +1,21 @@
 'use client';
 
 import type { Filters } from '@/types/filters';
+import type { LoginErrorCode } from './auth-errors';
 import type { SelectionResultResponse } from '@/types/api/selection';
-import type { MediaType, TvSelectionMode } from '@/lib/validation/selection';
+import type {
+  MediaType,
+  MediaTypeWithEpisode,
+  TvSelectionMode,
+  AppTheme,
+  AnimationStyle,
+  AnimationSpeed,
+  SelectionParameters,
+} from '@/types/shared';
 import type { WatchedMediaType } from '@/lib/validation/watched';
+
+// Re-export commonly used types
+export type { AnimationStyle, AnimationSpeed };
 
 const API_BASE = '/api';
 const SETUP_SECRET_STORAGE_KEY = 'decidarr_setup_secret';
@@ -34,7 +46,7 @@ interface RequestOptions {
 export class AuthError extends Error {
   public isAuthError = true;
   public statusCode: number;
-  
+
   constructor(message: string, statusCode: number = 401) {
     super(message);
     this.name = 'AuthError';
@@ -45,6 +57,19 @@ export class AuthError extends Error {
 // Helper to check if an error is an auth error
 export function isAuthError(error: unknown): error is AuthError {
   return error instanceof AuthError || (error as AuthError)?.isAuthError === true;
+}
+
+// Custom error class for API errors with status and code
+export class ApiError extends Error {
+  public status: number;
+  public code?: string;
+
+  constructor(message: string, status: number, code?: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+  }
 }
 
 export class PlexLoginError extends Error {
@@ -59,23 +84,40 @@ export class PlexLoginError extends Error {
   }
 }
 
-export function isPlexLoginError(error: unknown): error is PlexLoginError {
-  return error instanceof PlexLoginError;
+/** The user-facing message for each sign-in error code; a Record so a new code cannot be missed. */
+export const LOGIN_ERROR_MESSAGES: Record<LoginErrorCode, string> = {
+  NO_OWNED_SERVER: 'No owned Plex server found. You need to own a Plex Media Server to use this app.',
+  NO_SERVER_ACCESS:
+    'Your Plex account does not have access to this server. Ask the server owner to share it with you.',
+  NOT_APPROVED: 'Your account is not approved yet. Please wait for an administrator to approve your access.',
+  SERVER_MISCONFIGURED: 'Decidarr is not fully set up yet. Ask the server owner to finish setup.',
+  AUTH_FAILED: 'Plex sign-in failed. Please try again.',
+  PLEX_UNAVAILABLE: 'Plex.tv is unavailable. Please try again later.',
+  PLEX_PIN_EXPIRED: 'Plex authorization expired, please try again.',
+  RATE_LIMITED: 'Too many sign-in attempts. Please wait a few minutes and try again.',
+  MISSING_OAUTH_COOKIES: 'Your sign-in session was lost. Please start sign-in again.',
+  INVALID_OAUTH_PIN: 'Sign-in could not be verified. Please start sign-in again.',
+  INVALID_OAUTH_STATE: 'Sign-in could not be verified. Please start sign-in again.',
+  SETUP_SECRET_REQUIRED: 'Setup is locked until the server owner sets DECIDARR_SETUP_SECRET.',
+  INVALID_SETUP_SECRET: 'The setup secret is incorrect.',
+  LOGIN_FAILED: 'Sign-in failed. Please try again.',
+};
+
+function isLoginErrorCode(code: string | undefined): code is LoginErrorCode {
+  return code !== undefined && Object.prototype.hasOwnProperty.call(LOGIN_ERROR_MESSAGES, code);
 }
 
-function plexLoginErrorMessage(error: PlexLoginError): string {
-  if (error.code === 'PLEX_PIN_EXPIRED') {
-    return 'Plex authorization expired, please try again.';
-  }
-  if (error.code === 'PLEX_UNAVAILABLE' || error.statusCode === 503) {
-    return 'Plex.tv is unavailable. Please try again later.';
-  }
-  return error.message;
-}
-
+/** Sign-in errors come from the poll (PlexLoginError) and the start route (ApiError). */
 export function formatPlexLoginError(error: unknown): string {
-  if (isPlexLoginError(error)) {
-    return plexLoginErrorMessage(error);
+  if (error instanceof PlexLoginError || error instanceof ApiError) {
+    if (isLoginErrorCode(error.code)) {
+      return LOGIN_ERROR_MESSAGES[error.code];
+    }
+    const status = error instanceof PlexLoginError ? error.statusCode : error.status;
+    if (status === 503) {
+      return LOGIN_ERROR_MESSAGES.PLEX_UNAVAILABLE;
+    }
+    return error.message;
   }
   if (error instanceof Error) {
     return error.message;
@@ -104,16 +146,17 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ error: 'Request failed' }));
-    const errorMessage = errorData.error || 'Request failed';
-    
+    const errorMessage = errorData.error || errorData.message || 'Request failed';
+    const errorCode = errorData.code;
+
     if (response.status === 401) {
       console.warn(`[API] 401 Unauthorized on ${endpoint}:`, errorMessage);
       // Throw a typed AuthError instead of auto-redirecting
       // This lets components decide how to handle the auth failure
       throw new AuthError(errorMessage, 401);
     }
-    
-    throw new Error(errorMessage);
+
+    throw new ApiError(errorMessage, response.status, errorCode);
   }
 
   return response.json();
@@ -129,7 +172,7 @@ export interface AuthUser {
 
 export const authApi = {
   getCurrentUser: () =>
-    request<{ user: AuthUser; preferences: UserPreferences }>('/auth/me'),
+    request<{ user: AuthUser; preferences: UserPreferences; expiresAt: number }>('/auth/me'),
   startPlexLogin: () =>
     request<{ authUrl: string; pinId: number; state: string }>('/auth/plex/start', {
       method: 'POST',
@@ -156,7 +199,7 @@ export const authApi = {
       code?: string;
     };
   },
-  refreshSession: () => request<{ success: boolean }>('/auth/refresh', { method: 'POST' }),
+  refreshSession: () => request<{ success: boolean; expiresAt: number }>('/auth/refresh', { method: 'POST' }),
   logout: () => request('/auth/logout', { method: 'DELETE' }),
 };
 
@@ -227,26 +270,16 @@ export const libraryApi = {
 
 // Selection API
 export const selectionApi = {
-  getRandom: (
-    libraryIds: string[],
-    mediaType: MediaType,
-    filters: Filters,
-    tvSelectionMode?: TvSelectionMode
-  ) =>
+  getRandom: (params: SelectionParameters) =>
     request<SelectionResultResponse>('/selection/random', {
       method: 'POST',
-      body: { libraryIds, mediaType, filters, tvSelectionMode },
+      body: params,
     }),
   getAwardCategories: () =>
     request<{ categories: { id: string; name: string; icon: string }[] }>(
       '/selection/awards/categories'
     ),
-  getPoolCount: (
-    libraryIds: string[],
-    mediaType: MediaType,
-    filters: Filters,
-    signal?: AbortSignal
-  ) =>
+  getPoolCount: (params: Omit<SelectionParameters, 'tvSelectionMode'>, signal?: AbortSignal) =>
     request<{
       totalItems: number;
       matchingItems: number;
@@ -269,7 +302,7 @@ export const selectionApi = {
       overseerrWarning?: string | null;
     }>('/selection/pool-count', {
       method: 'POST',
-      body: { libraryIds, mediaType, filters },
+      body: params,
       signal,
     }),
 };
@@ -292,14 +325,10 @@ export const watchedApi = {
 };
 
 // Settings API
-export type AppTheme = 'dark' | 'light' | 'vegas' | 'macao' | 'poker';
-export type AnimationStyle = 'slots' | 'roulette' | 'wheel' | 'plinko' | 'random';
-export type AnimationSpeed = 'fast' | 'normal' | 'dramatic';
-
 export interface UserPreferences {
   theme?: AppTheme;
-  defaultMediaType?: 'movie' | 'show';
-  tvSelectionMode?: 'show' | 'episode';
+  defaultMediaType?: MediaType;
+  tvSelectionMode?: TvSelectionMode;
   animationStyle?: AnimationStyle;
   animationSpeed?: AnimationSpeed;
   selectedLibraries?: string[];
@@ -339,8 +368,8 @@ export interface SettingsResponse {
   syncFrequencyHours: number;
   uiPreferences: {
     theme: AppTheme;
-    defaultMediaType: 'movie' | 'show';
-    tvSelectionMode: 'show' | 'episode';
+    defaultMediaType: MediaType;
+    tvSelectionMode: TvSelectionMode;
     animationStyle: AnimationStyle;
     animationSpeed: AnimationSpeed;
   };
@@ -391,8 +420,8 @@ export const settingsApi = {
     syncFrequencyHours?: number;
     uiPreferences?: {
       theme?: AppTheme;
-      defaultMediaType?: 'movie' | 'show';
-      tvSelectionMode?: 'show' | 'episode';
+      defaultMediaType?: MediaType;
+      tvSelectionMode?: TvSelectionMode;
       animationStyle?: AnimationStyle;
       animationSpeed?: AnimationSpeed;
     };
@@ -471,13 +500,13 @@ export interface SpinHistoryEntry {
   userId: string;
   plexId: string;
   title: string;
-  mediaType: 'movie' | 'show' | 'episode';
+  mediaType: MediaTypeWithEpisode;
   posterUrl?: string;
   thumbPath?: string;
   year?: number;
   libraryIds: string[];
   filtersSnapshot?: Filters;
-  tvSelectionMode?: 'show' | 'episode';
+  tvSelectionMode?: TvSelectionMode;
   poolSizeAtSpin?: number;
   spunAt: string;
   createdAt: string;
@@ -487,12 +516,12 @@ export interface SpinHistoryEntry {
 export interface CreateSpinHistoryPayload {
   plexId: string;
   title: string;
-  mediaType: 'movie' | 'show' | 'episode';
+  mediaType: MediaTypeWithEpisode;
   thumbPath?: string;
   year?: number;
   libraryIds: string[];
   filtersSnapshot?: Filters;
-  tvSelectionMode?: 'show' | 'episode';
+  tvSelectionMode?: TvSelectionMode;
   poolSizeAtSpin?: number;
 }
 

@@ -5,6 +5,9 @@ import { isAuthError, authErrorStatus } from '@/lib/auth';
 import { buildBootstrap, backfillSyncRevisions } from '@/lib/sync/service';
 import { createLogger } from '@/lib/logger';
 
+// Reads the session and database on every request; never prerender at build time.
+export const dynamic = 'force-dynamic';
+
 const logger = createLogger('API:SyncBootstrap');
 
 export async function GET(request: NextRequest) {
@@ -17,8 +20,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(bootstrap);
   } catch (error) {
     const msg = (error as Error)?.message;
-    if (isAuthError(error) || msg === 'Unauthorized') {
-      return NextResponse.json({ error: msg || 'Unauthorized' }, { status: 401 });
+    if (isAuthError(error)) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: authErrorStatus(error) }
+      );
     }
     logger.error('Sync bootstrap failed', { error: msg });
     return NextResponse.json({ error: 'Failed to bootstrap sync' }, { status: 500 });

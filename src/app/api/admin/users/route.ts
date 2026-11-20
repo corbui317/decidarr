@@ -5,6 +5,9 @@ import { User } from '@/lib/models/User';
 import { fetchPlexFriends } from '@/lib/services/plex-oauth';
 import { createLogger } from '@/lib/logger';
 
+// Reads the session and database on every request; never prerender at build time.
+export const dynamic = 'force-dynamic';
+
 const logger = createLogger('API:AdminUsers');
 
 export async function GET() {

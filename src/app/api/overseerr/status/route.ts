@@ -3,6 +3,12 @@ import { connectDB } from '@/lib/db';
 import { getOrCreateSettings } from '@/lib/models/Settings';
 import { getOverseerrConfig, requireUser, isAuthError, authErrorStatus } from '@/lib/auth';
 import { OverseerrService } from '@/lib/services/overseerr';
+import { createLogger } from '@/lib/logger';
+
+// Reads the session and database on every request; never prerender at build time.
+export const dynamic = 'force-dynamic';
+
+const logger = createLogger('API:OverseerrStatus');
 
 export async function GET() {
   try {
@@ -55,7 +61,7 @@ export async function GET() {
         { status: authErrorStatus(error) }
       );
     }
-    console.error('Overseerr status error:', error);
+    logger.error('Overseerr status error:', { error: (error as Error).message });
     return NextResponse.json({ error: 'Failed to get Overseerr status' }, { status: 500 });
   }
 }
