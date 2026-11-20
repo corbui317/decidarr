@@ -4,6 +4,9 @@ import { connectDB } from '@/lib/db';
 import { WatchedItem } from '@/lib/models/WatchedItem';
 import { parsePlexIdParam, parseWatchedCreateBody } from '@/lib/validation/watched';
 import { emitSyncChange, toWatchedContract } from '@/lib/sync/service';
+import { createLogger } from '@/lib/logger';
+
+const logger = createLogger('API:WatchedItem');
 
 export async function GET(
   _request: NextRequest,
@@ -30,7 +33,7 @@ export async function GET(
     if (isAuthError(error)) {
       return NextResponse.json({ error: msg }, { status: authErrorStatus(error) });
     }
-    console.error('Get watched status error:', error);
+    logger.error('Get watched status error:', { error: (error as Error).message });
     return NextResponse.json({ error: 'Failed to get watched status' }, { status: 500 });
   }
 }
@@ -41,6 +44,14 @@ export async function POST(
 ) {
   try {
     const auth = await requireUser();
+
+    if (!auth.user.isAdmin) {
+      return NextResponse.json(
+        { error: 'Manual watched marking is admin-only' },
+        { status: 403 }
+      );
+    }
+
     const { plexId } = await params;
     const plexIdResult = parsePlexIdParam(plexId);
     if (!plexIdResult.ok) {
@@ -82,7 +93,7 @@ export async function POST(
     if (isAuthError(error)) {
       return NextResponse.json({ error: msg }, { status: authErrorStatus(error) });
     }
-    console.error('Mark watched error:', error);
+    logger.error('Mark watched error:', { error: (error as Error).message });
     return NextResponse.json({ error: 'Failed to mark as watched' }, { status: 500 });
   }
 }
@@ -93,6 +104,14 @@ export async function DELETE(
 ) {
   try {
     const auth = await requireUser();
+
+    if (!auth.user.isAdmin) {
+      return NextResponse.json(
+        { error: 'Manual watched marking is admin-only' },
+        { status: 403 }
+      );
+    }
+
     const { plexId } = await params;
     const plexIdResult = parsePlexIdParam(plexId);
     if (!plexIdResult.ok) {
@@ -111,7 +130,7 @@ export async function DELETE(
     if (isAuthError(error)) {
       return NextResponse.json({ error: msg }, { status: authErrorStatus(error) });
     }
-    console.error('Mark unwatched error:', error);
+    logger.error('Mark unwatched error:', { error: (error as Error).message });
     return NextResponse.json({ error: 'Failed to mark as unwatched' }, { status: 500 });
   }
 }
