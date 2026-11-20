@@ -1,6 +1,22 @@
 import { test, expect } from '@playwright/test';
+import mongoose from 'mongoose';
 import { resetE2eDatabase, completeSetupWizard } from './helpers/e2e-test-helpers';
-import { seedLegacyEncryptedSettings } from './helpers/legacy-settings-seed';
+import { E2E_DECIDARR_SECRET, E2E_MONGO_URI, E2E_RESET_SECRET } from './e2e-env';
+import {
+  LEGACY_ADMIN_PLEX_USER_ID,
+  LEGACY_PLAINTEXT,
+  type StoredSettings,
+} from '../helpers/legacy-install-seed';
+import { decryptVersioned, masterKeyFromSecret } from '@/lib/models/Settings';
+
+async function withE2eDb(fn: (db: mongoose.mongo.Db) => Promise<void>): Promise<void> {
+  const client = await new mongoose.mongo.MongoClient(E2E_MONGO_URI).connect();
+  try {
+    await fn(client.db());
+  } finally {
+    await client.close();
+  }
+}
 
 /**
  * E2E tests for DECIDARR_SECRET encryption and migration.
@@ -60,51 +76,56 @@ test.describe('DECIDARR_SECRET encryption', () => {
     await expect(spinButton).toBeVisible({ timeout: 5000 });
   });
 
-  test('legacy-encrypted install migrates and allows new login', async ({ page, request }) => {
+  test('legacy-encrypted install migrates and allows login and spin', async ({ page, request }) => {
     test.setTimeout(90000);
 
-    // This test verifies the critical migration scenario:
-    // An install with legacy CryptoJS-encrypted settings is restarted with
-    // DECIDARR_SECRET set. Migration must happen transparently, and the
-    // app must remain functional after migration.
+    // An install from before DECIDARR_SECRET (CryptoJS, master key from MONGODB_URI)
+    // is restarted with DECIDARR_SECRET set. The seed route writes that legacy data
+    // and then boots it the way the restart would, which runs the migration.
+    const seed = await request.post('/api/test/seed-legacy', {
+      headers: { 'X-E2E-Reset-Secret': E2E_RESET_SECRET },
+    });
+    expect(seed.ok(), await seed.text()).toBeTruthy();
 
-    // Step 1: Reset database and migration state
-    await request.post('/api/test/reset', {
-      headers: {
-        'X-E2E-Reset-Secret': process.env.E2E_TEST_RESET_SECRET || 'decidarr-e2e-reset',
-        'X-E2E-Reset-Migration': 'true',
-      },
+    // Assert the migration on disk before signing in: login re-encrypts the
+    // admin's Plex token with the fresh OAuth token.
+    await withE2eDb(async (db) => {
+      const settings = await db.collection<StoredSettings>('settings').findOne({ _id: 'app-settings' });
+      expect(settings?.secretsMigrationVersion).toBe(2);
+      expect(settings?.jwtSecret).toMatch(/^v2:/);
+      expect(settings?.encryptionKey).toMatch(/^v2:/);
+      expect(settings?.tmdbApiKey).toMatch(/^v2:/);
+
+      const encryptionKey = decryptVersioned(settings!.encryptionKey, masterKeyFromSecret(E2E_DECIDARR_SECRET));
+      expect(decryptVersioned(settings!.tmdbApiKey!, encryptionKey)).toBe(LEGACY_PLAINTEXT.tmdbApiKey);
+
+      const admin = await db.collection('users').findOne({ plexUserId: LEGACY_ADMIN_PLEX_USER_ID });
+      expect(admin?.plexToken).toMatch(/^v2:/);
+      expect(decryptVersioned(admin!.plexToken, encryptionKey)).toBe(LEGACY_PLAINTEXT.plexToken);
     });
 
-    // Step 2: Seed legacy-encrypted settings (pre-migration format)
-    await seedLegacyEncryptedSettings();
-
-    // Step 3: Navigate to trigger migration on next database connection
-    // The server will run migration when it connects to handle this request
+    // setupComplete is true, so the app offers sign-in, not the setup wizard.
     await page.goto('/');
-    await page.waitForLoadState('networkidle', { timeout: 15000 });
+    const signIn = page.getByRole('button', { name: 'Login with Plex' });
+    await expect(signIn).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('Welcome to Decidarr')).toHaveCount(0);
 
-    // Step 4: Should see setup wizard (setupComplete=false in seeded data)
-    // Migration has already happened server-side at this point
-    await expect(page.getByText('Welcome to Decidarr')).toBeVisible({ timeout: 15000 });
+    // Sign in through the mock OAuth flow as the seeded legacy admin and spin once.
+    await signIn.click();
+    await page
+      .getByRole('group', { name: 'Movies' })
+      .getByRole('button', { name: /Movies/ })
+      .click();
+    const spinButton = page.getByRole('button', { name: 'Spin for a random pick' });
+    await expect(spinButton).toBeEnabled({ timeout: 15000 });
+    await spinButton.click();
+    await expect(page.getByText('Your fate has been decided!')).toBeVisible({ timeout: 20000 });
 
-    // Step 5: Complete setup with mock Plex (tests that migration worked)
-    // If migration failed, decryption would fail and setup would error
-    await completeSetupWizard(page);
-
-    // Step 6: Verify we reach the dashboard
-    // This confirms migration was successful and app is functional
-    await expect(page.getByText(/DECIDARR|SPIN/i).first()).toBeVisible({ timeout: 15000 });
-
-    // Step 7: Verify spin button is present
-    const spinButton = page.getByRole('button', { name: /spin/i }).first();
-    await expect(spinButton).toBeVisible({ timeout: 5000 });
-
-    // Step 8: Verify settings are accessible (final validation)
-    await page.getByRole('button', { name: /settings/i }).click();
-    await expect(page.getByRole('heading', { name: /Settings/i })).toBeVisible({ timeout: 5000 });
-
-    // This confirms: legacy settings migrated to AES-256-GCM,
-    // decryption works correctly, and app is fully functional
+    // The legacy admin kept its account and admin rights; no second user was created.
+    await withE2eDb(async (db) => {
+      const users = await db.collection('users').find({}).toArray();
+      expect(users).toHaveLength(1);
+      expect(users[0]).toMatchObject({ plexUserId: LEGACY_ADMIN_PLEX_USER_ID, isAdmin: true });
+    });
   });
 });

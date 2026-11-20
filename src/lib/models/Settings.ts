@@ -2,12 +2,16 @@ import mongoose, { Document, Model, Types } from 'mongoose';
 import CryptoJS from 'crypto-js';
 import { randomBytes, createHash, createCipheriv, createDecipheriv } from 'crypto';
 import { createLogger } from '../logger';
+import type {
+  AppTheme,
+  MediaType,
+  TvSelectionMode,
+  AnimationStyle,
+  AnimationSpeed,
+} from '@/types/shared';
+import { APP_THEMES, ANIMATION_STYLES, ANIMATION_SPEEDS } from '@/types/shared';
 
 const logger = createLogger('Settings');
-
-export type AppTheme = 'dark' | 'light' | 'vegas' | 'macao' | 'poker';
-export type AnimationStyle = 'slots' | 'roulette' | 'wheel' | 'plinko' | 'random';
-export type AnimationSpeed = 'fast' | 'normal' | 'dramatic';
 
 export interface ISpinHistoryPreferences {
   enabled: boolean;
@@ -17,8 +21,8 @@ export interface ISpinHistoryPreferences {
 
 export interface IUIPreferences {
   theme: AppTheme;
-  defaultMediaType: 'movie' | 'show';
-  tvSelectionMode: 'show' | 'episode';
+  defaultMediaType: MediaType;
+  tvSelectionMode: TvSelectionMode;
   animationStyle: AnimationStyle;
   animationSpeed: AnimationSpeed;
 }
@@ -86,21 +90,25 @@ export interface ISettings extends Omit<Document, '_id'> {
   getEncryptionKey(): string;
 }
 
-// Encryption version constants
-const ENCRYPTION_VERSION_LEGACY = 1; // CryptoJS AES
-const ENCRYPTION_VERSION_CURRENT = 2; // AES-256-GCM
+// Secrets migration version: values are AES-256-GCM with a v2: prefix
 const CURRENT_MIGRATION_VERSION = 2;
+/** base64("Salted__"): every CryptoJS passphrase ciphertext starts with it. */
+const CRYPTOJS_SALTED_PREFIX = 'U2FsdGVkX1';
 
 // Master key for encrypting the auto-generated secrets
-const getLegacyMasterKey = (): string => {
+export const getLegacyMasterKey = (): string => {
   const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/decidarr';
   return CryptoJS.SHA256('decidarr-master-' + mongoUri).toString().substring(0, 32);
 };
 
-const getMasterKey = (): string => {
+/** Derives the master key that protects jwtSecret and encryptionKey from a DECIDARR_SECRET value. */
+export const masterKeyFromSecret = (secret: string): string =>
+  CryptoJS.SHA256('decidarr-secret-' + secret).toString().substring(0, 32);
+
+export const getMasterKey = (): string => {
   const secret = process.env.DECIDARR_SECRET?.trim();
   if (secret) {
-    return CryptoJS.SHA256('decidarr-secret-' + secret).toString().substring(0, 32);
+    return masterKeyFromSecret(secret);
   }
   if (process.env.NODE_ENV === 'production') {
     throw new Error('DECIDARR_SECRET is required in production');
@@ -108,15 +116,7 @@ const getMasterKey = (): string => {
   return getLegacyMasterKey();
 };
 
-export function getLegacySettingsMasterKey(): string {
-  return getLegacyMasterKey();
-}
-
-export function getCurrentSettingsMasterKey(): string {
-  return getMasterKey();
-}
-
-export { CURRENT_MIGRATION_VERSION, encryptWithAesGcm, decryptVersioned };
+export { CURRENT_MIGRATION_VERSION, encryptWithAesGcm, decryptVersioned, encryptUserData, decryptUserData };
 
 /**
  * Encrypt a value with AES-256-GCM using Node's built-in crypto.
@@ -183,7 +183,13 @@ function decryptVersioned(encrypted: string, masterKey: string): string {
     }
   }
 
-  // Legacy CryptoJS format (v1 or unversioned)
+  // Legacy CryptoJS format (v1 or unversioned). CryptoJS passphrase ciphertext is
+  // base64 of "Salted__" + salt + ciphertext; without that header CryptoJS would
+  // pick a random salt and sometimes "decrypt" garbage into a non-empty string.
+  if (!encrypted.startsWith(CRYPTOJS_SALTED_PREFIX)) {
+    logger.error('Value is neither v2 nor CryptoJS passphrase ciphertext');
+    throw new Error('Failed to decrypt value');
+  }
   try {
     const bytes = CryptoJS.AES.decrypt(encrypted, masterKey);
     const decrypted = bytes.toString(CryptoJS.enc.Utf8);
@@ -196,6 +202,25 @@ function decryptVersioned(encrypted: string, masterKey: string): string {
     logger.error('Failed to decrypt legacy CryptoJS value', { error: String(err) });
     throw new Error('Failed to decrypt value');
   }
+}
+
+/**
+ * Encrypt user data (integration credentials, user tokens) with AES-256-GCM.
+ * Uses the same format as encryptWithAesGcm but takes an encryptionKey string.
+ * Returns format: "v2:<iv>:<authTag>:<ciphertext>" (all base64)
+ */
+function encryptUserData(plaintext: string, encryptionKey: string): string {
+  return encryptWithAesGcm(plaintext, encryptionKey);
+}
+
+/**
+ * Decrypt user data encrypted with version prefix.
+ * Supports:
+ * - v2: AES-256-GCM (current)
+ * - legacy: CryptoJS AES (no trial-and-error)
+ */
+function decryptUserData(encrypted: string, encryptionKey: string): string {
+  return decryptVersioned(encrypted, encryptionKey);
 }
 
 const settingsSchema = new mongoose.Schema<ISettings>(
@@ -238,17 +263,17 @@ const settingsSchema = new mongoose.Schema<ISettings>(
 
     // UI Preferences
     uiPreferences: {
-      theme: { type: String, enum: ['dark', 'light', 'vegas', 'macao', 'poker'], default: 'dark' },
+      theme: { type: String, enum: APP_THEMES, default: 'dark' },
       defaultMediaType: { type: String, enum: ['movie', 'show'], default: 'movie' },
       tvSelectionMode: { type: String, enum: ['show', 'episode'], default: 'show' },
       animationStyle: {
         type: String,
-        enum: ['slots', 'roulette', 'wheel', 'plinko', 'random'],
+        enum: ANIMATION_STYLES,
         default: 'slots',
       },
       animationSpeed: {
         type: String,
-        enum: ['fast', 'normal', 'dramatic'],
+        enum: ANIMATION_SPEEDS,
         default: 'normal',
       },
     },
@@ -287,24 +312,10 @@ const encryptWithMaster = (value: string): string => {
   return CryptoJS.AES.encrypt(value, masterKey).toString();
 };
 
-// Decrypt a value with the master key (version-aware)
+// Decrypt a value with the master key (version-aware, no trial-and-error)
 const decryptWithMaster = (encrypted: string): string => {
   const currentKey = getMasterKey();
-
-  try {
-    return decryptVersioned(encrypted, currentKey);
-  } catch (err) {
-    // If we have DECIDARR_SECRET set and decryption failed with current key,
-    // try the legacy key (for migration scenarios)
-    if (process.env.DECIDARR_SECRET?.trim() && !encrypted.startsWith('v2:')) {
-      try {
-        return decryptVersioned(encrypted, getLegacyMasterKey());
-      } catch {
-        // Fall through to throw the original error
-      }
-    }
-    throw err;
-  }
+  return decryptVersioned(encrypted, currentKey);
 };
 
 // Methods to get decrypted values
@@ -312,8 +323,7 @@ settingsSchema.methods.getDecryptedPlexToken = function(): string | null {
   if (!this.plexToken) return null;
   try {
     const encryptionKey = this.getEncryptionKey();
-    const bytes = CryptoJS.AES.decrypt(this.plexToken, encryptionKey);
-    return bytes.toString(CryptoJS.enc.Utf8);
+    return decryptUserData(this.plexToken, encryptionKey);
   } catch {
     return null;
   }
@@ -323,8 +333,7 @@ settingsSchema.methods.getDecryptedTmdbKey = function(): string | null {
   if (!this.tmdbApiKey) return null;
   try {
     const encryptionKey = this.getEncryptionKey();
-    const bytes = CryptoJS.AES.decrypt(this.tmdbApiKey, encryptionKey);
-    return bytes.toString(CryptoJS.enc.Utf8);
+    return decryptUserData(this.tmdbApiKey, encryptionKey);
   } catch {
     return null;
   }
@@ -334,8 +343,7 @@ settingsSchema.methods.getDecryptedTautulliKey = function(): string | null {
   if (!this.tautulliApiKey) return null;
   try {
     const encryptionKey = this.getEncryptionKey();
-    const bytes = CryptoJS.AES.decrypt(this.tautulliApiKey, encryptionKey);
-    return bytes.toString(CryptoJS.enc.Utf8);
+    return decryptUserData(this.tautulliApiKey, encryptionKey);
   } catch {
     return null;
   }
@@ -345,8 +353,7 @@ settingsSchema.methods.getDecryptedOverseerrKey = function(): string | null {
   if (!this.overseerrApiKey) return null;
   try {
     const encryptionKey = this.getEncryptionKey();
-    const bytes = CryptoJS.AES.decrypt(this.overseerrApiKey, encryptionKey);
-    return bytes.toString(CryptoJS.enc.Utf8);
+    return decryptUserData(this.overseerrApiKey, encryptionKey);
   } catch {
     return null;
   }
@@ -371,32 +378,32 @@ settingsSchema.pre('save', function(next) {
   try {
     encryptionKey = this.getEncryptionKey();
   } catch (err) {
-    // If we can't decrypt the encryption key, skip encryption
-    // This handles corrupted state gracefully
-    logger.warn('Skipping encryption in pre-save hook due to decrypt failure', {
+    // If we can't decrypt the encryption key, fail the save
+    // This prevents saving credentials in plaintext
+    logger.error('Cannot save Settings: encryption key unavailable', {
       error: String(err),
     });
-    return next();
+    return next(new Error('Encryption key unavailable - cannot save encrypted fields'));
   }
 
-  // Encrypt plex token if modified and not already encrypted
-  if (this.isModified('plexToken') && this.plexToken && !this.plexToken.startsWith('U2F')) {
-    this.plexToken = CryptoJS.AES.encrypt(this.plexToken, encryptionKey).toString();
+  // Encrypt plex token if modified and not already encrypted with v2:
+  if (this.isModified('plexToken') && this.plexToken && !this.plexToken.startsWith('v2:')) {
+    this.plexToken = encryptUserData(this.plexToken, encryptionKey);
   }
 
-  // Encrypt TMDB key if modified and not already encrypted
-  if (this.isModified('tmdbApiKey') && this.tmdbApiKey && !this.tmdbApiKey.startsWith('U2F')) {
-    this.tmdbApiKey = CryptoJS.AES.encrypt(this.tmdbApiKey, encryptionKey).toString();
+  // Encrypt TMDB key if modified and not already encrypted with v2:
+  if (this.isModified('tmdbApiKey') && this.tmdbApiKey && !this.tmdbApiKey.startsWith('v2:')) {
+    this.tmdbApiKey = encryptUserData(this.tmdbApiKey, encryptionKey);
   }
 
-  // Encrypt Tautulli API key if modified and not already encrypted
-  if (this.isModified('tautulliApiKey') && this.tautulliApiKey && !this.tautulliApiKey.startsWith('U2F')) {
-    this.tautulliApiKey = CryptoJS.AES.encrypt(this.tautulliApiKey, encryptionKey).toString();
+  // Encrypt Tautulli API key if modified and not already encrypted with v2:
+  if (this.isModified('tautulliApiKey') && this.tautulliApiKey && !this.tautulliApiKey.startsWith('v2:')) {
+    this.tautulliApiKey = encryptUserData(this.tautulliApiKey, encryptionKey);
   }
 
-  // Encrypt Overseerr API key if modified and not already encrypted
-  if (this.isModified('overseerrApiKey') && this.overseerrApiKey && !this.overseerrApiKey.startsWith('U2F')) {
-    this.overseerrApiKey = CryptoJS.AES.encrypt(this.overseerrApiKey, encryptionKey).toString();
+  // Encrypt Overseerr API key if modified and not already encrypted with v2:
+  if (this.isModified('overseerrApiKey') && this.overseerrApiKey && !this.overseerrApiKey.startsWith('v2:')) {
+    this.overseerrApiKey = encryptUserData(this.overseerrApiKey, encryptionKey);
   }
 
   next();
@@ -406,6 +413,53 @@ export const Settings: Model<ISettings> =
   mongoose.models.Settings || mongoose.model<ISettings>('Settings', settingsSchema);
 
 // Helper function to get or create settings (singleton pattern)
+/**
+ * Recovery function for DECIDARR_SECRET changes.
+ * When the master key changes and existing secrets can't be decrypted:
+ * - Generate fresh jwtSecret and encryptionKey
+ * - Clear all encrypted integration credentials
+ * - Clear all user plexTokens
+ * - Keep admin users so they can re-login
+ */
+export async function recoverFromSecretChange(): Promise<ISettings> {
+  logger.warn('DECIDARR_SECRET changed - initiating recovery with fresh keys');
+
+  const settings = await Settings.findById('app-settings');
+  if (!settings) {
+    throw new Error('Settings document not found during recovery');
+  }
+
+  // Generate fresh security keys and encrypt with the NEW master key
+  const newJwtSecret = generateSecureKey(64);
+  const newEncryptionKey = generateSecureKey(32);
+  const masterKey = getMasterKey();
+
+  settings.jwtSecret = encryptWithAesGcm(newJwtSecret, masterKey);
+  settings.encryptionKey = encryptWithAesGcm(newEncryptionKey, masterKey);
+  settings.secretsMigrationVersion = CURRENT_MIGRATION_VERSION;
+
+  // Clear all encrypted integration credentials
+  settings.plexToken = undefined;
+  settings.tmdbApiKey = undefined;
+  settings.tautulliApiKey = undefined;
+  settings.overseerrApiKey = undefined;
+
+  await settings.save();
+
+  // Clear plexToken from all users, but keep the users themselves
+  const { User } = await import('./User');
+  const result = await User.updateMany(
+    { plexToken: { $exists: true } },
+    { $unset: { plexToken: '' } }
+  );
+
+  logger.info('Secret recovery complete', {
+    clearedUserTokens: result.modifiedCount,
+  });
+
+  return settings;
+}
+
 export async function getOrCreateSettings(): Promise<ISettings> {
   let settings = await Settings.findById('app-settings');
 

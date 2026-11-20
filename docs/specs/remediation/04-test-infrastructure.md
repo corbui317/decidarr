@@ -32,7 +32,7 @@ Reliable test infrastructure is a prerequisite for expanding coverage in [05-tes
 | CI | `.github/workflows/test.yml` | No `tsc --noEmit` step |
 | E2E setup | `tests/e2e/global-setup.ts` | Creates `MongoMemoryServer`, writes URI, does not retain instance |
 | E2E teardown | `tests/e2e/global-teardown.ts` | Deletes marker files only; no `mongo.stop()` |
-| Reset helper | `tests/e2e/helpers/plex-mocks.ts` | `POST /api/test/reset` without `X-E2E-Reset-Secret` header |
+| Reset helper | `tests/e2e/helpers/e2e-test-helpers.ts` | `POST /api/test/reset` without `X-E2E-Reset-Secret` header |
 | Playwright env | `playwright.config.ts` | Does not set `E2E_TEST_RESET_SECRET` |
 
 ### Target
@@ -58,7 +58,7 @@ Behavior unchanged; tests must comply:
 ### Playwright / helper contract
 
 ```typescript
-// tests/e2e/helpers/plex-mocks.ts
+// tests/e2e/helpers/e2e-test-helpers.ts
 export async function resetE2eDatabase(request: APIRequestContext) {
   const headers: Record<string, string> = {};
   const secret = process.env.E2E_TEST_RESET_SECRET;
@@ -123,7 +123,7 @@ Document chosen approach in `TESTING.md`.
 - `.github/workflows/test.yml`
 - `tests/e2e/global-setup.ts`
 - `tests/e2e/global-teardown.ts`
-- `tests/e2e/helpers/plex-mocks.ts`
+- `tests/e2e/helpers/e2e-test-helpers.ts`
 - `playwright.config.ts`
 - `.env.example` (document `E2E_TEST_RESET_SECRET`)
 - `.gitignore` (e2e artifacts)

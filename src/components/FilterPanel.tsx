@@ -72,15 +72,29 @@ export default function FilterPanel({
 
   // Load static options (rating categories, popular studios)
   useEffect(() => {
-    loadStaticOptions();
+    let cancelled = false;
+    (async () => {
+      try {
+        const [ratingsRes, studiosRes] = await Promise.all([
+          selectionApi.getAwardCategories(),
+          libraryApi.getStudios(),
+        ]);
+        if (cancelled) return;
+        setRatingCategories(ratingsRes.categories || []);
+        setPopularStudios(studiosRes.studios || { streaming: [], anime: [], traditional: [] });
+      } catch {
+        // Error loading filter options; filters will remain empty
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // Load library-specific options when libraries change
+  // Load library-specific options when libraries change; a response for a
+  // previous selection is dropped so it cannot overwrite the current one.
   useEffect(() => {
-    if (libraryIds.length > 0) {
-      loadLibraryOptions();
-    } else {
-      // Reset filter options when no libraries selected
+    if (libraryIds.length === 0) {
       setFilterOptions({
         contentRatings: [],
         hasRatings: false,
@@ -88,40 +102,31 @@ export default function FilterPanel({
         studios: [],
       });
       setGenres([]);
+      return;
     }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const [genresRes, yearsRes, filterOptionsRes, collectionsRes] = await Promise.all([
+          libraryApi.getGenres(libraryIds),
+          libraryApi.getYears(libraryIds),
+          libraryApi.getFilterOptions(libraryIds),
+          libraryApi.getCollections(libraryIds),
+        ]);
+        if (cancelled) return;
+        setGenres(genresRes.genres || []);
+        setYearRange(yearsRes);
+        setFilterOptions(filterOptionsRes);
+        setCollections(collectionsRes.collections || []);
+      } catch {
+        // Error loading filter options; filters will remain empty
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [libraryIds]);
-
-  const loadStaticOptions = async () => {
-    try {
-      const [ratingsRes, studiosRes] = await Promise.all([
-        selectionApi.getAwardCategories(),
-        libraryApi.getStudios(),
-      ]);
-
-      setRatingCategories(ratingsRes.categories || []);
-      setPopularStudios(studiosRes.studios || { streaming: [], anime: [], traditional: [] });
-    } catch (err) {
-      // Error loading filter options; filters will remain empty
-    }
-  };
-
-  const loadLibraryOptions = async () => {
-    try {
-      const [genresRes, yearsRes, filterOptionsRes, collectionsRes] = await Promise.all([
-        libraryApi.getGenres(libraryIds),
-        libraryApi.getYears(libraryIds),
-        libraryApi.getFilterOptions(libraryIds),
-        libraryApi.getCollections(libraryIds),
-      ]);
-
-      setGenres(genresRes.genres || []);
-      setYearRange(yearsRes);
-      setFilterOptions(filterOptionsRes);
-      setCollections(collectionsRes.collections || []);
-    } catch (err) {
-      // Error loading filter options; filters will remain empty
-    }
-  };
 
   // Shared helper for toggling array filters
   const toggleArrayItem = <K extends 'genres' | 'contentRatings' | 'studios' | 'collections'>(
@@ -197,20 +202,20 @@ export default function FilterPanel({
   // Check if we have libraries selected (to show library-specific filters)
   const hasLibraries = libraryIds.length > 0;
 
-  // Calculate data availability percentages
-  const getDataAvailability = (field: keyof DataStats): number => {
-    if (!dataStats || !totalItems || totalItems === 0) return 0;
-    return Math.round((dataStats[field] / totalItems) * 100);
-  };
-
-  // Memoize data availability to avoid recalculating on every render
-  const dataAvailability = useMemo(() => ({
-    rating: getDataAvailability('itemsWithRating'),
-    contentRating: getDataAvailability('itemsWithContentRating'),
-    studio: getDataAvailability('itemsWithStudio'),
-    year: getDataAvailability('itemsWithYear'),
-    genres: getDataAvailability('itemsWithGenres'),
-  }), [dataStats, totalItems]);
+  // Data availability percentages per field, recalculated only when the stats change
+  const dataAvailability = useMemo(() => {
+    const percent = (field: keyof DataStats): number => {
+      if (!dataStats || !totalItems) return 0;
+      return Math.round((dataStats[field] / totalItems) * 100);
+    };
+    return {
+      rating: percent('itemsWithRating'),
+      contentRating: percent('itemsWithContentRating'),
+      studio: percent('itemsWithStudio'),
+      year: percent('itemsWithYear'),
+      genres: percent('itemsWithGenres'),
+    };
+  }, [dataStats, totalItems]);
 
   // Determine which filters should be shown based on data availability
   const showRatingFilter = filterOptions.hasRatings && dataAvailability.rating >= MIN_DATA_THRESHOLD;

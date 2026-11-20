@@ -1,7 +1,7 @@
 import type { MediaType, TvSelectionMode, AppTheme, AnimationStyle, AnimationSpeed } from '@/types/shared';
 import { APP_THEMES, ANIMATION_STYLES, ANIMATION_SPEEDS } from '@/types/shared';
 
-type ParseResult<T> = { ok: true; data: T } | { ok: false; error: string };
+import { type ParseResult, parseStringArray } from './common';
 
 const VALID_THEMES = APP_THEMES;
 const VALID_ANIMATION_STYLES = ANIMATION_STYLES;
@@ -41,18 +41,11 @@ export interface PreferencesPutBody {
   spinHistory?: SpinHistoryPreferencesPatch;
 }
 
-export function parsePreferencesPatchBody(body: unknown): ParseResult<PreferencesPatchBody> {
-  if (body === null || typeof body !== 'object' || Array.isArray(body)) {
-    return { ok: false, error: 'Request body must be a JSON object' };
-  }
-
-  const raw = body as Record<string, unknown>;
-
-  if (!raw.spinHistory || typeof raw.spinHistory !== 'object' || Array.isArray(raw.spinHistory)) {
-    return { ok: false, error: 'No valid preference fields provided' };
-  }
-
-  const spinHistoryRaw = raw.spinHistory as Record<string, unknown>;
+/**
+ * Shared parser for spinHistory patch.
+ * Used by both PATCH and PUT handlers.
+ */
+function parseSpinHistoryPatch(spinHistoryRaw: Record<string, unknown>): ParseResult<SpinHistoryPreferencesPatch> {
   const spinHistory: SpinHistoryPreferencesPatch = {};
 
   if ('enabled' in spinHistoryRaw) {
@@ -79,6 +72,28 @@ export function parsePreferencesPatchBody(body: unknown): ParseResult<Preference
     spinHistory.storeFilterSnapshot = spinHistoryRaw.storeFilterSnapshot;
   }
 
+  return { ok: true, data: spinHistory };
+}
+
+export function parsePreferencesPatchBody(body: unknown): ParseResult<PreferencesPatchBody> {
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, error: 'Request body must be a JSON object' };
+  }
+
+  const raw = body as Record<string, unknown>;
+
+  if (!raw.spinHistory || typeof raw.spinHistory !== 'object' || Array.isArray(raw.spinHistory)) {
+    return { ok: false, error: 'No valid preference fields provided' };
+  }
+
+  const spinHistoryRaw = raw.spinHistory as Record<string, unknown>;
+  const result = parseSpinHistoryPatch(spinHistoryRaw);
+
+  if (!result.ok) {
+    return result;
+  }
+
+  const spinHistory = result.data;
   if (Object.keys(spinHistory).length === 0) {
     return { ok: false, error: 'No valid preference fields provided' };
   }
@@ -95,43 +110,27 @@ function validateSavedFilters(filters: unknown): ParseResult<SavedFilters> {
   const validated: SavedFilters = {};
 
   if ('genres' in raw) {
-    if (!Array.isArray(raw.genres)) {
-      return { ok: false, error: 'savedFilters.genres must be an array' };
-    }
-    if (!raw.genres.every((g) => typeof g === 'string')) {
-      return { ok: false, error: 'savedFilters.genres must be an array of strings' };
-    }
-    validated.genres = raw.genres as string[];
+    const genres = parseStringArray(raw.genres, 'savedFilters.genres');
+    if (!genres.ok) return genres;
+    validated.genres = genres.data;
   }
 
   if ('studios' in raw) {
-    if (!Array.isArray(raw.studios)) {
-      return { ok: false, error: 'savedFilters.studios must be an array' };
-    }
-    if (!raw.studios.every((s) => typeof s === 'string')) {
-      return { ok: false, error: 'savedFilters.studios must be an array of strings' };
-    }
-    validated.studios = raw.studios as string[];
+    const studios = parseStringArray(raw.studios, 'savedFilters.studios');
+    if (!studios.ok) return studios;
+    validated.studios = studios.data;
   }
 
   if ('contentRatings' in raw) {
-    if (!Array.isArray(raw.contentRatings)) {
-      return { ok: false, error: 'savedFilters.contentRatings must be an array' };
-    }
-    if (!raw.contentRatings.every((c) => typeof c === 'string')) {
-      return { ok: false, error: 'savedFilters.contentRatings must be an array of strings' };
-    }
-    validated.contentRatings = raw.contentRatings as string[];
+    const contentRatings = parseStringArray(raw.contentRatings, 'savedFilters.contentRatings');
+    if (!contentRatings.ok) return contentRatings;
+    validated.contentRatings = contentRatings.data;
   }
 
   if ('collections' in raw) {
-    if (!Array.isArray(raw.collections)) {
-      return { ok: false, error: 'savedFilters.collections must be an array' };
-    }
-    if (!raw.collections.every((c) => typeof c === 'string')) {
-      return { ok: false, error: 'savedFilters.collections must be an array of strings' };
-    }
-    validated.collections = raw.collections as string[];
+    const collections = parseStringArray(raw.collections, 'savedFilters.collections');
+    if (!collections.ok) return collections;
+    validated.collections = collections.data;
   }
 
   if ('yearRange' in raw) {
@@ -229,13 +228,9 @@ export function parsePreferencesPutBody(body: unknown): ParseResult<PreferencesP
   }
 
   if ('selectedLibraries' in raw) {
-    if (!Array.isArray(raw.selectedLibraries)) {
-      return { ok: false, error: 'selectedLibraries must be an array' };
-    }
-    if (!raw.selectedLibraries.every((lib) => typeof lib === 'string')) {
-      return { ok: false, error: 'selectedLibraries must be an array of strings' };
-    }
-    validated.selectedLibraries = raw.selectedLibraries as string[];
+    const selectedLibraries = parseStringArray(raw.selectedLibraries, 'selectedLibraries');
+    if (!selectedLibraries.ok) return selectedLibraries;
+    validated.selectedLibraries = selectedLibraries.data;
   }
 
   if ('animationStyle' in raw) {
@@ -257,30 +252,13 @@ export function parsePreferencesPutBody(body: unknown): ParseResult<PreferencesP
       return { ok: false, error: 'spinHistory must be an object' };
     }
     const spinHistoryRaw = raw.spinHistory as Record<string, unknown>;
-    const spinHistory: SpinHistoryPreferencesPatch = {};
+    const result = parseSpinHistoryPatch(spinHistoryRaw);
 
-    if ('enabled' in spinHistoryRaw) {
-      if (typeof spinHistoryRaw.enabled !== 'boolean') {
-        return { ok: false, error: 'spinHistory.enabled must be a boolean' };
-      }
-      spinHistory.enabled = spinHistoryRaw.enabled;
+    if (!result.ok) {
+      return result;
     }
 
-    if ('retentionLimit' in spinHistoryRaw) {
-      if (typeof spinHistoryRaw.retentionLimit !== 'number' || Number.isNaN(spinHistoryRaw.retentionLimit)) {
-        return { ok: false, error: 'spinHistory.retentionLimit must be a number' };
-      }
-      spinHistory.retentionLimit = spinHistoryRaw.retentionLimit;
-    }
-
-    if ('storeFilterSnapshot' in spinHistoryRaw) {
-      if (typeof spinHistoryRaw.storeFilterSnapshot !== 'boolean') {
-        return { ok: false, error: 'spinHistory.storeFilterSnapshot must be a boolean' };
-      }
-      spinHistory.storeFilterSnapshot = spinHistoryRaw.storeFilterSnapshot;
-    }
-
-    validated.spinHistory = spinHistory;
+    validated.spinHistory = result.data;
   }
 
   if (Object.keys(validated).length === 0) {

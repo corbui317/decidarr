@@ -2,7 +2,10 @@
  * Mock Plex OAuth Functions for E2E Tests
  *
  * These are test-only mock implementations for Plex OAuth flow.
- * NEVER imported by production code - only used through factory when E2E_MOCK_PLEX is true.
+ * Imported only when NODE_ENV !== 'production' && E2E_MOCK_PLEX === 'true'.
+ * Production builds dead-code-eliminate the import because Next.js inlines
+ * NODE_ENV as a literal, and the webpack alias stubs this file to ensure
+ * it never reaches the bundle.
  */
 
 import type { PlexPin, PlexOAuthUser } from '@/lib/services/plex-oauth';
@@ -11,7 +14,7 @@ const E2E_MOCK_PIN_ID = 424242;
 const E2E_MOCK_PIN_CODE = 'e2e-mock-pin-code';
 const E2E_MOCK_AUTH_TOKEN = 'e2e-test-plex-token-valid';
 
-const E2E_MOCK_OAUTH_USER: PlexOAuthUser = {
+export const E2E_MOCK_OAUTH_USER: PlexOAuthUser = {
   id: 'e2e-user',
   username: 'e2euser',
   email: 'e2e@example.com',

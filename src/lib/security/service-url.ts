@@ -1,4 +1,5 @@
 import { lookup } from 'dns/promises';
+import { isIP } from 'net';
 import { normalizeUrl } from '@/lib/auth';
 
 export interface SafeUrlOptions {
@@ -14,21 +15,38 @@ export interface SafeUrlResult {
 }
 
 function isAlwaysBlockedIp(ip: string): boolean {
-  if (ip === '::1' || ip === '0.0.0.0') return true;
+  // IPv4 loopback and special addresses
+  if (ip === '0.0.0.0') return true;
   if (ip.startsWith('127.')) return true;
   if (ip.startsWith('169.254.')) return true;
-  if (ip.startsWith('fe80:')) return true;
+
+  // IPv6 loopback (::1 and 0:0:0:0:0:0:0:1)
+  if (ip === '::1' || ip === '0:0:0:0:0:0:0:1') return true;
+
+  // All-zeros IPv6 (::)
+  if (ip === '::' || ip === '0:0:0:0:0:0:0:0') return true;
+
+  // IPv6 link-local fe80::/10 (fe80-febf range)
+  if (ip.startsWith('fe8') || ip.startsWith('fe9') ||
+      ip.startsWith('fea') || ip.startsWith('feb')) {
+    return true;
+  }
+
   return false;
 }
 
 function isPrivateLanIp(ip: string): boolean {
+  // IPv4 private ranges (RFC 1918)
   if (ip.startsWith('10.')) return true;
   if (ip.startsWith('192.168.')) return true;
   const parts = ip.split('.').map(Number);
   if (parts.length === 4 && parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) {
     return true;
   }
+
+  // IPv6 ULA fc00::/7 (fc00-fdff range)
   if (ip.startsWith('fc') || ip.startsWith('fd')) return true;
+
   return false;
 }
 
@@ -38,6 +56,33 @@ function hostnameAllowed(hostname: string, options: SafeUrlOptions): boolean {
     return true;
   }
   return false;
+}
+
+function stripBracketsAndNormalizeIpv6(address: string): string {
+  let addr = address;
+
+  // Strip brackets from IPv6 addresses
+  if (addr.startsWith('[') && addr.endsWith(']')) {
+    addr = addr.slice(1, -1);
+  }
+
+  // Normalize IPv6 addresses using URL parsing
+  // This handles compressed forms like ::1 -> 0:0:0:0:0:0:0:1
+  if (isIP(addr) === 6) {
+    try {
+      // Use URL to normalize IPv6 (it expands compressed forms)
+      const normalized = new URL(`http://[${addr}]`).hostname;
+      // Remove brackets that URL adds back
+      return normalized.startsWith('[') && normalized.endsWith(']')
+        ? normalized.slice(1, -1)
+        : normalized;
+    } catch {
+      // If normalization fails, return the address as-is
+      return addr;
+    }
+  }
+
+  return addr;
 }
 
 function normalizeIpv4MappedIpv6(address: string): string {
@@ -101,6 +146,10 @@ export async function assertSafeServiceUrl(
 
   let hostname = parsed.hostname.toLowerCase();
 
+  // Strip brackets and normalize IPv6 addresses early
+  hostname = stripBracketsAndNormalizeIpv6(hostname);
+
+  // Handle IPv4-mapped IPv6 addresses (::ffff:x.x.x.x)
   const ipv4FromMapped = normalizeIpv4MappedIpv6(hostname);
   if (ipv4FromMapped !== hostname) {
     hostname = ipv4FromMapped;
@@ -110,7 +159,9 @@ export async function assertSafeServiceUrl(
     return { valid: true, normalized };
   }
 
-  const isIpAddress = /^\d+\.\d+\.\d+\.\d+$/.test(hostname) || hostname.includes(':');
+  // Use net.isIP() to properly detect IP addresses
+  const ipVersion = isIP(hostname);
+  const isIpAddress = ipVersion !== 0;
   let addresses: { address: string }[];
 
   if (isIpAddress) {
@@ -124,7 +175,12 @@ export async function assertSafeServiceUrl(
   }
 
   for (const { address } of addresses) {
-    const normalizedIp = normalizeIpv4MappedIpv6(address);
+    // Normalize the address (strip brackets, expand IPv6)
+    let normalizedIp = stripBracketsAndNormalizeIpv6(address);
+
+    // Handle IPv4-mapped IPv6
+    normalizedIp = normalizeIpv4MappedIpv6(normalizedIp);
+
     if (isAlwaysBlockedIp(normalizedIp)) {
       return { valid: false, error: 'Invalid or disallowed service URL' };
     }

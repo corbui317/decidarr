@@ -15,15 +15,15 @@ import { checkRateLimit } from '@/lib/security/rate-limit';
 
 const logger = createLogger('API:PlexAuthPoll');
 
-const RATE_LIMIT_CONFIG = {
-  windowMs: 15 * 60 * 1000,
-  maxAttempts: 20,
+// Per-pin rate limit: allow ~300 polls over 10 minutes (polling every 2s)
+// This prevents infinite polling but doesn't block users who take time on plex.tv
+const POLL_RATE_LIMIT_CONFIG = {
+  windowMs: 10 * 60 * 1000, // 10 minutes
+  maxAttempts: 300, // ~one poll every 2 seconds
 };
 
-function getRateLimitKey(request: NextRequest): string {
-  const forwarded = request.headers.get('x-forwarded-for');
-  const ip = forwarded ? forwarded.split(',')[0].trim() : request.headers.get('x-real-ip') || 'unknown';
-  return `auth:poll:${ip}`;
+function getPerPinRateLimitKey(pinId: number): string {
+  return `auth:poll:pin:${pinId}`;
 }
 
 function clearOAuthCookies(cookieStore: Awaited<ReturnType<typeof cookies>>) {
@@ -41,17 +41,6 @@ function statesMatch(expected: string, provided: string): boolean {
 
 export async function GET(request: NextRequest) {
   try {
-    const rateLimitKey = getRateLimitKey(request);
-    const rateLimit = checkRateLimit(rateLimitKey, RATE_LIMIT_CONFIG);
-
-    if (!rateLimit.allowed) {
-      logger.warn('Rate limit exceeded for auth poll', { key: rateLimitKey });
-      return NextResponse.json(
-        { error: 'Too many login attempts. Please try again later.', code: 'RATE_LIMITED' },
-        { status: 429 }
-      );
-    }
-
     await connectDB();
 
     const setupCheck = await assertSetupSecretAllowed(request);
@@ -79,6 +68,20 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(
         { error: 'Missing OAuth session. Please start login again.', code: 'MISSING_OAUTH_COOKIES' },
         { status: 400 }
+      );
+    }
+
+    // Rate limit by pin to prevent excessive polling for a single login session
+    // This allows users to take their time on plex.tv without getting locked out
+    const rateLimitKey = getPerPinRateLimitKey(pinId);
+    const rateLimit = checkRateLimit(rateLimitKey, POLL_RATE_LIMIT_CONFIG);
+
+    if (!rateLimit.allowed) {
+      logger.warn('Rate limit exceeded for OAuth pin polling', { pinId });
+      clearOAuthCookies(cookieStore);
+      return NextResponse.json(
+        { error: 'Login session expired due to excessive polling. Please try again.', code: 'RATE_LIMITED' },
+        { status: 429 }
       );
     }
 

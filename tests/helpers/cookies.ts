@@ -1,28 +1,18 @@
-const cookieStore = new Map<string, string>();
+import { testCookieStore } from '../../vitest.setup';
 
 export function setTestCookie(name: string, value: string) {
-  cookieStore.set(name, value);
+  testCookieStore.set(name, value);
+}
+
+export function deleteTestCookie(name: string) {
+  testCookieStore.delete(name);
 }
 
 export function clearTestCookies() {
-  cookieStore.clear();
+  testCookieStore.clear();
 }
 
 export function getTestCookie(name: string): string | undefined {
-  return cookieStore.get(name);
+  return testCookieStore.get(name);
 }
 
-export function createCookieMock() {
-  return {
-    get: (name: string) => {
-      const value = cookieStore.get(name);
-      return value !== undefined ? { name, value } : undefined;
-    },
-    set: (name: string, value: string) => {
-      cookieStore.set(name, value);
-    },
-    delete: (name: string) => {
-      cookieStore.delete(name);
-    },
-  };
-}

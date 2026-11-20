@@ -31,7 +31,7 @@ export async function GET() {
     if (isAuthError(error)) {
       logger.warn('Auth error fetching sections', { error: errorMsg });
       return NextResponse.json(
-        { error: errorMsg === 'Unauthorized' ? 'Session expired' : errorMsg },
+        { error: error.code === 'UNAUTHORIZED' ? 'Session expired' : errorMsg },
         { status: authErrorStatus(error) }
       );
     }

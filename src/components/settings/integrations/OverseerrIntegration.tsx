@@ -1,39 +1,87 @@
 'use client';
 
-import { SettingsResponse } from '@/lib/api';
+import { useState, useEffect, useCallback } from 'react';
+import { settingsApi, overseerrApi, SettingsResponse } from '@/lib/api';
 import { inputClass, inputStyle, labelClass } from '../shared';
 
 interface OverseerrIntegrationProps {
   settings: SettingsResponse | null;
-  overseerrUrl: string;
-  onOverseerrUrlChange: (value: string) => void;
-  overseerrApiKey: string;
-  onOverseerrApiKeyChange: (value: string) => void;
-  overseerrFilterEnabled: boolean;
-  onOverseerrFilterEnabledChange: (enabled: boolean) => void;
-  overseerrValid: boolean | null;
-  overseerrVersion: string | null;
-  saving: boolean;
-  onTest: () => void;
-  onSave: () => void;
-  onClearValidation: () => void;
+  onError: (error: string) => void;
+  onSuccess: (message: string) => void;
+  onClearMessages: () => void;
 }
 
 export default function OverseerrIntegration({
   settings,
-  overseerrUrl,
-  onOverseerrUrlChange,
-  overseerrApiKey,
-  onOverseerrApiKeyChange,
-  overseerrFilterEnabled,
-  onOverseerrFilterEnabledChange,
-  overseerrValid,
-  overseerrVersion,
-  saving,
-  onTest,
-  onSave,
-  onClearValidation,
+  onError,
+  onSuccess,
+  onClearMessages,
 }: OverseerrIntegrationProps) {
+  const [saving, setSaving] = useState(false);
+  const [overseerrUrl, setOverseerrUrl] = useState('');
+  const [overseerrApiKey, setOverseerrApiKey] = useState('');
+  const [overseerrFilterEnabled, setOverseerrFilterEnabled] = useState(false);
+  const [overseerrValid, setOverseerrValid] = useState<boolean | null>(null);
+  const [overseerrVersion, setOverseerrVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (settings) {
+      setOverseerrUrl(settings.overseerr?.url || '');
+      setOverseerrFilterEnabled(settings.overseerr?.filterEnabled || false);
+    }
+  }, [settings]);
+
+  const handleTestOverseerr = useCallback(async () => {
+    if (!overseerrUrl.trim() || !overseerrApiKey.trim()) {
+      onError('Please provide both Overseerr URL and API key');
+      return;
+    }
+
+    setSaving(true);
+    onClearMessages();
+    try {
+      const result = await overseerrApi.test(overseerrUrl, overseerrApiKey);
+      setOverseerrValid(result.success);
+      if (result.version) {
+        setOverseerrVersion(result.version);
+      }
+      if (!result.success) {
+        onError('Overseerr connection test failed');
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to test Overseerr';
+      onError(message);
+      setOverseerrValid(false);
+    } finally {
+      setSaving(false);
+    }
+  }, [overseerrUrl, overseerrApiKey, onError, onClearMessages]);
+
+  const handleSaveOverseerr = useCallback(async () => {
+    if (!overseerrUrl.trim() || !overseerrApiKey.trim()) {
+      onError('Please provide both Overseerr URL and API key');
+      return;
+    }
+
+    setSaving(true);
+    onClearMessages();
+    try {
+      await settingsApi.updateSettings({
+        overseerr: {
+          url: overseerrUrl,
+          apiKey: overseerrApiKey,
+          filterEnabled: overseerrFilterEnabled,
+        },
+      });
+      onSuccess('Overseerr settings saved');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to save Overseerr settings';
+      onError(message);
+    } finally {
+      setSaving(false);
+    }
+  }, [overseerrUrl, overseerrApiKey, overseerrFilterEnabled, onError, onSuccess, onClearMessages]);
+
   return (
     <div className="space-y-5">
       {settings?.overseerr?.url && (
@@ -57,8 +105,8 @@ export default function OverseerrIntegration({
           type="url"
           value={overseerrUrl}
           onChange={(e) => {
-            onOverseerrUrlChange(e.target.value);
-            onClearValidation();
+            setOverseerrUrl(e.target.value);
+            setOverseerrValid(null);
           }}
           placeholder="http://192.168.1.100:5055"
           className={inputClass}
@@ -73,8 +121,8 @@ export default function OverseerrIntegration({
           type="password"
           value={overseerrApiKey}
           onChange={(e) => {
-            onOverseerrApiKeyChange(e.target.value);
-            onClearValidation();
+            setOverseerrApiKey(e.target.value);
+            setOverseerrValid(null);
           }}
           placeholder="Enter Overseerr API key"
           className={inputClass}
@@ -82,26 +130,39 @@ export default function OverseerrIntegration({
         />
       </div>
 
-      <label className="flex items-center gap-2 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={overseerrFilterEnabled}
-          onChange={(e) => onOverseerrFilterEnabledChange(e.target.checked)}
-          className="w-4 h-4 rounded border-gray-600 text-decidarr-primary focus:ring-decidarr-primary"
-        />
-        <span className="text-decidarr-text text-sm">Exclude fully available titles from the spin pool</span>
-      </label>
+      <div>
+        <label htmlFor="overseerr-filter" className="flex items-center gap-2 cursor-pointer">
+          <input
+            id="overseerr-filter"
+            type="checkbox"
+            checked={overseerrFilterEnabled}
+            onChange={(e) => setOverseerrFilterEnabled(e.target.checked)}
+            className="rounded border-decidarr-border bg-decidarr-surface text-decidarr-primary focus:ring-decidarr-primary focus:ring-offset-decidarr-dark"
+          />
+          <span className={labelClass} style={{ marginBottom: 0 }}>Exclude fully available titles from the spin pool</span>
+        </label>
+        <p className="text-decidarr-text-muted text-xs mt-1 ml-6">
+          Only spin items that are not yet available in Overseerr
+        </p>
+      </div>
 
-      {overseerrValid && overseerrVersion && (
+      {overseerrValid === true && (
         <div role="status" className="bg-green-500/10 border border-green-500/50 rounded-lg p-3">
-          <p className="text-green-400 text-sm">Connected (v{overseerrVersion})</p>
+          <p className="text-green-400 text-sm">
+            {overseerrVersion ? `Connected to Overseerr ${overseerrVersion}` : 'Connection successful!'}
+          </p>
+        </div>
+      )}
+      {overseerrValid === false && (
+        <div role="status" className="bg-red-500/10 border border-red-500/50 rounded-lg p-3">
+          <p className="text-red-400 text-sm">Connection test failed</p>
         </div>
       )}
 
       <div className="flex gap-2">
         <button
           type="button"
-          onClick={onTest}
+          onClick={handleTestOverseerr}
           disabled={saving || !overseerrUrl.trim() || !overseerrApiKey.trim()}
           className="flex-1 bg-decidarr-surface text-decidarr-text font-medium py-2 px-4 rounded-lg border border-decidarr-border hover:border-decidarr-primary transition-colors disabled:opacity-50"
         >
@@ -109,7 +170,7 @@ export default function OverseerrIntegration({
         </button>
         <button
           type="button"
-          onClick={onSave}
+          onClick={handleSaveOverseerr}
           disabled={saving || !overseerrUrl.trim() || !overseerrApiKey.trim()}
           className="flex-1 bg-decidarr-primary text-black font-medium py-2 px-4 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
         >

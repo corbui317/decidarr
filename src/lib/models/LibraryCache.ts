@@ -1,5 +1,6 @@
 import mongoose, { Document, Model } from 'mongoose';
 import type { OverseerrAvailability } from '@/types/overseerr';
+import type { MediaType } from '@/types/shared';
 
 export interface ILibraryItem {
   plexId: string;
@@ -34,7 +35,7 @@ export interface ILibraryCache extends Document {
   plexMachineId: string;
   libraryId: string;
   libraryName: string;
-  mediaType: 'movie' | 'show';
+  mediaType: MediaType;
   items: ILibraryItem[];
   lastSyncedAt: Date;
   expiresAt: Date;

@@ -8,14 +8,6 @@ function makeMediaRecord(tmdbId: number, status = 5) {
   return { tmdbId, status, mediaType: 'movie' };
 }
 
-function makePage(results: ReturnType<typeof makeMediaRecord>[], page: number, totalPages: number) {
-  return {
-    results,
-    pageInfo: { pages: totalPages },
-    _page: page,
-  };
-}
-
 describe('OverseerrService.fetchAllMediaStatus', () => {
   const fetchMock = vi.fn();
 

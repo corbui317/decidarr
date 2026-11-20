@@ -1,5 +1,9 @@
 import mongoose from 'mongoose';
 import { runMigrations } from './migrate';
+import { createLogger } from './logger';
+import { assertTestOnly } from './test-only';
+
+const logger = createLogger('DB');
 
 interface MongooseCache {
   conn: typeof mongoose | null;
@@ -29,8 +33,14 @@ export async function connectDB() {
     };
 
     cached.promise = mongoose.connect(MONGODB_URI, opts).then(async (conn) => {
-      console.log('Connected to MongoDB');
-      await runMigrations();
+      logger.info('Connected to MongoDB');
+      try {
+        await runMigrations();
+      } catch (err) {
+        // Log migration errors but don't prevent database connection
+        // Recovery mechanisms in migrations should handle most failures
+        logger.error('Migration error during connection', { error: String(err) });
+      }
       return conn;
     });
   }
@@ -43,4 +53,14 @@ export async function connectDB() {
   }
 
   return cached.conn;
+}
+
+/**
+ * @internal Test-only: forget the cached connection so the next connectDB()
+ * takes the boot path again (connect, then run migrations), as after a restart.
+ */
+export function forgetConnectionForTests(): void {
+  assertTestOnly('forgetConnectionForTests');
+  cached.conn = null;
+  cached.promise = null;
 }

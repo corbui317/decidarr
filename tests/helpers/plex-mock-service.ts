@@ -2,7 +2,10 @@
  * Mock Plex Service Implementation for E2E Tests
  *
  * This is a test-only implementation that provides mock responses for Plex API calls.
- * It is NEVER imported by production code - only used through the factory when E2E_MOCK_PLEX is true.
+ * Imported only when NODE_ENV !== 'production' && E2E_MOCK_PLEX === 'true'.
+ * Production builds dead-code-eliminate the import because Next.js inlines
+ * NODE_ENV as a literal, and the webpack alias stubs this file to ensure
+ * it never reaches the bundle.
  */
 
 import type {
@@ -32,9 +35,9 @@ const E2E_MOCK_SERVERS: PlexServer[] = [
 
 export class MockPlexService {
   constructor(
-    private authToken: string,
+    _authToken: string,
     private serverUrl?: string | null,
-    private machineId?: string | null
+    _machineId?: string | null
   ) {}
 
   async validateToken(): Promise<{ valid: boolean; user?: PlexUser; error?: string }> {

@@ -3,7 +3,6 @@ import { clearDatabase } from '../helpers/mongo';
 import { getOrCreateSettings, Settings } from '@/lib/models/Settings';
 import { runMigrations, resetMigrationStateForTests } from '@/lib/migrate';
 import { connectDB } from '@/lib/db';
-import CryptoJS from 'crypto-js';
 
 describe('Secret migration and encryption', () => {
   beforeEach(async () => {
@@ -180,9 +179,9 @@ describe('Secret migration and encryption', () => {
 
       await connectDB();
 
-      // Create settings manually with a corrupted encrypted value
-      await Settings.create({
-        _id: 'app-settings',
+      // Create settings manually with a corrupted encrypted value, bypassing the pre-save hook
+      await Settings.collection.insertOne({
+        _id: 'app-settings' as any,
         jwtSecret: 'corrupted-invalid-base64-!!!',
         encryptionKey: 'also-corrupted-!!!',
         setupComplete: false,

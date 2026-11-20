@@ -5,7 +5,7 @@ import { selectionApi, spinHistoryApi, AnimationStyle } from '@/lib/api';
 import { resolveAnimationStyle, ResolvedAnimationStyle } from '@/components/animations';
 import { Filters } from '@/types/filters';
 import type { SelectionResultResponse } from '@/types/api/selection';
-import type { MediaType, TvSelectionMode, SelectionError } from '@/types/shared';
+import type { MediaType, MediaTypeWithEpisode, TvSelectionMode } from '@/types/shared';
 
 export type SpinPhase = 'idle' | 'loading' | 'animating' | 'result';
 
@@ -45,12 +45,12 @@ export function useSpinFlow({
     setActiveVariant(variant);
 
     try {
-      const data = await selectionApi.getRandom(
-        selectedLibraries,
+      const data = await selectionApi.getRandom({
+        libraryIds: selectedLibraries,
         mediaType,
         filters,
-        mediaType === 'show' ? tvSelectionMode : undefined
-      );
+        tvSelectionMode: mediaType === 'show' ? tvSelectionMode : undefined,
+      });
 
       const selectionResult = data;
       setPendingResult(selectionResult);
@@ -61,7 +61,7 @@ export function useSpinFlow({
         .create({
           plexId: selection.plexId,
           title: selection.title,
-          mediaType: selection.type as MediaType,
+          mediaType: selection.type as MediaTypeWithEpisode,
           thumbPath: selection.thumbPath,
           year: selection.year,
           libraryIds: selectedLibraries,
@@ -70,17 +70,25 @@ export function useSpinFlow({
           poolSizeAtSpin: selectionResult.stats?.totalMatches,
         })
         .then(() => onHistoryRecorded?.())
-        .catch((historyErr) => console.error('Failed to record spin history:', historyErr));
+        .catch(() => {
+          // History recording is non-critical - fail silently
+        });
 
       setPhase('animating');
     } catch (err) {
-      // Check if it's a response error with SelectionError structure
-      if (err && typeof err === 'object' && 'code' in err) {
-        const selectionError = err as SelectionError;
-        if (selectionError.code === 'NO_ITEMS_IN_LIBRARIES' || selectionError.code === 'NO_ITEMS_MATCH_FILTERS') {
+      // Check if it's an ApiError with a code
+      if (err instanceof Error && 'code' in err) {
+        const apiError = err as { code?: string; message: string };
+        if (apiError.code === 'NO_ITEMS_IN_LIBRARIES' || apiError.code === 'NO_ITEMS_MATCH_FILTERS') {
           setError('No items found matching your criteria');
+        } else if (apiError.code === 'NO_LIBRARIES') {
+          setError('At least one library must be selected');
+        } else if (apiError.code === 'NO_ACCESSIBLE_LIBRARIES') {
+          setError('No accessible libraries selected');
+        } else if (apiError.code === 'MACHINE_ID_MISSING') {
+          setError('Plex machine ID not configured');
         } else {
-          setError(selectionError.message || 'Something went wrong. Please try again.');
+          setError(apiError.message || 'Something went wrong. Please try again.');
         }
       } else {
         setError('Something went wrong. Please try again.');

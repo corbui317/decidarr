@@ -12,6 +12,7 @@ import {
   ANIMATION_SPEED_LABELS,
 } from '@/components/animations';
 import { THEME_CONFIG, AppTheme, useTheme } from '@/context/ThemeContext';
+import type { MediaType, TvSelectionMode } from '@/types/shared';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { inputClass, inputStyle, labelClass } from './shared';
 
@@ -23,8 +24,8 @@ export default function AppearanceTab() {
   const [success, setSuccess] = useState<string | null>(null);
 
   const [selectedTheme, setSelectedTheme] = useState<AppTheme>(currentTheme);
-  const [defaultMediaType, setDefaultMediaType] = useState<'movie' | 'show'>('movie');
-  const [tvSelectionMode, setTvSelectionMode] = useState<'show' | 'episode'>('show');
+  const [defaultMediaType, setDefaultMediaType] = useState<MediaType>('movie');
+  const [tvSelectionMode, setTvSelectionMode] = useState<TvSelectionMode>('show');
   const [animationStyle, setAnimationStyle] = useState<AnimationStyle>('slots');
   const [animationSpeed, setAnimationSpeed] = useState<AnimationSpeed>('normal');
 
@@ -206,7 +207,7 @@ export default function AppearanceTab() {
         <select
           id="default-media-type"
           value={defaultMediaType}
-          onChange={(e) => setDefaultMediaType(e.target.value as 'movie' | 'show')}
+          onChange={(e) => setDefaultMediaType(e.target.value as MediaType)}
           className={inputClass}
           style={inputStyle}
         >

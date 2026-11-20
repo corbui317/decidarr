@@ -96,8 +96,8 @@ export default function Dashboard() {
       const detail = (event as CustomEvent<{
         animationStyle?: AnimationStyle;
         animationSpeed?: AnimationSpeed;
-        defaultMediaType?: 'movie' | 'show';
-        tvSelectionMode?: 'show' | 'episode';
+        defaultMediaType?: MediaType;
+        tvSelectionMode?: TvSelectionMode;
       }>).detail;
 
       if (detail?.animationStyle) {

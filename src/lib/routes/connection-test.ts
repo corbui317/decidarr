@@ -3,13 +3,11 @@ import { requireAdmin, isAuthError, authErrorStatus } from '@/lib/auth';
 import { assertSafeServiceUrl, allowPrivateServiceUrls } from '@/lib/security/service-url';
 import type { Logger } from '@/lib/logger';
 
-export interface ConnectionTestService {
-  testConnection(): Promise<{ success: boolean; error?: string; [key: string]: unknown }>;
-}
+export type ConnectionTestResult = { success: boolean; error?: string; [key: string]: unknown };
 
 export async function handleConnectionTest(
   request: NextRequest,
-  ServiceClass: new (url: string, apiKey: string) => ConnectionTestService,
+  testConnection: (url: string, apiKey: string) => Promise<ConnectionTestResult>,
   serviceName: string,
   logger: Logger
 ): Promise<NextResponse> {
@@ -30,14 +28,15 @@ export async function handleConnectionTest(
       allowPrivateNetworks: allowPrivateServiceUrls(),
     });
     if (!urlCheck.valid) {
+      // Log internal reason but return generic error to client (security spec 01 §2.3 step 7)
+      logger.warn(`${serviceName} URL validation failed`, { url, reason: urlCheck.error });
       return NextResponse.json(
-        { success: false, error: urlCheck.error || 'Invalid or disallowed service URL' },
+        { success: false, error: 'Invalid or disallowed service URL' },
         { status: 400 }
       );
     }
 
-    const service = new ServiceClass(urlCheck.normalized || url, apiKey);
-    const result = await service.testConnection();
+    const result = await testConnection(urlCheck.normalized || url, apiKey);
 
     if (result.success) {
       logger.info(`${serviceName} test successful`, result);

@@ -1,15 +1,11 @@
 import { NextResponse } from 'next/server';
 import mongoose from 'mongoose';
-import { connectDB } from '@/lib/db';
+import { connectDB, forgetConnectionForTests } from '@/lib/db';
 import { resetMigrationStateForTests } from '@/lib/migrate';
 
 export async function POST(request: Request) {
-  if (process.env.NODE_ENV === 'production') {
+  if (process.env.NODE_ENV === 'production' || process.env.E2E_MOCK_PLEX !== 'true') {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
-  }
-
-  if (process.env.E2E_MOCK_PLEX !== 'true') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
   const resetSecret = process.env.E2E_TEST_RESET_SECRET?.trim();
@@ -28,18 +24,9 @@ export async function POST(request: Request) {
       await mongoose.connection.dropDatabase();
     }
 
-    const cached = (global as typeof global & { mongoose?: { conn: null; promise: null } })
-      .mongoose;
-    if (cached) {
-      cached.conn = null;
-      cached.promise = null;
-    }
-
-    // Reset migration state if requested (for legacy migration testing)
-    const resetMigration = request.headers.get('X-E2E-Reset-Migration');
-    if (resetMigration === 'true') {
-      resetMigrationStateForTests();
-    }
+    // An empty database should behave like a fresh install on a fresh process.
+    forgetConnectionForTests();
+    resetMigrationStateForTests();
 
     return NextResponse.json({ ok: true });
   } catch (error) {

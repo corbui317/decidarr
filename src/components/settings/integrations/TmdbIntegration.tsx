@@ -1,29 +1,73 @@
 'use client';
 
-import { SettingsResponse } from '@/lib/api';
+import { useState, useCallback } from 'react';
+import { settingsApi, SettingsResponse } from '@/lib/api';
 import { inputClass, inputStyle, labelClass } from '../shared';
 
 interface TmdbIntegrationProps {
   settings: SettingsResponse | null;
-  tmdbApiKey: string;
-  onTmdbApiKeyChange: (value: string) => void;
-  tmdbValid: boolean | null;
-  onTmdbValidClear: () => void;
-  saving: boolean;
-  onTest: () => void;
-  onSave: () => void;
+  onError: (error: string) => void;
+  onSuccess: (message: string) => void;
+  onClearMessages: () => void;
 }
 
 export default function TmdbIntegration({
   settings,
-  tmdbApiKey,
-  onTmdbApiKeyChange,
-  tmdbValid,
-  onTmdbValidClear,
-  saving,
-  onTest,
-  onSave,
+  onError,
+  onSuccess,
+  onClearMessages,
 }: TmdbIntegrationProps) {
+  const [saving, setSaving] = useState(false);
+  const [tmdbApiKey, setTmdbApiKey] = useState('');
+  const [tmdbValid, setTmdbValid] = useState<boolean | null>(null);
+
+  const handleTestTmdb = useCallback(async () => {
+    if (!tmdbApiKey.trim()) {
+      onError('Please enter a TMDB API key');
+      return;
+    }
+
+    setSaving(true);
+    onClearMessages();
+    try {
+      const result = await settingsApi.testTmdb(tmdbApiKey);
+      setTmdbValid(result.valid);
+      if (!result.valid) {
+        onError('TMDB API key validation failed');
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to test TMDB';
+      onError(message);
+      setTmdbValid(false);
+    } finally {
+      setSaving(false);
+    }
+  }, [tmdbApiKey, onError, onClearMessages]);
+
+  const handleSaveTmdb = useCallback(async () => {
+    if (!tmdbApiKey.trim()) {
+      onError('Please provide a TMDB API key');
+      return;
+    }
+
+    setSaving(true);
+    onClearMessages();
+    try {
+      await settingsApi.updateSettings({
+        tmdb: {
+          apiKey: tmdbApiKey,
+        },
+      });
+      onSuccess('TMDB settings saved successfully');
+      setTmdbApiKey('');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to save TMDB settings';
+      onError(message);
+    } finally {
+      setSaving(false);
+    }
+  }, [tmdbApiKey, onError, onSuccess, onClearMessages]);
+
   return (
     <div className="space-y-5">
       {settings?.tmdb.hasKey && (
@@ -44,8 +88,8 @@ export default function TmdbIntegration({
           type="password"
           value={tmdbApiKey}
           onChange={(e) => {
-            onTmdbApiKeyChange(e.target.value);
-            onTmdbValidClear();
+            setTmdbApiKey(e.target.value);
+            setTmdbValid(null);
           }}
           placeholder="Enter new TMDB API key"
           className={inputClass}
@@ -78,7 +122,7 @@ export default function TmdbIntegration({
       <div className="flex gap-2">
         <button
           type="button"
-          onClick={onTest}
+          onClick={handleTestTmdb}
           disabled={saving || !tmdbApiKey.trim()}
           className="flex-1 bg-decidarr-surface text-decidarr-text font-medium py-2 px-4 rounded-lg border border-decidarr-border hover:border-decidarr-primary transition-colors disabled:opacity-50"
         >
@@ -86,7 +130,7 @@ export default function TmdbIntegration({
         </button>
         <button
           type="button"
-          onClick={onSave}
+          onClick={handleSaveTmdb}
           disabled={saving || !tmdbApiKey.trim()}
           className="flex-1 bg-decidarr-primary text-black font-medium py-2 px-4 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
         >

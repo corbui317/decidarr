@@ -1,44 +1,103 @@
 'use client';
 
-import { SettingsResponse, TautulliUser } from '@/lib/api';
+import { useState, useEffect, useCallback } from 'react';
+import { settingsApi, tautulliApi, SettingsResponse, TautulliUser } from '@/lib/api';
 import { inputClass, inputStyle, labelClass } from '../shared';
 import LoadingSpinner from '@/components/LoadingSpinner';
 
 interface TautulliIntegrationProps {
   settings: SettingsResponse | null;
-  tautulliUrl: string;
-  onTautulliUrlChange: (value: string) => void;
-  tautulliApiKey: string;
-  onTautulliApiKeyChange: (value: string) => void;
-  tautulliEnabled: boolean;
-  onTautulliEnabledChange: (enabled: boolean) => void;
-  tautulliUsers: TautulliUser[];
-  tautulliValid: boolean | null;
-  saving: boolean;
-  syncingTautulli: boolean;
-  onTest: () => void;
-  onSave: () => void;
-  onSync: () => void;
-  onClearValidation: () => void;
+  onError: (error: string) => void;
+  onSuccess: (message: string) => void;
+  onClearMessages: () => void;
 }
 
 export default function TautulliIntegration({
   settings,
-  tautulliUrl,
-  onTautulliUrlChange,
-  tautulliApiKey,
-  onTautulliApiKeyChange,
-  tautulliEnabled,
-  onTautulliEnabledChange,
-  tautulliUsers,
-  tautulliValid,
-  saving,
-  syncingTautulli,
-  onTest,
-  onSave,
-  onSync,
-  onClearValidation,
+  onError,
+  onSuccess,
+  onClearMessages,
 }: TautulliIntegrationProps) {
+  const [saving, setSaving] = useState(false);
+  const [syncingTautulli, setSyncingTautulli] = useState(false);
+  const [tautulliUrl, setTautulliUrl] = useState('');
+  const [tautulliApiKey, setTautulliApiKey] = useState('');
+  const [tautulliEnabled, setTautulliEnabled] = useState(false);
+  const [tautulliUsers, setTautulliUsers] = useState<TautulliUser[]>([]);
+  const [tautulliValid, setTautulliValid] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (settings) {
+      setTautulliUrl(settings.tautulli?.url || '');
+      setTautulliEnabled(settings.tautulli?.enabled || false);
+    }
+  }, [settings]);
+
+  const handleTestTautulli = useCallback(async () => {
+    if (!tautulliUrl.trim() || !tautulliApiKey.trim()) {
+      onError('Please provide both Tautulli URL and API key');
+      return;
+    }
+
+    setSaving(true);
+    onClearMessages();
+    try {
+      const result = await tautulliApi.test(tautulliUrl, tautulliApiKey);
+      setTautulliValid(result.success);
+      if (result.success && result.users) {
+        setTautulliUsers(result.users);
+      }
+      if (!result.success) {
+        onError('Tautulli connection test failed');
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to test Tautulli';
+      onError(message);
+      setTautulliValid(false);
+    } finally {
+      setSaving(false);
+    }
+  }, [tautulliUrl, tautulliApiKey, onError, onClearMessages]);
+
+  const handleSaveTautulli = useCallback(async () => {
+    if (!tautulliUrl.trim() || !tautulliApiKey.trim()) {
+      onError('Please provide both Tautulli URL and API key');
+      return;
+    }
+
+    setSaving(true);
+    onClearMessages();
+    try {
+      await settingsApi.updateSettings({
+        tautulli: {
+          url: tautulliUrl,
+          apiKey: tautulliApiKey,
+          enabled: tautulliEnabled,
+        },
+      });
+      onSuccess('Tautulli settings saved');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to save Tautulli settings';
+      onError(message);
+    } finally {
+      setSaving(false);
+    }
+  }, [tautulliUrl, tautulliApiKey, tautulliEnabled, onError, onSuccess, onClearMessages]);
+
+  const handleSyncTautulli = useCallback(async () => {
+    setSyncingTautulli(true);
+    onClearMessages();
+    try {
+      await tautulliApi.sync();
+      onSuccess('Tautulli watch history synced successfully');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to sync Tautulli';
+      onError(message);
+    } finally {
+      setSyncingTautulli(false);
+    }
+  }, [onError, onSuccess, onClearMessages]);
+
   return (
     <div className="space-y-5">
       {settings?.tautulli?.url && (
@@ -60,8 +119,8 @@ export default function TautulliIntegration({
           type="url"
           value={tautulliUrl}
           onChange={(e) => {
-            onTautulliUrlChange(e.target.value);
-            onClearValidation();
+            setTautulliUrl(e.target.value);
+            setTautulliValid(null);
           }}
           placeholder="http://192.168.1.100:8181"
           className={inputClass}
@@ -76,8 +135,8 @@ export default function TautulliIntegration({
           type="password"
           value={tautulliApiKey}
           onChange={(e) => {
-            onTautulliApiKeyChange(e.target.value);
-            onClearValidation();
+            setTautulliApiKey(e.target.value);
+            setTautulliValid(null);
           }}
           placeholder="Enter Tautulli API key"
           className={inputClass}
@@ -85,34 +144,34 @@ export default function TautulliIntegration({
         />
       </div>
 
-      <label className="flex items-center gap-2 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={tautulliEnabled}
-          onChange={(e) => onTautulliEnabledChange(e.target.checked)}
-          className="w-4 h-4 rounded border-gray-600 text-decidarr-primary focus:ring-decidarr-primary"
-        />
-        <span className="text-decidarr-text text-sm">Enable Tautulli Integration</span>
-      </label>
+      <div>
+        <label htmlFor="tautulli-enabled" className="flex items-center gap-2 cursor-pointer">
+          <input
+            id="tautulli-enabled"
+            type="checkbox"
+            checked={tautulliEnabled}
+            onChange={(e) => setTautulliEnabled(e.target.checked)}
+            className="rounded border-decidarr-border bg-decidarr-surface text-decidarr-primary focus:ring-decidarr-primary focus:ring-offset-decidarr-dark"
+          />
+          <span className={labelClass} style={{ marginBottom: 0 }}>Enable Tautulli Integration</span>
+        </label>
+      </div>
 
-      {tautulliValid && tautulliUsers.length > 0 && (
+      {tautulliValid === true && tautulliUsers.length > 0 && (
         <div role="status" className="bg-green-500/10 border border-green-500/50 rounded-lg p-3">
-          <p className="text-green-400 text-sm font-medium mb-2">Connected! Found {tautulliUsers.length} users</p>
-          <ul className="text-decidarr-text-muted text-xs space-y-1">
-            {tautulliUsers.slice(0, 5).map((user) => (
-              <li key={user.id}>{user.friendlyName || user.username}</li>
-            ))}
-            {tautulliUsers.length > 5 && (
-              <li>... and {tautulliUsers.length - 5} more</li>
-            )}
-          </ul>
+          <p className="text-green-400 text-sm">Connected! Found {tautulliUsers.length} users</p>
+        </div>
+      )}
+      {tautulliValid === false && (
+        <div role="status" className="bg-red-500/10 border border-red-500/50 rounded-lg p-3">
+          <p className="text-red-400 text-sm">Connection test failed</p>
         </div>
       )}
 
       <div className="flex gap-2">
         <button
           type="button"
-          onClick={onTest}
+          onClick={handleTestTautulli}
           disabled={saving || !tautulliUrl.trim() || !tautulliApiKey.trim()}
           className="flex-1 bg-decidarr-surface text-decidarr-text font-medium py-2 px-4 rounded-lg border border-decidarr-border hover:border-decidarr-primary transition-colors disabled:opacity-50"
         >
@@ -120,7 +179,7 @@ export default function TautulliIntegration({
         </button>
         <button
           type="button"
-          onClick={onSave}
+          onClick={handleSaveTautulli}
           disabled={saving || !tautulliUrl.trim() || !tautulliApiKey.trim()}
           className="flex-1 bg-decidarr-primary text-black font-medium py-2 px-4 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
         >
@@ -129,21 +188,20 @@ export default function TautulliIntegration({
       </div>
 
       {settings?.tautulli?.enabled && (
-        <button
-          type="button"
-          onClick={onSync}
-          disabled={syncingTautulli}
-          className="w-full bg-decidarr-surface text-decidarr-text font-medium py-2 px-4 rounded-lg border border-decidarr-border hover:border-decidarr-primary transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-        >
-          {syncingTautulli ? (
-            <>
-              <LoadingSpinner size="sm" />
-              Syncing...
-            </>
-          ) : (
-            'Sync Watch History Now'
-          )}
-        </button>
+        <div>
+          <button
+            type="button"
+            onClick={handleSyncTautulli}
+            disabled={syncingTautulli}
+            className="w-full bg-decidarr-surface text-decidarr-text font-medium py-2 px-4 rounded-lg border border-decidarr-border hover:border-decidarr-primary transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {syncingTautulli && <LoadingSpinner size="sm" />}
+            {syncingTautulli ? 'Syncing...' : 'Sync Watch History'}
+          </button>
+          <p className="text-decidarr-text-muted text-xs mt-2">
+            Imports watched status from Tautulli for all Plex users
+          </p>
+        </div>
       )}
     </div>
   );

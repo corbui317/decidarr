@@ -96,6 +96,7 @@ export default function RecentSpins({ refreshKey = 0, onReapply, onRevisit }: Re
                 const imageUrl =
                   entry.posterUrl || plexImageUrl(entry.thumbPath) || null;
                 return imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- Plex images come from the cookie-authenticated /api/plex/image proxy, which the next/image optimizer cannot fetch
                   <img
                     src={imageUrl}
                     alt=""

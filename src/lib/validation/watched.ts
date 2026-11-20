@@ -1,14 +1,10 @@
+import { type ParseResult, isNonEmptyString } from './common';
+
 export type WatchedMediaType = 'movie' | 'show' | 'episode';
 
 export interface WatchedCreateBody {
   mediaType: WatchedMediaType;
   title: string;
-}
-
-type ParseResult<T> = { ok: true; data: T } | { ok: false; error: string };
-
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === 'string' && value.trim().length > 0;
 }
 
 export function parsePlexIdParam(plexId: unknown): ParseResult<string> {

@@ -21,18 +21,20 @@ export type TvSelectionMode = 'show' | 'episode';
 /**
  * Selection parameters bundled into one type.
  * Used for random selection and pool count requests.
+ * Uses the real Filters type to match the validated request body.
  */
 export interface SelectionParameters {
   libraryIds: string[];
   mediaType: MediaType;
   filters: {
-    unwatchedOnly?: boolean;
-    genres?: string[];
-    studios?: string[];
-    yearRange?: { min?: number; max?: number };
-    ratingRange?: { min?: number; max?: number };
-    contentRatings?: string[];
-    collections?: string[];
+    genres: string[];
+    yearRange: { start?: number; end?: number } | null;
+    contentRatings: string[];
+    studios: string[];
+    ratingRange: { min?: number; max?: number } | null;
+    ratingFilter: string | null;
+    unwatchedOnly: boolean;
+    collections: string[];
   };
   tvSelectionMode?: TvSelectionMode;
 }
@@ -63,7 +65,7 @@ export type SelectionErrorCode =
   | 'INVALID_SELECTION_PARAMS';
 
 export interface SelectionError {
+  error: string;
   code: SelectionErrorCode;
-  message: string;
   suggestion?: string;
 }

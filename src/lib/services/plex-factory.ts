@@ -12,7 +12,7 @@ export async function createPlexService(
   serverUrl?: string | null,
   machineId?: string | null
 ): Promise<PlexService> {
-  if (process.env.E2E_MOCK_PLEX === 'true') {
+  if (process.env.NODE_ENV !== 'production' && process.env.E2E_MOCK_PLEX === 'true') {
     const { MockPlexService } = await import('../../../tests/helpers/plex-mock-service');
     return new MockPlexService(authToken, serverUrl, machineId) as unknown as PlexService;
   }

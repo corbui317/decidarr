@@ -1,29 +1,12 @@
 import type { Filters } from '@/types/filters';
 import type { MediaType, TvSelectionMode } from '@/types/shared';
+import { type ParseResult, isNonEmptyString, parseStringArray } from './common';
 
 export interface SelectionRequestBody {
   libraryIds: string[];
   mediaType: MediaType;
   filters: Filters;
   tvSelectionMode?: TvSelectionMode;
-}
-
-type ParseResult<T> = { ok: true; data: T } | { ok: false; error: string };
-
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === 'string' && value.trim().length > 0;
-}
-
-function parseStringArray(value: unknown, field: string): ParseResult<string[]> {
-  if (!Array.isArray(value)) {
-    return { ok: false, error: `${field} must be an array of strings` };
-  }
-  for (const item of value) {
-    if (typeof item !== 'string') {
-      return { ok: false, error: `${field} must be an array of strings` };
-    }
-  }
-  return { ok: true, data: value };
 }
 
 function parseOptionalNumber(value: unknown, field: string): ParseResult<number | undefined> {

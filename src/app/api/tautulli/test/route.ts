@@ -1,35 +1,29 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin } from '@/lib/auth';
+import { NextRequest } from 'next/server';
 import { TautulliService } from '@/lib/services/tautulli';
 import { createLogger } from '@/lib/logger';
-import { assertSafeServiceUrl, allowPrivateServiceUrls } from '@/lib/security/service-url';
-import { handleConnectionTest } from '@/lib/api/connection-test';
+import { handleConnectionTest } from '@/lib/routes/connection-test';
 
 const logger = createLogger('API:TautulliTest');
 
-class TautulliTestService {
-  constructor(private url: string, private apiKey: string) {}
+async function testTautulliConnection(url: string, apiKey: string) {
+  const service = new TautulliService(url, apiKey);
+  const result = await service.testConnection();
 
-  async testConnection() {
-    const service = new TautulliService(this.url, this.apiKey);
-    const result = await service.testConnection();
-
-    if (result.success) {
-      const users = await service.getUsers();
-      return {
-        success: true,
-        users: users.map(u => ({
-          id: u.user_id,
-          username: u.username,
-          friendlyName: u.friendly_name,
-        })),
-      };
-    }
-
-    return result;
+  if (result.success) {
+    const users = await service.getUsers();
+    return {
+      success: true,
+      users: users.map(u => ({
+        id: u.user_id,
+        username: u.username,
+        friendlyName: u.friendly_name,
+      })),
+    };
   }
+
+  return result;
 }
 
 export async function POST(request: NextRequest) {
-  return handleConnectionTest(request, TautulliTestService, 'Tautulli', logger);
+  return handleConnectionTest(request, testTautulliConnection, 'Tautulli', logger);
 }

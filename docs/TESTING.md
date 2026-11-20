@@ -30,34 +30,34 @@ npm run test:e2e -- tests/e2e/mobile-viewport.spec.ts
 
 Manual checklist: [docs/testing/mobile-viewport-smoke.md](./testing/mobile-viewport-smoke.md).
 
-E2E starts a local Next.js dev server on port `3101` and uses an isolated MongoDB instance (see `tests/e2e/global-setup.ts`).
+E2E starts a local Next.js dev server on port `3101` against an isolated MongoDB instance.
+All E2E connection settings live in `tests/e2e/e2e-env.ts`, which both `playwright.config.ts` and the specs import.
 
 ### E2E MongoDB lifecycle
 
-Playwright global setup starts an in-memory MongoDB server via `mongodb-memory-server`, writes `.e2e-mongo-uri` and `.e2e-mongo-pid`, and **returns a teardown function** that calls `mongo.stop()` when the e2e run finishes. This avoids orphaned `mongod` processes.
+Playwright starts its web servers in order and before any global setup, so MongoDB is a web server too.
+The first web server runs `tests/e2e/start-mongo.mjs`, an in-memory `mongodb-memory-server` instance on port `27101`.
+Playwright waits for that port, then starts the app with `MONGODB_URI=mongodb://127.0.0.1:27101/decidarr-e2e`.
+When the run ends, Playwright sends `SIGTERM` to the Mongo process group, which stops `mongod` and removes its data directory.
 
-- **CI** (`CI=true`): always uses the managed in-memory server; teardown always stops it.
-- **Local dev with `E2E_MONGODB_URI` set**: setup skips the memory server so your existing Mongo instance is not touched; teardown only removes stale marker files.
-- **Marker files** (`.e2e-mongo-uri`, `.e2e-mongo-pid`) are gitignored artifacts; the pid file records `{ uri, managed }` where `managed: true` means setup started the instance.
-
-`playwright.config.ts` reads the URI from `.e2e-mongo-uri` when starting the dev server so the Next.js app connects to the correct database.
+- **CI** (`CI=true`): always uses the in-memory server.
+- **Local dev with `E2E_MONGODB_URI` set**: no in-memory server starts, and the app and the specs use your URI instead.
+  The reset route drops that database, so point it at a throwaway database.
+- **Local dev reuse**: outside CI, Playwright reuses a server already listening on `27101` or `3101`.
 
 ### E2E environment variables
 
 | Variable | Purpose |
 |----------|---------|
-| `E2E_MOCK_PLEX` | When `true`, Plex OAuth and API calls use mock responses (set automatically in `playwright.config.ts`). |
-| `E2E_MONGODB_URI` | MongoDB connection string for the e2e database. Defaults to `mongodb://127.0.0.1:27017/decidarr-e2e` if not set. |
-| `E2E_TEST_RESET_SECRET` | When set, `POST /api/test/reset` requires header `X-E2E-Reset-Secret` with this value. Playwright sets a default (`decidarr-e2e-reset`) in `playwright.config.ts` for e2e runs; override via env for local runs. When unset in dev, reset remains unauthenticated (dev-only). |
+| `E2E_MOCK_PLEX` | When `true` outside production, Plex OAuth and API calls use mock responses (set automatically in `playwright.config.ts`). |
+| `E2E_MONGODB_URI` | Optional, local runs only: use this MongoDB instead of the in-memory server. |
+| `E2E_TEST_RESET_SECRET` | The value the test-only routes (`POST /api/test/reset`, `POST /api/test/seed-legacy`) require in the `X-E2E-Reset-Secret` header. Playwright defaults it to `decidarr-e2e-reset`. When it is unset on the server, both routes answer 403. |
 
-### Generated artifacts
+### Legacy upgrade seed
 
-Playwright global setup may write:
-
-- `.e2e-mongo-uri` — connection string for the in-memory MongoDB instance
-- `.e2e-mongo-pid` — process id of the MongoDB memory server
-
-These files are listed in `.gitignore` and should not be committed.
+`POST /api/test/seed-legacy` writes a pre-`DECIDARR_SECRET` install (CryptoJS ciphertext, master key derived from `MONGODB_URI`) and then boots it the way a restart after the upgrade would, so the secret migration runs before the next request.
+The seed data comes from `tests/helpers/legacy-install-seed.ts`, which the Vitest upgrade test (`tests/api/legacy-upgrade.test.ts`) shares.
+Production builds stub that module out, and the route answers 404 in production.
 
 ## Lint, typecheck, and build
 

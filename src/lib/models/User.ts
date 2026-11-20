@@ -1,7 +1,6 @@
 import mongoose, { Document, Model, Types } from 'mongoose';
-import CryptoJS from 'crypto-js';
-import { getOrCreateSettings } from './Settings';
-import type { AppTheme, AnimationStyle, AnimationSpeed } from '@/types/shared';
+import { getOrCreateSettings, encryptUserData, decryptUserData } from './Settings';
+import type { AppTheme, MediaType, TvSelectionMode, AnimationStyle, AnimationSpeed } from '@/types/shared';
 import { APP_THEMES, ANIMATION_STYLES, ANIMATION_SPEEDS } from '@/types/shared';
 
 // Re-export for backward compatibility
@@ -16,8 +15,8 @@ export interface ISpinHistoryPreferences {
 export interface IUserPreferences {
   theme?: AppTheme;
   selectedLibraries?: string[];
-  defaultMediaType?: 'movie' | 'show';
-  tvSelectionMode?: 'show' | 'episode';
+  defaultMediaType?: MediaType;
+  tvSelectionMode?: TvSelectionMode;
   animationStyle?: AnimationStyle;
   animationSpeed?: AnimationSpeed;
   savedFilters?: {
@@ -115,7 +114,7 @@ const userSchema = new mongoose.Schema<IUser>(
 userSchema.index({ isApproved: 1 });
 
 userSchema.methods.setEncryptedToken = function (plainToken: string, encryptionKey: string): void {
-  this.plexToken = CryptoJS.AES.encrypt(plainToken, encryptionKey).toString();
+  this.plexToken = encryptUserData(plainToken, encryptionKey);
 };
 
 userSchema.methods.getDecryptedToken = function (): string {
@@ -123,8 +122,7 @@ userSchema.methods.getDecryptedToken = function (): string {
   if (!key) {
     throw new Error('Encryption key not loaded for user token decryption');
   }
-  const bytes = CryptoJS.AES.decrypt(this.plexToken, key);
-  return bytes.toString(CryptoJS.enc.Utf8);
+  return decryptUserData(this.plexToken, key);
 };
 
 export async function loadUserWithToken(userId: Types.ObjectId | string): Promise<IUser | null> {

@@ -10,8 +10,9 @@ import {
   ReactNode,
 } from 'react';
 import { settingsApi, authApi, userPreferencesApi } from '@/lib/api';
+import type { AppTheme } from '@/types/shared';
 
-export type AppTheme = 'dark' | 'light' | 'vegas' | 'macao' | 'poker';
+export type { AppTheme };
 
 interface ThemeContextType {
   theme: AppTheme;

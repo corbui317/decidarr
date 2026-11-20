@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeUrl, isAuthError } from '@/lib/auth';
+import { normalizeUrl, isAuthError, authErrorStatus, SessionError } from '@/lib/auth';
 
 describe('normalizeUrl', () => {
   it('adds http protocol when missing', () => {
@@ -16,9 +16,17 @@ describe('normalizeUrl', () => {
 });
 
 describe('isAuthError', () => {
-  it('identifies auth configuration errors', () => {
-    expect(isAuthError(new Error('Unauthorized'))).toBe(true);
-    expect(isAuthError(new Error('App not configured'))).toBe(true);
+  it('recognizes session errors by type, not by message text', () => {
+    expect(isAuthError(new SessionError('UNAUTHORIZED'))).toBe(true);
+    expect(isAuthError(new SessionError('APP_NOT_CONFIGURED'))).toBe(true);
+    expect(isAuthError(new Error('Unauthorized'))).toBe(false);
     expect(isAuthError(new Error('Something else'))).toBe(false);
+  });
+
+  it('maps each session error code to its status', () => {
+    expect(authErrorStatus(new SessionError('UNAUTHORIZED'))).toBe(401);
+    expect(authErrorStatus(new SessionError('APP_NOT_CONFIGURED'))).toBe(401);
+    expect(authErrorStatus(new SessionError('FORBIDDEN'))).toBe(403);
+    expect(authErrorStatus(new Error('boom'))).toBe(500);
   });
 });
