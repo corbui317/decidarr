@@ -5,14 +5,15 @@ import { selectionApi, spinHistoryApi, AnimationStyle } from '@/lib/api';
 import { resolveAnimationStyle, ResolvedAnimationStyle } from '@/components/animations';
 import { Filters } from '@/types/filters';
 import type { SelectionResultResponse } from '@/types/api/selection';
+import type { MediaType, MediaTypeWithEpisode, TvSelectionMode } from '@/types/shared';
 
 export type SpinPhase = 'idle' | 'loading' | 'animating' | 'result';
 
 export interface UseSpinFlowOptions {
   selectedLibraries: string[];
-  mediaType: string;
+  mediaType: MediaType;
   filters: Filters;
-  tvSelectionMode: 'show' | 'episode';
+  tvSelectionMode: TvSelectionMode;
   animationStyle: AnimationStyle;
   onHistoryRecorded?: () => void;
 }
@@ -44,12 +45,12 @@ export function useSpinFlow({
     setActiveVariant(variant);
 
     try {
-      const data = await selectionApi.getRandom(
-        selectedLibraries,
-        mediaType as 'movie' | 'show',
+      const data = await selectionApi.getRandom({
+        libraryIds: selectedLibraries,
+        mediaType,
         filters,
-        mediaType === 'show' ? tvSelectionMode : undefined
-      );
+        tvSelectionMode: mediaType === 'show' ? tvSelectionMode : undefined,
+      });
 
       const selectionResult = data;
       setPendingResult(selectionResult);
@@ -60,7 +61,7 @@ export function useSpinFlow({
         .create({
           plexId: selection.plexId,
           title: selection.title,
-          mediaType: (selection.type as 'movie' | 'show' | 'episode') || 'movie',
+          mediaType: selection.type as MediaTypeWithEpisode,
           thumbPath: selection.thumbPath,
           year: selection.year,
           libraryIds: selectedLibraries,
@@ -69,13 +70,26 @@ export function useSpinFlow({
           poolSizeAtSpin: selectionResult.stats?.totalMatches,
         })
         .then(() => onHistoryRecorded?.())
-        .catch((historyErr) => console.error('Failed to record spin history:', historyErr));
+        .catch(() => {
+          // History recording is non-critical - fail silently
+        });
 
       setPhase('animating');
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Something went wrong';
-      if (errorMessage.includes('No items')) {
-        setError('No items found matching your criteria');
+      // Check if it's an ApiError with a code
+      if (err instanceof Error && 'code' in err) {
+        const apiError = err as { code?: string; message: string };
+        if (apiError.code === 'NO_ITEMS_IN_LIBRARIES' || apiError.code === 'NO_ITEMS_MATCH_FILTERS') {
+          setError('No items found matching your criteria');
+        } else if (apiError.code === 'NO_LIBRARIES') {
+          setError('At least one library must be selected');
+        } else if (apiError.code === 'NO_ACCESSIBLE_LIBRARIES') {
+          setError('No accessible libraries selected');
+        } else if (apiError.code === 'MACHINE_ID_MISSING') {
+          setError('Plex machine ID not configured');
+        } else {
+          setError(apiError.message || 'Something went wrong. Please try again.');
+        }
       } else {
         setError('Something went wrong. Please try again.');
       }

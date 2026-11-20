@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { libraryApi, isAuthError } from '@/lib/api';
 import LoadingSpinner from './LoadingSpinner';
+import type { MediaType } from '@/types/shared';
 
 interface Section {
   id: string;
@@ -13,8 +14,8 @@ interface Section {
 interface LibrarySelectorProps {
   selectedLibraries: string[];
   onSelect: (libraries: string[]) => void;
-  mediaType: string;
-  onMediaTypeChange: (type: string) => void;
+  mediaType: MediaType;
+  onMediaTypeChange: (type: MediaType) => void;
 }
 
 export default function LibrarySelector({
@@ -39,7 +40,7 @@ export default function LibrarySelector({
       setSections(data.sections as Section[]);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load libraries';
-      console.error('[LibrarySelector] Load error:', message);
+      // Error already set in loadError state
       setError(message);
       
       // Check if this is an auth error

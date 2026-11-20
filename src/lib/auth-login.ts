@@ -3,11 +3,13 @@ import jwt from 'jsonwebtoken';
 import { Types } from 'mongoose';
 import { getOrCreateSettings } from './models/Settings';
 import { User, IUser } from './models/User';
-import { PlexService, PlexServer } from './services/plex';
-import { fetchPlexUser } from './services/plex-oauth';
-import { validatePlexUrl } from './auth';
+import { PlexServer } from './services/plex';
+import { createPlexService } from './services/plex-factory';
+import { fetchPlexUser } from './services/plex-oauth-factory';
+import { assertSafeServiceUrl, allowPrivateServiceUrls } from './security/service-url';
 import { createLogger } from './logger';
 import { isSecureCookieEnabled } from './security/cookie-options';
+import { AuthErrorCode, createAuthError } from './auth-errors';
 
 const logger = createLogger('AuthLogin');
 
@@ -24,6 +26,7 @@ export interface LoginResult {
     thumb?: string;
   };
   error?: string;
+  code?: AuthErrorCode;
   status?: number;
   requiresSetup?: boolean;
 }
@@ -38,22 +41,28 @@ export async function completePlexLogin(
   } catch (err) {
     const msg = (err as Error).message;
     if (msg === 'PLEX_UNAVAILABLE') {
+      const authError = createAuthError('PLEX_UNAVAILABLE', 'Plex.tv service unavailable');
+      logger.warn('Login failed', { reason: authError.detailedReason });
       return {
         success: false,
         error: 'Plex.tv is unavailable. Login is temporarily blocked. Please try again later.',
+        code: authError.code,
         status: 503,
       };
     }
+    const authError = createAuthError('AUTH_FAILED', `Plex authentication failed: ${msg}`);
+    logger.warn('Login failed', { reason: authError.detailedReason });
     return {
       success: false,
-      error: 'Plex authentication failed. Please try again.',
+      error: authError.message,
+      code: authError.code,
       status: 401,
     };
   }
 
   const settings = await getOrCreateSettings();
   const encryptionKey = settings.getEncryptionKey();
-  const plexService = new PlexService(authToken);
+  const plexService = await createPlexService(authToken);
 
   let servers: PlexServer[] = [];
   try {
@@ -67,9 +76,11 @@ export async function completePlexLogin(
       msg.includes('network') ||
       msg.includes('aborted')
     ) {
+      const authError = createAuthError('PLEX_UNAVAILABLE', 'Plex.tv service unavailable during server discovery');
       return {
         success: false,
         error: 'Plex.tv is unavailable. Login is temporarily blocked. Please try again later.',
+        code: authError.code,
         status: 503,
       };
     }
@@ -84,17 +95,29 @@ export async function completePlexLogin(
 
   if (!settings.setupComplete) {
     if (ownedServers.length === 0) {
+      const authError = createAuthError(
+        'NO_OWNED_SERVER',
+        'No owned Plex Media Server found on account; setup requires an owned server'
+      );
+      logger.warn('Login denied during setup', { reason: authError.detailedReason, plexUserId: plexUser.id });
       return {
         success: false,
-        error: 'No owned Plex Media Server found on your account. You need an owned server to set up Decidarr.',
+        error: authError.message,
+        code: authError.code,
         status: 403,
       };
     }
     if (!candidateServer) {
+      const authError = createAuthError(
+        'NO_OWNED_SERVER',
+        'No Plex Media Server found on account during setup'
+      );
+      logger.warn('Login denied during setup', { reason: authError.detailedReason, plexUserId: plexUser.id });
       return {
         success: false,
-        error: 'No Plex Media Server found on your account. Add a server before setting up Decidarr.',
-        status: 400,
+        error: authError.message,
+        code: authError.code,
+        status: 403,
       };
     }
     isAdmin = true;
@@ -111,9 +134,15 @@ export async function completePlexLogin(
     } else if (settings.plexMachineId) {
       const hasAccess = servers.some((s) => s.clientIdentifier === settings.plexMachineId);
       if (!hasAccess) {
+        const authError = createAuthError(
+          'NO_SERVER_ACCESS',
+          'Plex account does not have access to configured server'
+        );
+        logger.warn('Login denied', { reason: authError.detailedReason, plexUserId: plexUser.id });
         return {
           success: false,
-          error: 'Your Plex account does not have access to this Decidarr server.',
+          error: authError.message,
+          code: authError.code,
           status: 403,
         };
       }
@@ -123,16 +152,28 @@ export async function completePlexLogin(
         isApproved = existing?.isApproved ?? false;
       }
       if (!isApproved) {
+        const authError = createAuthError(
+          'NOT_APPROVED',
+          'User not approved for access'
+        );
+        logger.warn('Login denied', { reason: authError.detailedReason, plexUserId: plexUser.id });
         return {
           success: false,
-          error: 'You do not have access to Decidarr. Contact the server owner to request access.',
+          error: authError.message,
+          code: authError.code,
           status: 403,
         };
       }
     } else {
+      const authError = createAuthError(
+        'SERVER_MISCONFIGURED',
+        'Server not fully configured'
+      );
+      logger.warn('Login denied', { reason: authError.detailedReason });
       return {
         success: false,
-        error: 'Server is not fully configured. Contact the administrator.',
+        error: authError.message,
+        code: authError.code,
         status: 503,
       };
     }
@@ -170,10 +211,12 @@ export async function completePlexLogin(
   await user.save();
 
   if (!settings.setupComplete && isAdmin && candidateServer) {
-        const localConnection = candidateServer.connections.find((c: { local: boolean }) => c.local);
+    const localConnection = candidateServer.connections.find((c: { local: boolean }) => c.local);
     const connection = localConnection || candidateServer.connections[0];
     if (connection) {
-      const urlCheck = validatePlexUrl(connection.uri);
+      const urlCheck = await assertSafeServiceUrl(connection.uri, {
+        allowPrivateNetworks: allowPrivateServiceUrls(),
+      });
       if (urlCheck.valid) {
         settings.plexServerUrl = urlCheck.normalized || connection.uri;
         settings.plexMachineId = candidateServer.clientIdentifier;

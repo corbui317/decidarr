@@ -77,4 +77,98 @@ describe('FilterPanel', () => {
     expect(screen.getByText(/No items match your filters/i)).toBeInTheDocument();
     expect(screen.getByText(/Western/i)).toBeInTheDocument();
   });
+
+  it('exposes aria-pressed on studio filter toggles', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <FilterPanel
+        libraryIds={['lib-1']}
+        filters={DEFAULT_FILTERS}
+        onFiltersChange={onFiltersChange}
+        poolCount={25}
+        totalItems={100}
+        dataStats={dataStats}
+      />
+    );
+
+    await openFilters();
+
+    // Find the Netflix studio toggle button
+    const netflixButton = await screen.findByRole('button', { name: 'Netflix' });
+
+    // Should initially have aria-pressed="false" (not selected)
+    expect(netflixButton).toHaveAttribute('aria-pressed', 'false');
+
+    // Click to select it
+    await user.click(netflixButton);
+
+    // Should call onFiltersChange with Netflix in studios array
+    expect(onFiltersChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        studios: ['Netflix'],
+      })
+    );
+  });
+
+  it('shows aria-pressed="true" when studio is selected', async () => {
+    render(
+      <FilterPanel
+        libraryIds={['lib-1']}
+        filters={{ ...DEFAULT_FILTERS, studios: ['Netflix'] }}
+        onFiltersChange={onFiltersChange}
+        poolCount={15}
+        totalItems={100}
+        dataStats={dataStats}
+      />
+    );
+
+    await openFilters();
+
+    // Find the Netflix studio toggle button
+    const netflixButton = await screen.findByRole('button', { name: 'Netflix' });
+
+    // Should have aria-pressed="true" since it's selected
+    expect(netflixButton).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('uses consistent toggle behavior for genres, studios, and other array filters', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <FilterPanel
+        libraryIds={['lib-1']}
+        filters={DEFAULT_FILTERS}
+        onFiltersChange={onFiltersChange}
+        poolCount={25}
+        totalItems={100}
+        dataStats={dataStats}
+      />
+    );
+
+    await openFilters();
+
+    // Test genre toggle: adding an item
+    const actionGenre = await screen.findByRole('button', { name: 'Action' });
+    await user.click(actionGenre);
+    expect(onFiltersChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        genres: ['Action'],
+      })
+    );
+
+    vi.clearAllMocks();
+
+    // Test studio toggle: adding an item
+    const netflixStudio = await screen.findByRole('button', { name: 'Netflix' });
+    await user.click(netflixStudio);
+    expect(onFiltersChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        studios: ['Netflix'],
+      })
+    );
+
+    // Both should follow the same pattern:
+    // If item not in array, add it; if in array, remove it
+  });
 });

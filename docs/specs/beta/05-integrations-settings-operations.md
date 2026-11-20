@@ -29,7 +29,7 @@
 
 - Plex token, TMDb key, Tautulli key encrypted with per-install `encryptionKey` (stored encrypted with MongoDB-derived master key).
 - API returns masked values (`****` pattern); PUT preserves secrets when masked placeholder submitted.
-- Plex server URL validated with SSRF protections (`validatePlexUrl` in `auth.ts`).
+- Plex server URL validated with SSRF protections (`assertSafeServiceUrl` in `src/lib/security/service-url.ts`).
 
 **Installation vs user prefs:**
 

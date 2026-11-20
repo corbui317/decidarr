@@ -15,10 +15,10 @@ Task backlog for the beta spec set. Keep tasks small enough for one branch and o
 
 | ID | Status | Spec | Task | Lead | Verification |
 |----|--------|------|------|------|--------------|
-| `DECIDARR-01-AUTH-01` | TODO | 01 | Document current setup/auth flow and confirm secret masking in auth/settings responses. | Backend Architect | API samples for `/api/auth/me`, `/api/settings`, logout. |
-| `DECIDARR-01-AUTH-02` | TODO | 01 | Remove any remaining single-user assumptions from user-scoped preferences/cache/watched reads. | Backend Architect | Build plus user-scoping smoke. |
-| `DECIDARR-01-AUTH-03` | TODO | 01 | Harden Plex OAuth start/poll edge cases and expired PIN messaging. | Security Engineer | OAuth success, expiry, and denial evidence. |
-| `DECIDARR-01-ADMIN-01` | PLAN | 01 | Define admin access rules before expanding admin user endpoints. | Product Manager | Decision note in plan file. |
+| `DECIDARR-01-AUTH-01` | DONE | 01 | Document current setup/auth flow and confirm secret masking in auth/settings responses. | Backend Architect | API samples for `/api/auth/me`, `/api/settings`, logout. |
+| `DECIDARR-01-AUTH-02` | DONE | 01 | Remove any remaining single-user assumptions from user-scoped preferences/cache/watched reads. | Backend Architect | Build plus user-scoping smoke. |
+| `DECIDARR-01-AUTH-03` | DONE | 01 | Harden Plex OAuth start/poll edge cases and expired PIN messaging. | Security Engineer | OAuth success, expiry, and denial evidence. |
+| `DECIDARR-01-ADMIN-01` | DONE | 01 | Define admin access rules before expanding admin user endpoints. | Product Manager | Decision note in plan file. |
 
 ## P0 - Library Data Foundation
 
@@ -51,26 +51,26 @@ Task backlog for the beta spec set. Keep tasks small enough for one branch and o
 
 | ID | Status | Spec | Task | Lead | Verification |
 |----|--------|------|------|------|--------------|
-| `DECIDARR-05-SECRETS-01` | TODO | 05 | Verify settings responses never include raw Plex/TMDb/Tautulli secrets. | Security Engineer | Response samples. |
-| `DECIDARR-05-URL-01` | TODO | 05 | Validate URL normalization and SSRF protection for Plex/Tautulli/Overseerr URLs. | Security Engineer | Invalid URL API samples. |
-| `DECIDARR-05-SETTINGS-01` | TODO | 05 | Confirm settings updates preserve omitted secrets. | Backend Architect | Before/after settings smoke. |
+| `DECIDARR-05-SECRETS-01` | DONE | 05 | Verify settings responses never include raw Plex/TMDb/Tautulli secrets. | Security Engineer | Response samples. |
+| `DECIDARR-05-URL-01` | DONE | 05 | Validate URL normalization and SSRF protection for Plex/Tautulli/Overseerr URLs. | Security Engineer | Invalid URL API samples. |
+| `DECIDARR-05-SETTINGS-01` | DONE | 05 | Confirm settings updates preserve omitted secrets. | Backend Architect | Before/after settings smoke. |
 | `DECIDARR-05-OPS-01` | PLAN | 05 | Add troubleshooting notes for common setup and sync failures. | Technical Writer | Docs PR with examples. |
 
 ## P1 - Overseerr
 
 | ID | Status | Spec | Task | Lead | Verification |
 |----|--------|------|------|------|--------------|
-| `DECIDARR-06-TEST-01` | TODO | 06 | Implement or verify Overseerr connection test endpoint and settings UI. | Backend Architect | Valid/invalid test samples. |
-| `DECIDARR-06-STATUS-01` | TODO | 06 | Show selected-result Overseerr status when TMDb ID exists. | Frontend Developer | MovieCard screenshots. |
+| `DECIDARR-06-TEST-01` | DONE | 06 | Implement or verify Overseerr connection test endpoint and settings UI. | Backend Architect | Valid/invalid test samples. |
+| `DECIDARR-06-STATUS-01` | DONE | 06 | Show selected-result Overseerr status when TMDb ID exists. | Frontend Developer | MovieCard screenshots. |
 | `DECIDARR-06-REQUEST-01` | PLAN | 06 | Design request idempotency before adding request creation. | Product Manager | Request flow plan. |
 
 ## P2 - Spin Animation Experience
 
 | ID | Status | Spec | Task | Lead | Verification |
 |----|--------|------|------|------|--------------|
-| `DECIDARR-07-ANIM-01` | TODO | 07 | Extract current slot behavior behind a shared animation interface. | Frontend Developer | Build and no-regression spin smoke. |
-| `DECIDARR-07-ANIM-02` | TODO | 07 | Add roulette/wheel/plinko/slots variants with shared props. | Frontend Developer | Screenshots/video for each variant. |
-| `DECIDARR-07-A11Y-01` | TODO | 07 | Add reduced-motion behavior and keyboard accessibility checks. | Accessibility Auditor | Reduced-motion and keyboard evidence. |
+| `DECIDARR-07-ANIM-01` | DONE | 07 | Extract current slot behavior behind a shared animation interface. | Frontend Developer | Build and no-regression spin smoke. |
+| `DECIDARR-07-ANIM-02` | DONE | 07 | Add roulette/wheel/plinko/slots variants with shared props. | Frontend Developer | Screenshots/video for each variant. |
+| `DECIDARR-07-A11Y-01` | DONE | 07 | Add reduced-motion behavior and keyboard accessibility checks. | Accessibility Auditor | Reduced-motion and keyboard evidence. |
 | `DECIDARR-07-PREFS-01` | PLAN | 07 | Decide whether animation choice persists per user. | Product Manager | Preference decision note. |
 
 ## P1 - Spin History and Settings

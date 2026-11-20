@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireUser, isAuthError, authErrorStatus } from '@/lib/auth';
 import { connectDB } from '@/lib/db';
 import { WatchedItem } from '@/lib/models/WatchedItem';
+import { createLogger } from '@/lib/logger';
+
+const logger = createLogger('API:Watched');
 
 export async function GET(request: NextRequest) {
   try {
@@ -39,7 +42,7 @@ export async function GET(request: NextRequest) {
     if (isAuthError(error)) {
       return NextResponse.json({ error: msg }, { status: authErrorStatus(error) });
     }
-    console.error('Get watched error:', error);
+    logger.error('Get watched error:', { error: (error as Error).message });
     return NextResponse.json({ error: 'Failed to get watched items' }, { status: 500 });
   }
 }

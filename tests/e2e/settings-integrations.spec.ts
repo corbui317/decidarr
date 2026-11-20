@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { resetE2eDatabase, completeSetupWizard } from './helpers/plex-mocks';
+import { resetE2eDatabase, completeSetupWizard } from './helpers/e2e-test-helpers';
 
 test.describe('Settings integrations', () => {
   test.beforeEach(async ({ request }) => {
@@ -47,7 +47,7 @@ test.describe('Settings integrations', () => {
     await page.getByLabel(/API Key/).fill('overseerr-e2e-key-abcdefgh');
     await page.getByLabel(/Exclude fully available titles from the spin pool/).check();
     await page.getByRole('button', { name: 'Test Connection' }).click();
-    await expect(page.getByText(/Connected \(v1\.0\.0\)/)).toBeVisible();
+    await expect(page.getByText(/Connected to Overseerr 1\.0\.0/)).toBeVisible();
     await page.getByRole('button', { name: 'Save' }).click();
     await expect(page.getByText('Overseerr settings saved')).toBeVisible();
   });

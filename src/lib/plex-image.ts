@@ -27,11 +27,56 @@ export function extractThumbPathFromUrl(url: string): string | null {
   }
 }
 
+function decodeAndNormalizePath(path: string): string | null {
+  // Decode repeatedly until stable (handles double/triple encoding)
+  let decoded = path;
+  let previous: string;
+  let iterations = 0;
+  do {
+    previous = decoded;
+    try {
+      decoded = decodeURIComponent(decoded);
+    } catch {
+      // Invalid percent encoding
+      return null;
+    }
+    iterations++;
+    // Prevent infinite loops on malformed input
+    if (iterations > 10) return null;
+  } while (decoded !== previous);
+
+  // After full decoding, reject any remaining % (incomplete encoding)
+  if (decoded.includes('%')) return null;
+
+  // Reject path traversal sequences
+  if (decoded.includes('..') || decoded.includes('\\')) return null;
+
+  // Normalize with URL API
+  let normalized: string;
+  try {
+    const parsed = new URL(decoded, 'http://localhost');
+    normalized = parsed.pathname;
+  } catch {
+    normalized = decoded.split('?')[0];
+  }
+
+  // Final checks on normalized path
+  if (!normalized.startsWith(PLEX_LIBRARY_PATH_PREFIX)) return null;
+  if (normalized.includes('..') || normalized.includes('//') || normalized.includes('\\')) return null;
+
+  return normalized;
+}
+
 export function isValidPlexImagePath(path: string): boolean {
   if (!path || !path.startsWith(PLEX_LIBRARY_PATH_PREFIX)) return false;
-  if (path.includes('..') || path.includes('//')) return false;
   if (path.startsWith('http://') || path.startsWith('https://')) return false;
-  return true;
+  return decodeAndNormalizePath(path) !== null;
+}
+
+export function normalizeAndValidatePlexImagePath(path: string): string | null {
+  if (!path || !path.startsWith(PLEX_LIBRARY_PATH_PREFIX)) return null;
+  if (path.startsWith('http://') || path.startsWith('https://')) return null;
+  return decodeAndNormalizePath(path);
 }
 
 export function plexImageUrl(thumbPath?: string | null, width?: number): string | null {
@@ -75,14 +120,31 @@ export function containsPlexToken(value: unknown): boolean {
   return typeof value === 'string' && /X-Plex-Token/i.test(value);
 }
 
-export function sanitizeLibraryItemForClient<T extends Record<string, unknown>>(item: T): T {
-  const images = resolveItemImageUrls(item as Parameters<typeof resolveItemImageUrls>[0]);
-  const { posterUrl: _legacyPoster, art: _legacyArt, ...rest } = item;
+/** Image fields a library item may carry before it is sent to the client. */
+interface ItemImageFields {
+  thumbPath?: string | null;
+  artPath?: string | null;
+  posterUrl?: string | null;
+  art?: string | null;
+}
+
+/** An item as the client receives it: image fields only in tokenless, proxied form. */
+export type ClientSafeItem<T> = Omit<T, keyof ItemImageFields> & {
+  thumbPath?: string;
+  artPath?: string;
+  posterUrl?: string;
+  art?: string;
+};
+
+/** Takes a plain object (not a Mongoose document: spreading one copies its internals). */
+export function sanitizeLibraryItemForClient<T extends ItemImageFields>(item: T): ClientSafeItem<T> {
+  const images = resolveItemImageUrls(item);
+  const { posterUrl: _legacyPoster, art: _legacyArt, thumbPath: _thumb, artPath: _art, ...rest } = item;
   return {
     ...rest,
-    thumbPath: images.thumbPath ?? (item.thumbPath as string | undefined),
-    artPath: images.artPath ?? (item.artPath as string | undefined),
+    thumbPath: images.thumbPath,
+    artPath: images.artPath,
     posterUrl: images.posterUrl ?? undefined,
     art: images.art ?? undefined,
-  } as unknown as T;
+  };
 }

@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { watchedApi } from '@/lib/api';
 import type { WatchedMediaType } from '@/lib/validation/watched';
 import { resolveItemImageUrls } from '@/lib/plex-image';
+import { useAuth } from '@/context/AuthContext';
 
 interface Item {
   plexId: string;
@@ -67,6 +68,8 @@ interface MovieCardProps {
 }
 
 export default function MovieCard({ item, tmdb, isWatched = false, onWatchedChange, playLinks }: MovieCardProps) {
+  const { isAdmin } = useAuth();
+  const [failedImages, setFailedImages] = useState<ReadonlySet<string>>(() => new Set());
   const [watched, setWatched] = useState(isWatched);
   const [updating, setUpdating] = useState(false);
   const [watchedError, setWatchedError] = useState<string | null>(null);
@@ -135,7 +138,7 @@ export default function MovieCard({ item, tmdb, isWatched = false, onWatchedChan
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to update watched status';
       setWatchedError(message);
-      console.error('Failed to update watched status:', err);
+      // Revert optimistic update on error
     } finally {
       setUpdating(false);
     }
@@ -144,8 +147,13 @@ export default function MovieCard({ item, tmdb, isWatched = false, onWatchedChan
   const rating = tmdb?.voteAverage || item.rating;
   const runtime = tmdb?.runtime || (item.duration ? Math.round(item.duration / 60000) : null);
   const images = resolveItemImageUrls(item);
-  const backdropUrl = images.art;
-  const posterUrl = images.posterUrl;
+  // A Plex image can fail to load (server unreachable, item removed): fall back
+  // from the backdrop to the poster, then to the placeholder.
+  const usable = (url: string | null) => (url && !failedImages.has(url) ? url : null);
+  const backdropUrl = usable(images.art);
+  const posterUrl = usable(images.posterUrl);
+  const markImageFailed = (url: string) =>
+    setFailedImages((failed) => new Set(failed).add(url));
 
   return (
     <motion.div
@@ -156,21 +164,25 @@ export default function MovieCard({ item, tmdb, isWatched = false, onWatchedChan
       {/* Backdrop/Poster */}
       <div className="relative aspect-video bg-decidarr-dark">
         {backdropUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element -- Plex images come from the cookie-authenticated /api/plex/image proxy, which the next/image optimizer cannot fetch
           <img
             src={backdropUrl}
             alt={item.title}
             className="w-full h-full object-cover"
             loading="lazy"
             decoding="async"
+            onError={() => markImageFailed(backdropUrl)}
           />
         ) : posterUrl ? (
           <div className="flex items-center justify-center h-full">
+            {/* eslint-disable-next-line @next/next/no-img-element -- Plex images come from the cookie-authenticated /api/plex/image proxy, which the next/image optimizer cannot fetch */}
             <img
               src={posterUrl}
               alt={item.title}
               className="h-full object-contain"
               loading="lazy"
               decoding="async"
+              onError={() => markImageFailed(posterUrl)}
             />
           </div>
         ) : (
@@ -304,20 +316,22 @@ export default function MovieCard({ item, tmdb, isWatched = false, onWatchedChan
                 </AnimatePresence>
               </div>
             )}
-            <button
-              onClick={handleWatchedToggle}
-              disabled={updating}
-              aria-label={watched ? 'Mark as unwatched' : 'Mark as watched'}
-              className={`touch-target w-12 h-12 rounded-full flex items-center justify-center
-                        transition-all ${
-                          watched
-                            ? 'bg-decidarr-success text-white'
-                            : 'bg-decidarr-dark text-gray-400 hover:text-white'
-                        } ${updating ? 'opacity-50' : ''}`}
-              title={watched ? 'Mark as unwatched' : 'Mark as watched'}
-            >
-              {updating ? <span className="animate-spin">⏳</span> : watched ? '✓' : '👁'}
-            </button>
+            {isAdmin && (
+              <button
+                onClick={handleWatchedToggle}
+                disabled={updating}
+                aria-label={watched ? 'Mark as unwatched' : 'Mark as watched'}
+                className={`touch-target w-12 h-12 rounded-full flex items-center justify-center
+                          transition-all ${
+                            watched
+                              ? 'bg-decidarr-success text-white'
+                              : 'bg-decidarr-dark text-gray-400 hover:text-white'
+                          } ${updating ? 'opacity-50' : ''}`}
+                title={watched ? 'Mark as unwatched' : 'Mark as watched'}
+              >
+                {updating ? <span className="animate-spin">⏳</span> : watched ? '✓' : '👁'}
+              </button>
+            )}
           </div>
         </div>
 

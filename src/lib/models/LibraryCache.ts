@@ -1,5 +1,6 @@
 import mongoose, { Document, Model } from 'mongoose';
 import type { OverseerrAvailability } from '@/types/overseerr';
+import type { MediaType } from '@/types/shared';
 
 export interface ILibraryItem {
   plexId: string;
@@ -25,6 +26,7 @@ export interface ILibraryItem {
   networks?: string[];
   studios?: string[];
   enrichedAt?: Date;
+  attemptedEnrichmentAt?: Date;
   overseerrStatus?: OverseerrAvailability;
   overseerrSyncedAt?: Date;
 }
@@ -33,7 +35,7 @@ export interface ILibraryCache extends Document {
   plexMachineId: string;
   libraryId: string;
   libraryName: string;
-  mediaType: 'movie' | 'show';
+  mediaType: MediaType;
   items: ILibraryItem[];
   lastSyncedAt: Date;
   expiresAt: Date;
@@ -66,6 +68,7 @@ const libraryItemSchema = new mongoose.Schema<ILibraryItem>(
     networks: [String],
     studios: [String],
     enrichedAt: Date,
+    attemptedEnrichmentAt: Date,
     overseerrStatus: { type: String, enum: ['available', 'partially_available'] },
     overseerrSyncedAt: Date,
   },

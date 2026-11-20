@@ -72,7 +72,7 @@ describe('Watched and spin-history API routes', () => {
   });
 
   describe('POST/DELETE /api/watched/[plexId]', () => {
-    it('allows approved non-admin user to mark and unmark watched', async () => {
+    it('rejects non-admin user attempting to mark watched', async () => {
       const nonAdmin = await seedTestUser({
         plexUserId: 'plex-friend-1',
         plexUsername: 'friend',
@@ -89,23 +89,43 @@ describe('Watched and spin-history API routes', () => {
       const postRes = await watchedPost(postReq as never, {
         params: Promise.resolve({ plexId: 'plex-99' }),
       });
-      expect(postRes.status).toBe(200);
+      expect(postRes.status).toBe(403);
+
+      const body = await postRes.json();
+      expect(body.error).toMatch(/admin/i);
 
       const count = await WatchedItem.countDocuments({
         userId: nonAdmin._id,
         plexId: 'plex-99',
       });
+      expect(count).toBe(0);
+    });
+
+    it('allows admin user to mark and unmark watched', async () => {
+      const postReq = createJsonRequest('http://localhost/api/watched/plex-100', 'POST', {
+        mediaType: 'movie',
+        title: 'Admin Movie',
+      });
+      const postRes = await watchedPost(postReq as never, {
+        params: Promise.resolve({ plexId: 'plex-100' }),
+      });
+      expect(postRes.status).toBe(200);
+
+      const count = await WatchedItem.countDocuments({
+        userId: testUser._id,
+        plexId: 'plex-100',
+      });
       expect(count).toBe(1);
 
-      const deleteReq = createJsonRequest('http://localhost/api/watched/plex-99', 'DELETE');
+      const deleteReq = createJsonRequest('http://localhost/api/watched/plex-100', 'DELETE');
       const deleteRes = await watchedDelete(deleteReq as never, {
-        params: Promise.resolve({ plexId: 'plex-99' }),
+        params: Promise.resolve({ plexId: 'plex-100' }),
       });
       expect(deleteRes.status).toBe(200);
 
       const afterCount = await WatchedItem.countDocuments({
-        userId: nonAdmin._id,
-        plexId: 'plex-99',
+        userId: testUser._id,
+        plexId: 'plex-100',
       });
       expect(afterCount).toBe(0);
     });

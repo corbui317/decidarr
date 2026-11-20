@@ -24,16 +24,17 @@ import { Filters, DEFAULT_FILTERS } from '@/types/filters';
 import { usePoolCount } from '@/hooks/usePoolCount';
 import { useSpinFlow } from '@/hooks/useSpinFlow';
 import type { SelectionResultResponse } from '@/types/api/selection';
+import type { MediaType, TvSelectionMode } from '@/types/shared';
 
 export default function Dashboard() {
   const { isAuthenticated, loading: authLoading } = useAuth();
   const router = useRouter();
 
   const [selectedLibraries, setSelectedLibraries] = useState<string[]>([]);
-  const [mediaType, setMediaType] = useState('movie');
+  const [mediaType, setMediaType] = useState<MediaType>('movie');
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
-  const [tvSelectionMode, setTvSelectionMode] = useState<'show' | 'episode'>('show');
+  const [tvSelectionMode, setTvSelectionMode] = useState<TvSelectionMode>('show');
   const [animationStyle, setAnimationStyle] = useState<AnimationStyle>('slots');
   const [animationSpeed, setAnimationSpeed] = useState<AnimationSpeed>('normal');
   const [resultWatched, setResultWatched] = useState<boolean | null>(null);
@@ -95,8 +96,8 @@ export default function Dashboard() {
       const detail = (event as CustomEvent<{
         animationStyle?: AnimationStyle;
         animationSpeed?: AnimationSpeed;
-        defaultMediaType?: 'movie' | 'show';
-        tvSelectionMode?: 'show' | 'episode';
+        defaultMediaType?: MediaType;
+        tvSelectionMode?: TvSelectionMode;
       }>).detail;
 
       if (detail?.animationStyle) {
@@ -174,7 +175,7 @@ export default function Dashboard() {
     showHistoryResult(historyResult);
   }, [showHistoryResult]);
 
-  const handleMediaTypeChange = useCallback((type: string) => {
+  const handleMediaTypeChange = useCallback((type: MediaType) => {
     setMediaType(type);
     setSelectedLibraries([]);
     resetResult();

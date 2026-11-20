@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { timingSafeEqual } from 'crypto';
+import { pollAuthPin } from '@/lib/services/plex-oauth-factory';
 import {
-  pollAuthPin,
   OAUTH_PIN_COOKIE,
   OAUTH_PIN_CODE_COOKIE,
   OAUTH_STATE_COOKIE,
@@ -11,8 +11,20 @@ import { completePlexLogin } from '@/lib/auth-login';
 import { connectDB } from '@/lib/db';
 import { createLogger } from '@/lib/logger';
 import { assertSetupSecretAllowed } from '@/lib/security/setup-secret';
+import { checkRateLimit } from '@/lib/security/rate-limit';
 
 const logger = createLogger('API:PlexAuthPoll');
+
+// Per-pin rate limit: allow ~300 polls over 10 minutes (polling every 2s)
+// This prevents infinite polling but doesn't block users who take time on plex.tv
+const POLL_RATE_LIMIT_CONFIG = {
+  windowMs: 10 * 60 * 1000, // 10 minutes
+  maxAttempts: 300, // ~one poll every 2 seconds
+};
+
+function getPerPinRateLimitKey(pinId: number): string {
+  return `auth:poll:pin:${pinId}`;
+}
 
 function clearOAuthCookies(cookieStore: Awaited<ReturnType<typeof cookies>>) {
   cookieStore.delete(OAUTH_PIN_COOKIE);
@@ -59,6 +71,20 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Rate limit by pin to prevent excessive polling for a single login session
+    // This allows users to take their time on plex.tv without getting locked out
+    const rateLimitKey = getPerPinRateLimitKey(pinId);
+    const rateLimit = checkRateLimit(rateLimitKey, POLL_RATE_LIMIT_CONFIG);
+
+    if (!rateLimit.allowed) {
+      logger.warn('Rate limit exceeded for OAuth pin polling', { pinId });
+      clearOAuthCookies(cookieStore);
+      return NextResponse.json(
+        { error: 'Login session expired due to excessive polling. Please try again.', code: 'RATE_LIMITED' },
+        { status: 429 }
+      );
+    }
+
     if (!stateCookie || !stateParam || !statesMatch(stateCookie, stateParam)) {
       clearOAuthCookies(cookieStore);
       return NextResponse.json(
@@ -79,7 +105,7 @@ export async function GET(request: NextRequest) {
 
     if (!result.success) {
       return NextResponse.json(
-        { authorized: true, success: false, error: result.error, code: 'LOGIN_DENIED' },
+        { authorized: true, success: false, error: result.error, code: result.code || 'AUTH_FAILED' },
         { status: result.status || 403 }
       );
     }

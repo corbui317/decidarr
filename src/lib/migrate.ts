@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { getOrCreateSettings } from './models/Settings';
+import { getOrCreateSettings, recoverFromSecretChange } from './models/Settings';
 import { User } from './models/User';
 import { WatchedItem } from './models/WatchedItem';
 import { LibraryCache } from './models/LibraryCache';
@@ -8,12 +8,17 @@ import {
   extractThumbPathFromUrl,
   containsPlexToken,
 } from './plex-image';
-import CryptoJS from 'crypto-js';
 import {
-  getLegacySettingsMasterKey,
-  getCurrentSettingsMasterKey,
+  getLegacyMasterKey,
+  getMasterKey,
+  CURRENT_MIGRATION_VERSION,
+  encryptWithAesGcm,
+  decryptVersioned,
+  encryptUserData,
+  decryptUserData,
 } from './models/Settings';
 import { createLogger } from './logger';
+import { assertTestOnly } from './test-only';
 
 const logger = createLogger('Migration');
 
@@ -88,35 +93,202 @@ async function migrateTokenizedMediaUrls(): Promise<void> {
 }
 
 async function migrateSettingsMasterKey(settings: Awaited<ReturnType<typeof getOrCreateSettings>>): Promise<void> {
-  if (!process.env.DECIDARR_SECRET?.trim()) return;
+  // Check if migration is needed
+  if (settings.secretsMigrationVersion === CURRENT_MIGRATION_VERSION) {
+    return;
+  }
 
-  const legacyKey = getLegacySettingsMasterKey();
-  const newKey = getCurrentSettingsMasterKey();
-  if (legacyKey === newKey) return;
+  // If no DECIDARR_SECRET in non-production, skip migration
+  if (!process.env.DECIDARR_SECRET?.trim() && process.env.NODE_ENV !== 'production') {
+    return;
+  }
 
-  const reencrypt = (encrypted: string): string => {
-    const plain = CryptoJS.AES.decrypt(encrypted, legacyKey).toString(CryptoJS.enc.Utf8);
-    if (!plain) return encrypted;
-    return CryptoJS.AES.encrypt(plain, newKey).toString();
+  const legacyKey = getLegacyMasterKey();
+  const newKey = getMasterKey();
+
+  // If keys are the same, we're not using DECIDARR_SECRET, skip migration
+  if (legacyKey === newKey) {
+    settings.secretsMigrationVersion = CURRENT_MIGRATION_VERSION;
+    await settings.save();
+    return;
+  }
+
+  logger.info('Starting secret migration to AES-256-GCM');
+
+  const reencrypt = (encrypted: string, fieldName: string): string => {
+    // If already in v2 format, no migration needed
+    if (encrypted.startsWith('v2:')) {
+      return encrypted;
+    }
+
+    try {
+      // Decrypt with legacy key
+      const plain = decryptVersioned(encrypted, legacyKey);
+      if (!plain) {
+        logger.warn(`Empty decryption result for ${fieldName}, skipping re-encryption`);
+        return encrypted;
+      }
+
+      // Re-encrypt with new key using AES-256-GCM
+      return encryptWithAesGcm(plain, newKey);
+    } catch (err) {
+      logger.error(`Failed to migrate ${fieldName}`, { error: String(err) });
+      throw new Error(`Secret migration failed for ${fieldName}: ${String(err)}`);
+    }
   };
 
-  const newJwtSecret = reencrypt(settings.jwtSecret);
-  const newEncryptionKey = reencrypt(settings.encryptionKey);
+  try {
+    const newJwtSecret = reencrypt(settings.jwtSecret, 'jwtSecret');
+    const newEncryptionKey = reencrypt(settings.encryptionKey, 'encryptionKey');
 
-  if (newJwtSecret !== settings.jwtSecret || newEncryptionKey !== settings.encryptionKey) {
-    settings.jwtSecret = newJwtSecret;
-    settings.encryptionKey = newEncryptionKey;
+    // Only save if values actually changed
+    if (newJwtSecret !== settings.jwtSecret || newEncryptionKey !== settings.encryptionKey) {
+      settings.jwtSecret = newJwtSecret;
+      settings.encryptionKey = newEncryptionKey;
+      settings.secretsMigrationVersion = CURRENT_MIGRATION_VERSION;
+      await settings.save();
+      logger.info('Successfully migrated secrets to AES-256-GCM');
+    } else {
+      // Values didn't change, but mark migration as complete
+      settings.secretsMigrationVersion = CURRENT_MIGRATION_VERSION;
+      await settings.save();
+      logger.info('Secrets already in current format, marked migration complete');
+    }
+  } catch (err) {
+    // Secret migration failure likely means DECIDARR_SECRET changed
+    logger.error('Secret migration failed - DECIDARR_SECRET may have changed', {
+      error: String(err),
+    });
+
+    // Trigger recovery: generate fresh keys, clear encrypted fields
+    await recoverFromSecretChange();
+
+    logger.info('Recovery complete - admin can now re-login to re-enter credentials');
+  }
+}
+
+/**
+ * After the one-time migration, the stored jwtSecret and encryptionKey are
+ * wrapped with the key derived from DECIDARR_SECRET. If they no longer decrypt,
+ * the operator changed DECIDARR_SECRET: start over with fresh keys rather than
+ * failing every request.
+ */
+async function recoverIfSecretChanged(
+  settings: Awaited<ReturnType<typeof getOrCreateSettings>>
+): Promise<Awaited<ReturnType<typeof getOrCreateSettings>>> {
+  if (settings.secretsMigrationVersion !== CURRENT_MIGRATION_VERSION) {
+    return settings;
+  }
+
+  try {
+    settings.getJwtSecret();
+    settings.getEncryptionKey();
+    return settings;
+  } catch {
+    logger.error(
+      'Stored secrets cannot be decrypted with the current DECIDARR_SECRET (it changed). ' +
+        'Generating fresh keys and clearing stored credentials: sign in again with Plex as the ' +
+        'server owner and re-enter integration credentials in Settings.'
+    );
+    return recoverFromSecretChange();
+  }
+}
+
+async function migrateIntegrationCredentials(settings: Awaited<ReturnType<typeof getOrCreateSettings>>): Promise<void> {
+  // Get encryption key - must be decrypted at this point
+  let encryptionKey: string;
+  try {
+    encryptionKey = settings.getEncryptionKey();
+  } catch (err) {
+    logger.warn('Skipping integration credentials migration - encryption key unavailable');
+    return;
+  }
+
+  let changed = false;
+
+  // Helper to re-encrypt if not already v2:
+  const reencryptUserData = (encrypted: string | undefined, fieldName: string): string | undefined => {
+    if (!encrypted) return encrypted;
+    if (encrypted.startsWith('v2:')) return encrypted;
+
+    try {
+      // Legacy CryptoJS ciphertext, validated and decrypted with the encryption key
+      const plain = decryptUserData(encrypted, encryptionKey);
+
+      // Re-encrypt with AES-256-GCM
+      return encryptUserData(plain, encryptionKey);
+    } catch (err) {
+      logger.error(`Failed to migrate ${fieldName}`, { error: String(err) });
+      return encrypted;
+    }
+  };
+
+  // Migrate integration credentials
+  if (settings.plexToken) {
+    const migrated = reencryptUserData(settings.plexToken, 'plexToken');
+    if (migrated !== settings.plexToken) {
+      settings.plexToken = migrated;
+      changed = true;
+    }
+  }
+
+  if (settings.tmdbApiKey) {
+    const migrated = reencryptUserData(settings.tmdbApiKey, 'tmdbApiKey');
+    if (migrated !== settings.tmdbApiKey) {
+      settings.tmdbApiKey = migrated;
+      changed = true;
+    }
+  }
+
+  if (settings.tautulliApiKey) {
+    const migrated = reencryptUserData(settings.tautulliApiKey, 'tautulliApiKey');
+    if (migrated !== settings.tautulliApiKey) {
+      settings.tautulliApiKey = migrated;
+      changed = true;
+    }
+  }
+
+  if (settings.overseerrApiKey) {
+    const migrated = reencryptUserData(settings.overseerrApiKey, 'overseerrApiKey');
+    if (migrated !== settings.overseerrApiKey) {
+      settings.overseerrApiKey = migrated;
+      changed = true;
+    }
+  }
+
+  if (changed) {
     await settings.save();
-    logger.info('Re-encrypted settings master keys with DECIDARR_SECRET');
+    logger.info('Successfully migrated integration credentials to AES-256-GCM');
+  }
+
+  // Migrate all user plexTokens
+  const users = await User.find({ plexToken: { $exists: true, $ne: null } });
+  let userCount = 0;
+
+  for (const user of users) {
+    if (user.plexToken && !user.plexToken.startsWith('v2:')) {
+      const migrated = reencryptUserData(user.plexToken, `user ${user._id} plexToken`);
+      if (migrated && migrated !== user.plexToken) {
+        user.plexToken = migrated;
+        await user.save();
+        userCount++;
+      }
+    }
+  }
+
+  if (userCount > 0) {
+    logger.info(`Successfully migrated ${userCount} user plexTokens to AES-256-GCM`);
   }
 }
 
 export async function runMigrations(): Promise<void> {
   if (migrationRan) return;
 
-  const settings = await getOrCreateSettings();
+  await migrateSettingsMasterKey(await getOrCreateSettings());
+  // Re-read: the master-key migration or its recovery may have replaced the document.
+  const settings = await recoverIfSecretChanged(await getOrCreateSettings());
 
-  await migrateSettingsMasterKey(settings);
+  await migrateIntegrationCredentials(settings);
   await migrateTokenizedMediaUrls();
 
   if (settings.setupComplete && !settings.adminUserId) {
@@ -191,5 +363,6 @@ export async function runMigrations(): Promise<void> {
 
 /** @internal Test-only reset for migration state */
 export function resetMigrationStateForTests(): void {
+  assertTestOnly('resetMigrationStateForTests');
   migrationRan = false;
 }

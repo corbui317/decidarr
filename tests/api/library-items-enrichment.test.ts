@@ -115,4 +115,92 @@ describe('GET /api/library/[id]/items enrichment preservation', () => {
     expect(cache?.items[109].tmdbId).toBe('1110');
     expect(cache?.items[54].contentRating).toBe('PG-13');
   });
+
+  it('enriches new items even when unmatchable items exist', async () => {
+    const unmatchableItems = Array.from({ length: 60 }, (_, i) => ({
+      ...makePlexItem(i + 1),
+      attemptedEnrichmentAt: new Date(Date.now() - 1000),
+    }));
+
+    const newItems = Array.from({ length: 10 }, (_, i) => makePlexItem(100 + i));
+
+    const allItems = [...unmatchableItems, ...newItems];
+
+    await LibraryCache.create({
+      plexMachineId: 'machine-1',
+      libraryId: 'lib-1',
+      libraryName: 'Movies',
+      mediaType: 'movie',
+      items: unmatchableItems,
+      lastSyncedAt: new Date(),
+      expiresAt: new Date(Date.now() + 86400000),
+    });
+
+    plexMock.getLibraryItems.mockResolvedValue(allItems);
+
+    tmdbMock.enrichBatch.mockResolvedValue(
+      Array.from({ length: 10 }, (_, i) => ({
+        tmdbId: 2000 + i,
+        certification: 'PG',
+        rating: 8.0,
+        studios: ['New Studio'],
+      }))
+    );
+
+    const req = new NextRequest(
+      'http://localhost/api/library/lib-1/items?forceRefresh=true'
+    );
+    const res = await getLibraryItems(req as never, {
+      params: Promise.resolve({ id: 'lib-1' }),
+    });
+
+    expect(res.status).toBe(200);
+
+    expect(tmdbMock.enrichBatch).toHaveBeenCalledTimes(1);
+    expect(tmdbMock.enrichBatch).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ title: 'Movie 100' }),
+        expect.objectContaining({ title: 'Movie 109' }),
+      ]),
+      'movie'
+    );
+
+    const body = await res.json();
+    const enrichedNewItem = body.items.find((item: ILibraryItem) => item.plexId === '100');
+    expect(enrichedNewItem.tmdbId).toBe('2000');
+  });
+
+  it('serves cached items as plain, tokenless items', async () => {
+    await LibraryCache.create({
+      plexMachineId: 'machine-1',
+      libraryId: 'lib-1',
+      libraryName: 'Movies',
+      mediaType: 'movie',
+      items: [
+        {
+          ...makeEnrichedItem(1),
+          posterUrl: 'http://192.168.1.10:32400/library/metadata/1/thumb/1?X-Plex-Token=secret',
+        },
+      ],
+      lastSyncedAt: new Date(),
+      expiresAt: new Date(Date.now() + 86400000),
+    });
+
+    const res = await getLibraryItems(new NextRequest('http://localhost/api/library/lib-1/items') as never, {
+      params: Promise.resolve({ id: 'lib-1' }),
+    });
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.fromCache).toBe(true);
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0]).toMatchObject({
+      plexId: '1',
+      title: 'Movie 1',
+      tmdbId: '1001',
+      thumbPath: '/library/metadata/1/thumb/1',
+    });
+    expect(Object.keys(body.items[0]).some((key) => key.startsWith('$') || key === '_doc')).toBe(false);
+    expect(JSON.stringify(body.items[0])).not.toContain('X-Plex-Token');
+  });
 });

@@ -10,17 +10,14 @@ import LoadingSpinner from '@/components/LoadingSpinner';
 
 export default function Home() {
   const { isAuthenticated, loading: authLoading, login, setAuthenticatedUser } = useAuth();
-  const { configured, loading: appLoading, checkStatus, setConfigured, status } = useApp();
+  const { configured, loading: appLoading, checkStatus } = useApp();
   const router = useRouter();
   const [showReconfigure, setShowReconfigure] = useState(false);
 
   useEffect(() => {
     if (appLoading || authLoading) return;
 
-    console.log('[Home] State:', { configured, isAuthenticated, appLoading, authLoading });
-
     if (configured && isAuthenticated) {
-      console.log('[Home] Configured and authenticated, going to dashboard');
       router.replace('/dashboard');
     }
     // If configured but not authenticated → LoginScreen will be shown
@@ -56,7 +53,6 @@ export default function Home() {
     return (
       <LoginScreen
         onLoginSuccess={(authUser) => {
-          console.log('[Home] Login successful for:', authUser.username);
           setAuthenticatedUser(authUser);
           router.replace('/dashboard');
         }}

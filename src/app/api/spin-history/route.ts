@@ -11,7 +11,6 @@ import {
 import { createLogger } from '@/lib/logger';
 import {
   containsPlexToken,
-  plexImageUrl,
   resolveItemImageUrls,
   sanitizeThumbPathInput,
 } from '@/lib/plex-image';

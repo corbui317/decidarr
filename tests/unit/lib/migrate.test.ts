@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { clearDatabase } from '../../helpers/mongo';
 import { seedConfiguredSettings } from '../../helpers/auth';
-import { LibraryCache } from '@/lib/models/LibraryCache';
 
 describe('runMigrations', () => {
   beforeEach(async () => {

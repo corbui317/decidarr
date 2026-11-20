@@ -4,7 +4,8 @@ import {
   clearTestCookies,
   seedConfiguredSettings,
 } from '../helpers/auth';
-import { getTestCookie } from '../helpers/cookies';
+import { getTestCookie, setTestCookie } from '../helpers/cookies';
+import jwt from 'jsonwebtoken';
 import { clearDatabase } from '../helpers/mongo';
 import { User } from '@/lib/models/User';
 
@@ -20,6 +21,8 @@ vi.mock('@/lib/services/plex', () => ({
 
 import { POST as refreshPost } from '@/app/api/auth/refresh/route';
 import { DELETE as logoutDelete } from '@/app/api/auth/logout/route';
+import { GET as meGet } from '@/app/api/auth/me/route';
+import { GET as sectionsGet } from '@/app/api/library/sections/route';
 
 describe('Auth session API routes', () => {
   beforeEach(async () => {
@@ -79,5 +82,40 @@ describe('Auth session API routes', () => {
     expect(res.status).toBe(200);
     expect(body.message).toBe('Logged out successfully');
     expect(getTestCookie('decidarr_session')).toBeUndefined();
+  });
+
+  describe('a session cookie the server cannot verify', () => {
+    async function setForeignSessionCookie(options: jwt.SignOptions = {}) {
+      await seedConfiguredSettings();
+      const { user } = await authenticateTestSession();
+      // Signed with a key this server does not hold, e.g. issued before a DECIDARR_SECRET change.
+      const token = jwt.sign(
+        { sub: user._id.toString(), plexUserId: user.plexUserId, isAdmin: user.isAdmin, sessionVersion: user.sessionVersion },
+        'some-other-jwt-secret',
+        options
+      );
+      setTestCookie('decidarr_session', token);
+    }
+
+    it('GET /api/auth/me answers 401, not 500', async () => {
+      await setForeignSessionCookie();
+      const res = await meGet();
+      expect(res.status).toBe(401);
+      expect(await res.json()).toEqual({ error: 'Unauthorized' });
+    });
+
+    it('POST /api/auth/refresh answers 401 Session expired', async () => {
+      await setForeignSessionCookie();
+      const res = await refreshPost();
+      expect(res.status).toBe(401);
+      expect(await res.json()).toEqual({ error: 'Session expired' });
+    });
+
+    it('a protected route answers 401 Session expired for an expired session', async () => {
+      await setForeignSessionCookie({ expiresIn: -10 });
+      const res = await sectionsGet();
+      expect(res.status).toBe(401);
+      expect(await res.json()).toEqual({ error: 'Session expired' });
+    });
   });
 });

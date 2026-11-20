@@ -66,9 +66,10 @@ Cross-cutting fixes from the Code Reviewer pass. Start with the [remediation roa
 | Settings, themes, integration tests | **Shipped** | [05](./beta/05-integrations-settings-operations.md) |
 | Spin history and recent spins | **Shipped** | [09](./beta/09-spin-history-settings.md) |
 | Slot machine spin animation | **Shipped** | [07](./beta/07-spin-animation-experience.md) |
-| Plex OAuth, admin users, session refresh | **Planned** | [01](./beta/01-setup-auth-user-access.md) |
+| Admin users, session refresh | **Shipped** | [01](./beta/01-setup-auth-user-access.md) |
+| Animation variants, reduced motion | **Shipped** | [07](./beta/07-spin-animation-experience.md) |
+| Plex OAuth | **Shipped** | [01](./beta/01-setup-auth-user-access.md) |
 | Overseerr status and requests | **Planned** | [06](./beta/06-overseerr-request-flow.md) |
-| Animation variants, reduced motion | **Planned** | [07](./beta/07-spin-animation-experience.md) |
 | Mobile/PWA shell | **Partial** | [08](./beta/08-mobile-pwa-later.md) |
 | Production PWA verification | **In progress** | [Mobile 01](./mobile/01-production-https-pwa-verification.md) |
 | Native vs PWA decision | **Accepted** | [DECIDARR-08-ADR-01](../adr/DECIDARR-08-ADR-01-native-vs-pwa.md) |

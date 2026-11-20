@@ -8,9 +8,3 @@ export async function clearDatabase(): Promise<void> {
   );
 }
 
-export async function resetMongooseCache(): Promise<void> {
-  (global as typeof global & { mongoose?: { conn: null; promise: null } }).mongoose = {
-    conn: null,
-    promise: null,
-  };
-}

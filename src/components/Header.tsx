@@ -10,25 +10,21 @@ export default function Header() {
   const [loggingOut, setLoggingOut] = useState(false);
 
   const handleOpenSettings = useCallback(() => {
-    console.log('[Header] Opening settings modal');
     setSettingsOpen(true);
   }, []);
 
   const handleCloseSettings = useCallback(() => {
-    console.log('[Header] Closing settings modal');
     setSettingsOpen(false);
   }, []);
 
   const handleLogout = useCallback(async () => {
     if (loggingOut) return;
     
-    console.log('[Header] Logout clicked');
     setLoggingOut(true);
     
     try {
       await logout();
     } catch (err) {
-      console.error('[Header] Logout failed:', err);
       // Force redirect anyway to ensure user can get to a clean state
       window.location.href = '/';
     }

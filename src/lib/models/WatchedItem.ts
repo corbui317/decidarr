@@ -1,9 +1,10 @@
 import mongoose, { Document, Model, Types } from 'mongoose';
+import type { MediaTypeWithEpisode } from '@/types/shared';
 
 export interface IWatchedItem extends Document {
   userId: Types.ObjectId;
   plexId: string;
-  mediaType: 'movie' | 'show' | 'episode';
+  mediaType: MediaTypeWithEpisode;
   title: string;
   watchedAt: Date;
   markedManually: boolean;

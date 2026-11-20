@@ -29,7 +29,7 @@ export const WheelOfFortuneAnimation = forwardRef<SpinAnimationHandle, WheelAnim
   function WheelOfFortuneAnimation({ result, speed, reducedMotion, onComplete }, ref) {
     const segments = useMemo(
       () => buildSegments(result),
-      [result.plexId, result.title]
+      [result]
     );
     const [offset, setOffset] = useState(0);
     const [stopped, setStopped] = useState(false);

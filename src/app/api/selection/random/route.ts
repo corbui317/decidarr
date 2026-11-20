@@ -9,12 +9,14 @@ import {
 import { connectDB } from '@/lib/db';
 import { LibraryCache } from '@/lib/models/LibraryCache';
 import { WatchedItem } from '@/lib/models/WatchedItem';
-import { PlexService } from '@/lib/services/plex';
+import { createPlexService } from '@/lib/services/plex-factory';
 import { TMDbService } from '@/lib/services/tmdb';
 import { createLogger } from '@/lib/logger';
-import { applyFullFilters } from '@/lib/selection/filters';
+import { applyFullFilters, fetchCollectionItemIds } from '@/lib/selection/filters';
 import { sanitizeLibraryItemForClient } from '@/lib/plex-image';
 import { parseSelectionRequestBody } from '@/lib/validation/selection';
+import type { SelectionResultResponse } from '@/types/api/selection';
+import type { SelectionError } from '@/types/shared';
 
 const logger = createLogger('API:Random');
 
@@ -30,7 +32,7 @@ export async function POST(request: NextRequest) {
 
     if (libraryIds.length === 0) {
       return NextResponse.json(
-        { error: 'At least one library must be selected' },
+        { error: 'At least one library must be selected', code: 'NO_LIBRARIES' },
         { status: 400 }
       );
     }
@@ -40,12 +42,12 @@ export async function POST(request: NextRequest) {
     const { settings, plexToken, plexServerUrl, user } = auth;
     const allowedLibraryIds = await getAccessibleLibraryIds(auth, libraryIds);
     if (allowedLibraryIds.length === 0) {
-      return NextResponse.json({ error: 'No accessible libraries selected' }, { status: 403 });
+      return NextResponse.json({ error: 'No accessible libraries selected', code: 'NO_ACCESSIBLE_LIBRARIES' }, { status: 403 });
     }
 
     const machineId = settings.plexMachineId;
     if (!machineId) {
-      return NextResponse.json({ error: 'Plex machine ID not configured' }, { status: 400 });
+      return NextResponse.json({ error: 'Plex machine ID not configured', code: 'MACHINE_ID_MISSING' }, { status: 400 });
     }
 
     const caches = await LibraryCache.find({
@@ -57,41 +59,22 @@ export async function POST(request: NextRequest) {
     let allItems = caches.flatMap((cache) => cache.items);
 
     if (allItems.length === 0) {
-      return NextResponse.json(
-        { error: 'No items found in selected libraries', suggestion: 'Try syncing your libraries first' },
-        { status: 404 }
-      );
+      const errorResponse: SelectionError = {
+        error: 'No items found in selected libraries',
+        code: 'NO_ITEMS_IN_LIBRARIES',
+        suggestion: 'Try syncing your libraries first',
+      };
+      return NextResponse.json(errorResponse, { status: 404 });
     }
 
-    const plexService = new PlexService(plexToken, plexServerUrl, settings.plexMachineId);
-
-    if (!settings.plexMachineId) {
-      logger.info('MachineId missing, fetching from server');
-      const fetchedMachineId = await plexService.fetchMachineIdFromServer();
-      if (fetchedMachineId) {
-        settings.plexMachineId = fetchedMachineId;
-        await settings.save();
-        logger.info('Stored machineId', { machineId: fetchedMachineId });
-      }
-    }
+    const plexService = await createPlexService(plexToken, plexServerUrl, settings.plexMachineId);
 
     let collectionItemIds: Set<string> | null = null;
     if (filters.collections && filters.collections.length > 0) {
-      collectionItemIds = new Set<string>();
-      await Promise.all(
-        filters.collections.map(async (collectionKey: string) => {
-          try {
-            const items = await plexService.getCollectionItems(collectionKey);
-            for (const item of items) {
-              collectionItemIds!.add(item.plexId);
-            }
-          } catch (err) {
-            logger.warn('Failed to fetch collection items', {
-              collectionKey,
-              error: (err as Error).message,
-            });
-          }
-        })
+      collectionItemIds = await fetchCollectionItemIds(
+        filters.collections,
+        plexService,
+        logger
       );
       logger.debug('Filtered by collections', {
         before: caches.flatMap((c) => c.items).length,
@@ -114,10 +97,12 @@ export async function POST(request: NextRequest) {
     );
 
     if (allItems.length === 0) {
-      return NextResponse.json(
-        { error: 'No items match your filters', suggestion: 'Try adjusting your filters' },
-        { status: 404 }
-      );
+      const errorResponse: SelectionError = {
+        error: 'No items match your filters',
+        code: 'NO_ITEMS_MATCH_FILTERS',
+        suggestion: 'Try adjusting your filters',
+      };
+      return NextResponse.json(errorResponse, { status: 404 });
     }
 
     const randomIndex = Math.floor(Math.random() * allItems.length);
@@ -137,24 +122,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({
-      selection: sanitizeLibraryItemForClient({
+    const selectionWithTmdb: SelectionResultResponse['selection'] = {
+      ...sanitizeLibraryItemForClient({
         ...fullDetails,
-        tmdb: tmdbData,
+        type: fullDetails.type ?? mediaType,
         overseerrStatus: selectedItem.overseerrStatus ?? null,
-      } as Record<string, unknown>),
+      }),
+      tmdb: tmdbData,
+    };
+
+    const response: SelectionResultResponse = {
+      selection: selectionWithTmdb,
       playLinks,
       stats: {
         totalMatches: allItems.length,
       },
       tvSelectionMode,
-    });
+    };
+    return NextResponse.json(response);
   } catch (error) {
     const msg = (error as Error)?.message;
     if (isAuthError(error)) {
       return NextResponse.json({ error: msg }, { status: authErrorStatus(error) });
     }
-    console.error('Random selection error:', error);
+    logger.error('Random selection error', { error: msg });
     return NextResponse.json({ error: 'Failed to get random selection' }, { status: 500 });
   }
 }

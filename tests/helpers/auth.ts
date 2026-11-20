@@ -101,15 +101,6 @@ export async function createModernSessionToken(user: IUser): Promise<string> {
   );
 }
 
-/** @deprecated Legacy username-only JWT for backward-compat tests */
-export async function createSessionToken(username = 'testuser'): Promise<string> {
-  const settings = await getOrCreateSettings();
-  return jwt.sign(
-    { type: 'session', username, loginAt: Date.now() },
-    settings.getJwtSecret(),
-    { expiresIn: '7d' }
-  );
-}
 
 export async function authenticateTestSession(options?: {
   user?: IUser;

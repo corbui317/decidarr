@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireUser, getAccessibleLibraryIds, isAuthError, authErrorStatus } from '@/lib/auth';
-import { PlexService } from '@/lib/services/plex';
+import { createPlexService } from '@/lib/services/plex-factory';
 import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('API:Collections');
@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
     }
 
     const allowed = await getAccessibleLibraryIds(auth, ids);
-    const plexService = new PlexService(
+    const plexService = await createPlexService(
       auth.plexToken,
       auth.plexServerUrl,
       auth.settings.plexMachineId
