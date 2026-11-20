@@ -1,6 +1,7 @@
 'use client';
 
 import type { Filters } from '@/types/filters';
+import type { LoginErrorCode } from './auth-errors';
 import type { SelectionResultResponse } from '@/types/api/selection';
 import type {
   MediaType,
@@ -83,29 +84,40 @@ export class PlexLoginError extends Error {
   }
 }
 
-export function isPlexLoginError(error: unknown): error is PlexLoginError {
-  return error instanceof PlexLoginError;
+/** The user-facing message for each sign-in error code; a Record so a new code cannot be missed. */
+export const LOGIN_ERROR_MESSAGES: Record<LoginErrorCode, string> = {
+  NO_OWNED_SERVER: 'No owned Plex server found. You need to own a Plex Media Server to use this app.',
+  NO_SERVER_ACCESS:
+    'Your Plex account does not have access to this server. Ask the server owner to share it with you.',
+  NOT_APPROVED: 'Your account is not approved yet. Please wait for an administrator to approve your access.',
+  SERVER_MISCONFIGURED: 'Decidarr is not fully set up yet. Ask the server owner to finish setup.',
+  AUTH_FAILED: 'Plex sign-in failed. Please try again.',
+  PLEX_UNAVAILABLE: 'Plex.tv is unavailable. Please try again later.',
+  PLEX_PIN_EXPIRED: 'Plex authorization expired, please try again.',
+  RATE_LIMITED: 'Too many sign-in attempts. Please wait a few minutes and try again.',
+  MISSING_OAUTH_COOKIES: 'Your sign-in session was lost. Please start sign-in again.',
+  INVALID_OAUTH_PIN: 'Sign-in could not be verified. Please start sign-in again.',
+  INVALID_OAUTH_STATE: 'Sign-in could not be verified. Please start sign-in again.',
+  SETUP_SECRET_REQUIRED: 'Setup is locked until the server owner sets DECIDARR_SETUP_SECRET.',
+  INVALID_SETUP_SECRET: 'The setup secret is incorrect.',
+  LOGIN_FAILED: 'Sign-in failed. Please try again.',
+};
+
+function isLoginErrorCode(code: string | undefined): code is LoginErrorCode {
+  return code !== undefined && Object.prototype.hasOwnProperty.call(LOGIN_ERROR_MESSAGES, code);
 }
 
-function plexLoginErrorMessage(error: PlexLoginError): string {
-  if (error.code === 'PLEX_PIN_EXPIRED') {
-    return 'Plex authorization expired, please try again.';
-  }
-  if (error.code === 'PLEX_UNAVAILABLE' || error.statusCode === 503) {
-    return 'Plex.tv is unavailable. Please try again later.';
-  }
-  if (error.code === 'NO_OWNED_SERVER') {
-    return 'No owned Plex server found. You need to own a Plex Media Server to use this app.';
-  }
-  if (error.code === 'NOT_APPROVED') {
-    return 'Your account is not approved yet. Please wait for an administrator to approve your access.';
-  }
-  return error.message;
-}
-
+/** Sign-in errors come from the poll (PlexLoginError) and the start route (ApiError). */
 export function formatPlexLoginError(error: unknown): string {
-  if (isPlexLoginError(error)) {
-    return plexLoginErrorMessage(error);
+  if (error instanceof PlexLoginError || error instanceof ApiError) {
+    if (isLoginErrorCode(error.code)) {
+      return LOGIN_ERROR_MESSAGES[error.code];
+    }
+    const status = error instanceof PlexLoginError ? error.statusCode : error.status;
+    if (status === 503) {
+      return LOGIN_ERROR_MESSAGES.PLEX_UNAVAILABLE;
+    }
+    return error.message;
   }
   if (error instanceof Error) {
     return error.message;
