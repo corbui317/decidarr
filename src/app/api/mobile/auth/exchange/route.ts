@@ -1,20 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { AUTH_CODE_TTL_SECONDS } from '@decidarr/api-contracts';
 import { connectDB } from '@/lib/db';
 import { MobileAuthCode } from '@/lib/models/MobileAuthCode';
+import { getOrCreateSettings } from '@/lib/models/Settings';
+import { User } from '@/lib/models/User';
 import { completePlexLogin } from '@/lib/auth-login';
-import { issueTokenPair, redactToken } from '@/lib/mobile-auth/tokens';
-import { pollAuthPin } from '@/lib/services/plex-oauth';
+import { hashToken, issueTokenPair, redactToken } from '@/lib/mobile-auth/tokens';
+import { pollAuthPin } from '@/lib/services/plex-oauth-factory';
+import { checkRateLimit } from '@/lib/security/rate-limit';
 import { backfillSyncRevisions } from '@/lib/sync/service';
 import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('API:MobileAuthExchange');
 
+/**
+ * Per-device-code budget, like the browser's per-pin poll limit: it caps how often one
+ * sign-in can make us poll plex.tv without a shared per-IP bucket locking other users out.
+ */
+const EXCHANGE_RATE_LIMIT_CONFIG = {
+  windowMs: AUTH_CODE_TTL_SECONDS * 1000,
+  maxAttempts: 60,
+};
+
 export async function POST(request: NextRequest) {
   try {
     await connectDB();
-    const body = await request.json();
-    const deviceCode = typeof body.deviceCode === 'string' ? body.deviceCode.trim() : '';
-    const deviceId = typeof body.deviceId === 'string' ? body.deviceId.trim() : '';
+    const body = await request.json().catch(() => null);
+    const deviceCode = typeof body?.deviceCode === 'string' ? body.deviceCode.trim() : '';
+    const deviceId = typeof body?.deviceId === 'string' ? body.deviceId.trim() : '';
 
     if (!deviceCode || !deviceId) {
       return NextResponse.json({ error: 'deviceCode and deviceId are required' }, { status: 400 });
@@ -22,7 +35,24 @@ export async function POST(request: NextRequest) {
 
     const authCode = await MobileAuthCode.findOne({ deviceCode });
     if (!authCode || authCode.expiresAt < new Date()) {
-      return NextResponse.json({ error: 'Authorization code expired or invalid' }, { status: 401 });
+      return NextResponse.json(
+        { error: 'Authorization code expired or invalid', code: 'PLEX_PIN_EXPIRED' },
+        { status: 401 }
+      );
+    }
+
+    const rateLimit = checkRateLimit(
+      `mobile-auth:exchange:${hashToken(deviceCode)}`,
+      EXCHANGE_RATE_LIMIT_CONFIG
+    );
+    if (!rateLimit.allowed) {
+      logger.warn('Rate limit exceeded for mobile auth exchange', {
+        deviceCode: redactToken(deviceCode),
+      });
+      return NextResponse.json(
+        { error: 'Too many requests. Please try again later.', code: 'RATE_LIMITED' },
+        { status: 429 }
+      );
     }
 
     if (authCode.exchangedAt) {
@@ -33,7 +63,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Device mismatch' }, { status: 401 });
     }
 
-    let plexToken = authCode.plexAuthToken;
+    const settings = await getOrCreateSettings();
+    const encryptionKey = settings.getEncryptionKey();
+
+    let plexToken = authCode.getDecryptedPlexAuthToken(encryptionKey);
     if (!plexToken) {
       const pin = await pollAuthPin(authCode.pinId, authCode.pinCode);
       if (!pin.authToken) {
@@ -43,19 +76,18 @@ export async function POST(request: NextRequest) {
         );
       }
       plexToken = pin.authToken;
-      authCode.plexAuthToken = plexToken;
+      authCode.setEncryptedPlexAuthToken(plexToken, encryptionKey);
       await authCode.save();
     }
 
     const loginResult = await completePlexLogin(plexToken);
     if (!loginResult.success || !loginResult.user) {
       return NextResponse.json(
-        { error: loginResult.error || 'Login failed' },
+        { error: loginResult.error || 'Login failed', code: loginResult.code || 'AUTH_FAILED' },
         { status: loginResult.status || 401 }
       );
     }
 
-    const { User } = await import('@/lib/models/User');
     const user = await User.findById(loginResult.user.id);
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 500 });
@@ -66,6 +98,8 @@ export async function POST(request: NextRequest) {
     const tokens = await issueTokenPair(user, deviceId, authCode.deviceName);
     authCode.exchangedAt = new Date();
     authCode.userId = user._id;
+    // The Plex token now lives (encrypted) on the user; the one-time code no longer needs it.
+    authCode.plexAuthToken = undefined;
     await authCode.save();
 
     logger.info('Mobile auth exchanged', {
@@ -82,8 +116,17 @@ export async function POST(request: NextRequest) {
     });
   } catch (err) {
     const msg = (err as Error).message;
-    if (msg === 'PLEX_UNAVAILABLE' || msg === 'PLEX_PIN_EXPIRED') {
-      return NextResponse.json({ error: 'Plex authorization failed' }, { status: 401 });
+    if (msg === 'PLEX_UNAVAILABLE') {
+      return NextResponse.json(
+        { error: 'Plex.tv is unavailable. Please try again later.', code: 'PLEX_UNAVAILABLE' },
+        { status: 503 }
+      );
+    }
+    if (msg === 'PLEX_PIN_EXPIRED' || msg === 'PLEX_PIN_INVALID') {
+      return NextResponse.json(
+        { error: 'Plex authorization expired or was invalid. Please try again.', code: 'PLEX_PIN_EXPIRED' },
+        { status: 401 }
+      );
     }
     logger.error('Mobile auth exchange failed', { error: msg });
     return NextResponse.json({ error: 'Failed to exchange authorization' }, { status: 500 });

@@ -453,8 +453,20 @@ export async function recoverFromSecretChange(): Promise<ISettings> {
     { $unset: { plexToken: '' } }
   );
 
+  // Mobile devices are signed out too: pending sign-ins hold Plex tokens encrypted with the
+  // old key, and refresh tokens would otherwise keep minting access tokens.
+  const { MobileAuthCode } = await import('./MobileAuthCode');
+  const { MobileRefreshToken } = await import('./MobileRefreshToken');
+  const clearedAuthCodes = await MobileAuthCode.deleteMany({ exchangedAt: { $exists: false } });
+  const revokedRefreshTokens = await MobileRefreshToken.updateMany(
+    { revokedAt: { $exists: false } },
+    { $set: { revokedAt: new Date() } }
+  );
+
   logger.info('Secret recovery complete', {
     clearedUserTokens: result.modifiedCount,
+    clearedMobileAuthCodes: clearedAuthCodes.deletedCount,
+    revokedMobileRefreshTokens: revokedRefreshTokens.modifiedCount,
   });
 
   return settings;

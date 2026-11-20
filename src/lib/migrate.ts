@@ -4,6 +4,7 @@ import { User } from './models/User';
 import { WatchedItem } from './models/WatchedItem';
 import { LibraryCache } from './models/LibraryCache';
 import { SpinHistoryEntry } from './models/SpinHistoryEntry';
+import { MobileAuthCode } from './models/MobileAuthCode';
 import {
   extractThumbPathFromUrl,
   containsPlexToken,
@@ -281,6 +282,38 @@ async function migrateIntegrationCredentials(settings: Awaited<ReturnType<typeof
   }
 }
 
+/**
+ * Pending mobile sign-ins created before the AES-256-GCM scheme stored the approved Plex
+ * token in plaintext. Encrypt those in place; codes are short-lived, so this only ever
+ * touches sign-ins that were in flight during the upgrade.
+ */
+async function migrateMobileAuthCodeTokens(
+  settings: Awaited<ReturnType<typeof getOrCreateSettings>>
+): Promise<void> {
+  let encryptionKey: string;
+  try {
+    encryptionKey = settings.getEncryptionKey();
+  } catch {
+    logger.warn('Skipping mobile auth code migration - encryption key unavailable');
+    return;
+  }
+
+  const codes = await MobileAuthCode.find({
+    plexAuthToken: { $exists: true, $nin: [null, ''], $not: /^v2:/ },
+  });
+
+  for (const code of codes) {
+    code.setEncryptedPlexAuthToken(code.plexAuthToken as string, encryptionKey);
+    await code.save();
+  }
+
+  if (codes.length > 0) {
+    logger.info('Encrypted pending mobile auth code Plex tokens with AES-256-GCM', {
+      count: codes.length,
+    });
+  }
+}
+
 export async function runMigrations(): Promise<void> {
   if (migrationRan) return;
 
@@ -289,6 +322,7 @@ export async function runMigrations(): Promise<void> {
   const settings = await recoverIfSecretChanged(await getOrCreateSettings());
 
   await migrateIntegrationCredentials(settings);
+  await migrateMobileAuthCodeTokens(settings);
   await migrateTokenizedMediaUrls();
 
   if (settings.setupComplete && !settings.adminUserId) {
