@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { requireMobileUser } from '@/lib/mobile-auth/context';
-import { isAuthError } from '@/lib/auth';
+import { isAuthError, authErrorStatus } from '@/lib/auth';
 import { applyMutations, validateMutationBatch } from '@/lib/sync/service';
 import { createLogger } from '@/lib/logger';
 
@@ -28,8 +28,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(result);
   } catch (error) {
     const msg = (error as Error)?.message;
-    if (isAuthError(error) || msg === 'Unauthorized') {
-      return NextResponse.json({ error: msg || 'Unauthorized' }, { status: 401 });
+    if (isAuthError(error)) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: authErrorStatus(error) }
+      );
     }
     logger.error('Sync mutations failed', { error: msg });
     return NextResponse.json({ error: 'Failed to apply mutations' }, { status: 500 });

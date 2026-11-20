@@ -10,18 +10,24 @@ import { getOrCreateSettings } from '@/lib/models/Settings';
 import { IUser, loadUserWithToken } from '@/lib/models/User';
 import { MobileRefreshToken } from '@/lib/models/MobileRefreshToken';
 import { createLogger } from '@/lib/logger';
+import { SessionError } from '@/lib/auth-errors';
 
 const logger = createLogger('MobileAuth');
 
 const MOBILE_AUDIENCE = 'decidarr-mobile';
 
-export interface MobileAccessPayload {
+interface MobileAccessClaims {
   sub: string;
   plexUserId: string;
   isAdmin: boolean;
   sessionVersion: number;
   deviceId: string;
   aud: string;
+}
+
+/** A verified mobile access token; `exp` is the Unix time (seconds) it expires. */
+export interface MobileAccessPayload extends MobileAccessClaims {
+  exp: number;
 }
 
 export function hashToken(token: string): string {
@@ -45,7 +51,7 @@ export async function signAccessToken(
   deviceId: string
 ): Promise<string> {
   const settings = await getOrCreateSettings();
-  const payload: MobileAccessPayload = {
+  const payload: MobileAccessClaims = {
     sub: user._id.toString(),
     plexUserId: user.plexUserId,
     isAdmin: user.isAdmin,
@@ -58,14 +64,26 @@ export async function signAccessToken(
   });
 }
 
+/** Verifies a mobile access token; throws SessionError('UNAUTHORIZED') for any invalid token. */
 export async function verifyAccessToken(token: string): Promise<MobileAccessPayload> {
   const settings = await getOrCreateSettings();
-  const payload = jwt.verify(token, settings.getJwtSecret(), {
-    audience: MOBILE_AUDIENCE,
-  }) as MobileAccessPayload;
+  let payload: MobileAccessPayload;
+  try {
+    payload = jwt.verify(token, settings.getJwtSecret(), {
+      audience: MOBILE_AUDIENCE,
+    }) as MobileAccessPayload;
+  } catch {
+    // Expired, tampered with, or signed before a DECIDARR_SECRET change.
+    throw new SessionError('UNAUTHORIZED');
+  }
 
-  if (!payload.sub || payload.sessionVersion === undefined || !payload.deviceId) {
-    throw new Error('Unauthorized');
+  if (
+    !payload.sub ||
+    payload.sessionVersion === undefined ||
+    !payload.deviceId ||
+    typeof payload.exp !== 'number'
+  ) {
+    throw new SessionError('UNAUTHORIZED');
   }
 
   return payload;
@@ -115,16 +133,16 @@ export async function rotateRefreshToken(
         userId: existing.userId.toString(),
       });
     }
-    throw new Error('Unauthorized');
+    throw new SessionError('UNAUTHORIZED');
   }
 
   if (existing.deviceId !== deviceId) {
-    throw new Error('Unauthorized');
+    throw new SessionError('UNAUTHORIZED');
   }
 
   const user = await loadUserWithToken(existing.userId);
-  if (!user || !user.isApproved && !user.isAdmin) {
-    throw new Error('Unauthorized');
+  if (!user || (!user.isApproved && !user.isAdmin)) {
+    throw new SessionError('UNAUTHORIZED');
   }
 
   existing.revokedAt = new Date();

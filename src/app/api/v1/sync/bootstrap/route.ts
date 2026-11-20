@@ -17,8 +17,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(bootstrap);
   } catch (error) {
     const msg = (error as Error)?.message;
-    if (isAuthError(error) || msg === 'Unauthorized') {
-      return NextResponse.json({ error: msg || 'Unauthorized' }, { status: 401 });
+    if (isAuthError(error)) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: authErrorStatus(error) }
+      );
     }
     logger.error('Sync bootstrap failed', { error: msg });
     return NextResponse.json({ error: 'Failed to bootstrap sync' }, { status: 500 });

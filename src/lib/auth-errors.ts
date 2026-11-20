@@ -31,3 +31,32 @@ export function createAuthError(code: AuthErrorCode, detailedReason: string): Lo
     detailedReason,
   };
 }
+
+export type SessionErrorCode = 'APP_NOT_CONFIGURED' | 'UNAUTHORIZED' | 'FORBIDDEN';
+
+const SESSION_ERRORS: Record<SessionErrorCode, { message: string; status: number }> = {
+  APP_NOT_CONFIGURED: { message: 'App not configured', status: 401 },
+  UNAUTHORIZED: { message: 'Unauthorized', status: 401 },
+  FORBIDDEN: { message: 'Forbidden', status: 403 },
+};
+
+/** Why a request has no usable session. Routes switch on `code`, never on the message. */
+export class SessionError extends Error {
+  readonly code: SessionErrorCode;
+  readonly status: number;
+
+  constructor(code: SessionErrorCode) {
+    super(SESSION_ERRORS[code].message);
+    this.name = 'SessionError';
+    this.code = code;
+    this.status = SESSION_ERRORS[code].status;
+  }
+}
+
+export function isAuthError(error: unknown): error is SessionError {
+  return error instanceof SessionError;
+}
+
+export function authErrorStatus(error: unknown): number {
+  return isAuthError(error) ? error.status : 500;
+}
