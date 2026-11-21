@@ -45,3 +45,17 @@ When you are talking/posting on behalf of Corey using his identity, read ~/VOICE
 
 ## Corey's Opinions
 When you are working on something that would benefit from Corey's viewpoints, read ~/OPINIONS.md to understand Corey's opinions.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs live in GitHub Issues on `corbui317/decidarr` (via the `gh` CLI). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-role vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `GLOSSARY.md` at the repo root plus `docs/adr/`. See `docs/agents/domain.md`.
