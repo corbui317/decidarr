@@ -106,11 +106,12 @@ describe('GET /api/plex/image', () => {
   it('refuses an upstream response with a non-image content type', async () => {
     await seedConfiguredSettings();
     await authenticateTestSession();
-    fetchMock.mockResolvedValue(
-      new Response('<script>alert(1)</script>', {
-        status: 200,
-        headers: { 'content-type': 'text/html' },
-      })
+    fakeIntegrations(
+      () =>
+        new Response('<script>alert(1)</script>', {
+          status: 200,
+          headers: { 'content-type': 'text/html' },
+        })
     );
 
     const res = await plexImageGet(imageRequest('/library/metadata/1/thumb/2'));
@@ -123,11 +124,12 @@ describe('GET /api/plex/image', () => {
   it('allows an upstream content type with charset parameters', async () => {
     await seedConfiguredSettings();
     await authenticateTestSession();
-    fetchMock.mockResolvedValue(
-      new Response(new Uint8Array([1, 2, 3]), {
-        status: 200,
-        headers: { 'content-type': 'image/jpeg; charset=binary' },
-      })
+    fakeIntegrations(
+      () =>
+        new Response(new Uint8Array([1, 2, 3]), {
+          status: 200,
+          headers: { 'content-type': 'image/jpeg; charset=binary' },
+        })
     );
 
     const res = await plexImageGet(imageRequest('/library/metadata/1/thumb/2'));
