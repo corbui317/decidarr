@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { clearDatabase } from '../../helpers/mongo';
 import CryptoJS from 'crypto-js';
-import { getOrCreateSettings, decryptVersioned } from '@/lib/models/Settings';
+import { getOrCreateSettings } from '@/lib/models/Settings';
+import { decryptLegacy } from '@/lib/secrets';
 
 describe('Settings model', () => {
   beforeEach(async () => {
@@ -48,7 +49,7 @@ describe('Settings model', () => {
   describe('legacy CryptoJS values', () => {
     it('decrypts a CryptoJS passphrase ciphertext', () => {
       const legacy = CryptoJS.AES.encrypt('legacy-value', 'master-key').toString();
-      expect(decryptVersioned(legacy, 'master-key')).toBe('legacy-value');
+      expect(decryptLegacy(legacy, 'master-key')).toBe('legacy-value');
     });
 
     it('rejects a value that is not CryptoJS passphrase ciphertext, every time', () => {
@@ -57,7 +58,7 @@ describe('Settings model', () => {
       const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
       try {
         for (let i = 0; i < 1000; i++) {
-          expect(() => decryptVersioned('also-corrupted-!!!', 'master-key')).toThrow('Failed to decrypt value');
+          expect(() => decryptLegacy('also-corrupted-!!!', 'master-key')).toThrow('Failed to decrypt value');
         }
       } finally {
         quiet.mockRestore();

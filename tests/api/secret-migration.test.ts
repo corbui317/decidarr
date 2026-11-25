@@ -1,199 +1,217 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import mongoose from 'mongoose';
 import { clearDatabase } from '../helpers/mongo';
-import { getOrCreateSettings, Settings } from '@/lib/models/Settings';
-import { runMigrations, resetMigrationStateForTests } from '@/lib/migrate';
-import { connectDB } from '@/lib/db';
+import { clearTestCookies, setTestCookie } from '../helpers/cookies';
+import { authenticateTestSession, createModernSessionToken, seedConfiguredSettings, seedTestUser } from '../helpers/auth';
+import {
+  seedLegacyInstall,
+  seedV2Install,
+  LEGACY_PLAINTEXT,
+  LEGACY_ADMIN_PLEX_USER_ID,
+  type StoredSettings,
+} from '../helpers/legacy-install-seed';
+import { connectDB, forgetConnectionForTests } from '@/lib/db';
+import { findCredentialsNeedingReentry, runMigrations, resetMigrationStateForTests } from '@/lib/migrate';
+import { getOrCreateSettings } from '@/lib/models/Settings';
+import { User } from '@/lib/models/User';
+import {
+  decryptSecret,
+  deriveKey,
+  encryptSecret,
+  getLegacyMasterKey,
+  isCurrentCiphertext,
+  type SecretLocation,
+} from '@/lib/secrets';
+import { GET as statusGet } from '@/app/api/settings/status/route';
+import { GET as settingsGet } from '@/app/api/settings/route';
+import { GET as meGet } from '@/app/api/auth/me/route';
 
-describe('Secret migration and encryption', () => {
+const SECRET = 'stored-secrets-test-0123456789abcdef';
+const TMDB: SecretLocation = { recordType: 'settings', recordId: 'app-settings', field: 'tmdbApiKey' };
+
+function simulateRestart(): void {
+  forgetConnectionForTests();
+  resetMigrationStateForTests();
+}
+
+function settingsCollection() {
+  return mongoose.connection.db!.collection<StoredSettings>('settings');
+}
+
+async function rawSettings(): Promise<StoredSettings> {
+  return (await settingsCollection().findOne({ _id: 'app-settings' }))!;
+}
+
+describe('Stored secrets', () => {
   beforeEach(async () => {
     await clearDatabase();
+    clearTestCookies();
     resetMigrationStateForTests();
-    vi.clearAllMocks();
+    vi.stubEnv('NODE_ENV', 'development');
+    vi.stubEnv('DECIDARR_SECRET', SECRET);
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllEnvs();
   });
 
-  describe('Fresh install with DECIDARR_SECRET', () => {
-    it('does not crash when creating settings with DECIDARR_SECRET set', async () => {
-      vi.stubEnv('DECIDARR_SECRET', 'test-secret-key-12345');
-      vi.stubEnv('NODE_ENV', 'development');
-
-      await connectDB();
-
-      // This previously crashed 28 of 40 times due to migration attempting
-      // to decrypt with wrong key
+  describe('v3 format', () => {
+    it('stores settings secrets as v3 ciphertext and reads them back', async () => {
       const settings = await getOrCreateSettings();
+      settings.tmdbApiKey = 'tmdb-key-plain';
+      await settings.save();
 
-      expect(settings).toBeDefined();
-      expect(settings.jwtSecret).toBeDefined();
-      expect(settings.encryptionKey).toBeDefined();
-
-      // Should be able to decrypt the secrets
-      const jwtSecret = settings.getJwtSecret();
-      const encryptionKey = settings.getEncryptionKey();
-
-      expect(jwtSecret).toBeTruthy();
-      expect(encryptionKey).toBeTruthy();
+      const raw = await rawSettings();
+      expect(isCurrentCiphertext(raw.tmdbApiKey!)).toBe(true);
+      expect(raw.tmdbApiKey).not.toContain('tmdb-key-plain');
+      expect((await getOrCreateSettings()).getDecryptedTmdbKey()).toBe('tmdb-key-plain');
     });
 
-    it('survives multiple fresh install attempts with DECIDARR_SECRET', async () => {
-      vi.stubEnv('DECIDARR_SECRET', 'test-secret-key-12345');
-      vi.stubEnv('NODE_ENV', 'development');
+    it('uses a 16-byte tag and rejects a truncated one', () => {
+      const stored = encryptSecret('value', TMDB);
+      const [, iv, tag, ciphertext] = stored.split(':');
+      expect(Buffer.from(tag, 'base64url')).toHaveLength(16);
 
-      await connectDB();
-
-      // Run 40 times to cover the intermittent crash
-      for (let i = 0; i < 40; i++) {
-        await clearDatabase();
-        resetMigrationStateForTests();
-
-        const settings = await getOrCreateSettings();
-        expect(settings.getJwtSecret()).toBeTruthy();
-        expect(settings.getEncryptionKey()).toBeTruthy();
-      }
+      const shortTag = Buffer.from(tag, 'base64url').subarray(0, 12).toString('base64url');
+      expect(() => decryptSecret(`v3:${iv}:${shortTag}:${ciphertext}`, TMDB)).toThrow(/cannot be decrypted/);
     });
-  });
 
-  describe('Production startup requirements', () => {
-    it('throws clear error when DECIDARR_SECRET is missing in production', async () => {
+    it('derives a separate key per purpose from DECIDARR_SECRET', () => {
+      const keys = (['stored-secrets', 'web-session', 'mobile-access-token'] as const).map((p) =>
+        deriveKey(p).toString('hex')
+      );
+      expect(new Set(keys).size).toBe(3);
+
+      vi.stubEnv('DECIDARR_SECRET', `${SECRET}-other`);
+      expect(deriveKey('stored-secrets').toString('hex')).not.toBe(keys[0]);
+    });
+
+    it('refuses to derive keys in production without DECIDARR_SECRET', () => {
       vi.stubEnv('NODE_ENV', 'production');
       vi.stubEnv('DECIDARR_SECRET', '');
-
-      await connectDB();
-      await clearDatabase();
-
-      // In production without DECIDARR_SECRET, even creating settings should fail
-      // with a clear error message
-      await expect(getOrCreateSettings()).rejects.toThrow(/DECIDARR_SECRET is required in production/);
+      expect(() => deriveKey('stored-secrets')).toThrow(/DECIDARR_SECRET is required in production/);
     });
   });
 
-  describe('Migration idempotence', () => {
-    it('does not re-encrypt secrets on restart', async () => {
-      vi.stubEnv('DECIDARR_SECRET', 'test-secret-key-12345');
-      vi.stubEnv('NODE_ENV', 'development');
+  describe('a ciphertext copied onto another record or field', () => {
+    it('fails to decrypt on another settings field, and the Admin is told', async () => {
+      await seedConfiguredSettings({ tmdbApiKey: 'tmdb-key-plain' });
+      await authenticateTestSession();
+      const tmdbCiphertext = (await rawSettings()).tmdbApiKey!;
+      await settingsCollection().updateOne({ _id: 'app-settings' }, { $set: { tautulliApiKey: tmdbCiphertext } });
 
-      await connectDB();
+      const res = await settingsGet();
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.tmdb.hasKey).toBe(true);
+      expect(body.tautulli.hasKey).toBe(false);
+      expect(body.credentialsNeedingReentry).toEqual(['Tautulli API key']);
+      expect((await rawSettings()).tautulliApiKey).toBe(tmdbCiphertext);
+    });
 
-      // First run - create settings
-      const settings1 = await getOrCreateSettings();
-      await runMigrations();
-      const encrypted1 = settings1.jwtSecret;
+    it('fails to decrypt on another user, so that user is signed out and reported', async () => {
+      await seedConfiguredSettings();
+      const admin = await seedTestUser({ plexUserId: 'admin-1', plexUsername: 'admin' });
+      const friend = await seedTestUser({ plexUserId: 'friend-1', plexUsername: 'friend', isAdmin: false });
+      await User.updateOne({ _id: friend._id }, { $set: { plexToken: admin.plexToken } });
 
-      // Simulate restart - migration runs again
-      resetMigrationStateForTests();
-      await runMigrations();
+      setTestCookie('decidarr_session', await createModernSessionToken(friend));
+      expect((await meGet()).status).toBe(401);
 
-      // Re-fetch settings
-      const settings2 = await getOrCreateSettings();
-      const encrypted2 = settings2.jwtSecret;
-
-      // Encrypted values should be identical (not re-encrypted)
-      expect(encrypted2).toBe(encrypted1);
-
-      // And still decrypt correctly
-      expect(settings2.getJwtSecret()).toBeTruthy();
+      setTestCookie('decidarr_session', await createModernSessionToken(admin));
+      expect((await meGet()).status).toBe(200);
+      expect(await findCredentialsNeedingReentry()).toEqual(['Plex sign-in for friend']);
+      expect((await User.findById(friend._id))?.plexToken).toBe(admin.plexToken);
     });
   });
 
-  describe('Legacy to AES-256-GCM migration', () => {
-    it('migrates legacy CryptoJS encrypted values to AES-256-GCM', async () => {
-      vi.stubEnv('NODE_ENV', 'development');
-      vi.stubEnv('MONGODB_URI', 'mongodb://localhost:27017/decidarr');
-
+  describe('migration', () => {
+    it('upgrades an install that already used DECIDARR_SECRET (v2) to v3 without loss', async () => {
       await connectDB();
+      const seed = await seedV2Install(mongoose.connection.db!, SECRET);
+      const legacyWrappedKey = (await rawSettings()).encryptionKey;
 
-      // Create settings without DECIDARR_SECRET (legacy mode)
-      const settings1 = await getOrCreateSettings();
-      const originalJwt = settings1.getJwtSecret();
-      const originalKey = settings1.getEncryptionKey();
+      simulateRestart();
+      expect((await statusGet()).status).toBe(200);
 
-      // Verify legacy format (no v2: prefix)
-      expect(settings1.jwtSecret).not.toMatch(/^v2:/);
-      expect(settings1.encryptionKey).not.toMatch(/^v2:/);
-      expect(settings1.secretsMigrationVersion).toBeUndefined();
-
-      // Now set DECIDARR_SECRET and run migration
-      vi.stubEnv('DECIDARR_SECRET', 'migration-test-secret');
-      resetMigrationStateForTests();
-      await runMigrations();
-
-      // Re-fetch settings
-      const settings2 = await getOrCreateSettings();
-
-      // Verify migration marker is set
-      expect(settings2.secretsMigrationVersion).toBe(2);
-
-      // Verify new format (v2: prefix)
-      expect(settings2.jwtSecret).toMatch(/^v2:/);
-      expect(settings2.encryptionKey).toMatch(/^v2:/);
-
-      // Verify values still decrypt to same plaintext
-      expect(settings2.getJwtSecret()).toBe(originalJwt);
-      expect(settings2.getEncryptionKey()).toBe(originalKey);
+      const raw = await rawSettings();
+      expect(isCurrentCiphertext(raw.plexToken!)).toBe(true);
+      expect(isCurrentCiphertext(raw.tmdbApiKey!)).toBe(true);
+      expect(raw.encryptionKey).toBe(legacyWrappedKey);
+      const settings = await getOrCreateSettings();
+      expect(settings.getDecryptedTmdbKey()).toBe(LEGACY_PLAINTEXT.tmdbApiKey);
+      expect(settings.getDecryptedPlexToken()).toBe(LEGACY_PLAINTEXT.plexToken);
+      const admin = await User.findById(seed.adminUserId);
+      expect(isCurrentCiphertext(admin!.plexToken)).toBe(true);
+      expect(admin!.getDecryptedToken()).toBe(LEGACY_PLAINTEXT.plexToken);
+      expect(await findCredentialsNeedingReentry()).toEqual([]);
     });
 
-    it('preserves integration credentials after master key migration', async () => {
-      vi.stubEnv('NODE_ENV', 'development');
-      vi.stubEnv('MONGODB_URI', 'mongodb://localhost:27017/decidarr');
-
+    it('leaves v3 values untouched on later restarts', async () => {
       await connectDB();
+      await seedLegacyInstall(mongoose.connection.db!, getLegacyMasterKey());
+      simulateRestart();
+      await connectDB();
+      const first = await rawSettings();
+      const firstUser = await User.findOne({ plexUserId: LEGACY_ADMIN_PLEX_USER_ID });
 
-      // Create settings with integration credentials (legacy mode)
-      const settings1 = await getOrCreateSettings();
-      settings1.plexToken = 'test-plex-token-abc123';
-      settings1.tmdbApiKey = 'test-tmdb-key-xyz789';
-      settings1.tautulliApiKey = 'test-tautulli-key-456';
-      settings1.overseerrApiKey = 'test-overseerr-key-789';
-      await settings1.save();
-
-      // Get decrypted values before migration
-      const decryptedPlex = settings1.getDecryptedPlexToken();
-      const decryptedTmdb = settings1.getDecryptedTmdbKey();
-      const decryptedTautulli = settings1.getDecryptedTautulliKey();
-      const decryptedOverseerr = settings1.getDecryptedOverseerrKey();
-
-      // Now set DECIDARR_SECRET and run migration
-      // This migrates the jwtSecret and encryptionKey to v2 format
-      vi.stubEnv('DECIDARR_SECRET', 'migration-test-secret');
-      resetMigrationStateForTests();
-      await runMigrations();
-
-      // Re-fetch settings
-      const settings2 = await getOrCreateSettings();
-
-      // Integration credentials should still decrypt correctly
-      // even though they're still in CryptoJS format
-      // (they're encrypted with the encryptionKey, which can still be decrypted)
-      expect(settings2.getDecryptedPlexToken()).toBe(decryptedPlex);
-      expect(settings2.getDecryptedTmdbKey()).toBe(decryptedTmdb);
-      expect(settings2.getDecryptedTautulliKey()).toBe(decryptedTautulli);
-      expect(settings2.getDecryptedOverseerrKey()).toBe(decryptedOverseerr);
+      simulateRestart();
+      await connectDB();
+      const second = await rawSettings();
+      expect(second.tmdbApiKey).toBe(first.tmdbApiKey);
+      expect(second.plexToken).toBe(first.plexToken);
+      expect((await User.findOne({ plexUserId: LEGACY_ADMIN_PLEX_USER_ID }))?.plexToken).toBe(
+        firstUser?.plexToken
+      );
     });
 
-    it('handles decrypt failures gracefully with logging', async () => {
-      vi.stubEnv('DECIDARR_SECRET', 'test-secret');
-      vi.stubEnv('NODE_ENV', 'development');
-
-      await connectDB();
-
-      // Create settings manually with a corrupted encrypted value, bypassing the pre-save hook
-      await Settings.collection.insertOne({
-        _id: 'app-settings' as any,
-        jwtSecret: 'corrupted-invalid-base64-!!!',
+    it('keeps a value it cannot read exactly as stored and reports it', async () => {
+      await settingsCollection().insertOne({
+        _id: 'app-settings',
         encryptionKey: 'also-corrupted-!!!',
+        tmdbApiKey: 'U2FsdGVkX1-not-really-cryptojs',
+        overseerrApiKey: 'v2:corrupted',
         setupComplete: false,
       });
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-      // Attempting to get settings and decrypt should throw a clear error
-      const settings = await Settings.findById('app-settings');
-      expect(settings).toBeDefined();
+      await runMigrations();
 
-      // Decryption should fail with a recoverable error
-      expect(() => settings!.getJwtSecret()).toThrow(/Failed to decrypt/);
-      expect(() => settings!.getEncryptionKey()).toThrow(/Failed to decrypt/);
+      const raw = await rawSettings();
+      expect(raw.tmdbApiKey).toBe('U2FsdGVkX1-not-really-cryptojs');
+      expect(raw.overseerrApiKey).toBe('v2:corrupted');
+      expect(raw.encryptionKey).toBe('also-corrupted-!!!');
+      expect(await findCredentialsNeedingReentry()).toEqual(['TMDB API key', 'Overseerr API key']);
+      const logged = warn.mock.calls.map((args) => String(args[0])).join('\n');
+      expect(logged).toContain('TMDB API key');
+      expect(logged).not.toContain('U2FsdGVkX1-not-really-cryptojs');
+    });
+
+    it('runs exactly once for concurrent first requests', async () => {
+      vi.stubEnv('DECIDARR_SECRET', '');
+      await connectDB();
+      await seedLegacyInstall(mongoose.connection.db!, getLegacyMasterKey());
+      vi.stubEnv('DECIDARR_SECRET', SECRET);
+      simulateRestart();
+      const info = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+      const responses = await Promise.all([
+        statusGet(),
+        runMigrations(),
+        statusGet(),
+        runMigrations(),
+        runMigrations(),
+      ]);
+
+      for (const res of responses) {
+        if (res) expect(res.status).toBe(200);
+      }
+      const upgrades = info.mock.calls.filter((args) =>
+        String(args[0]).includes('Upgraded stored secrets to the v3 format')
+      );
+      expect(upgrades).toHaveLength(1);
+      expect((await getOrCreateSettings()).getDecryptedTmdbKey()).toBe(LEGACY_PLAINTEXT.tmdbApiKey);
     });
   });
 });

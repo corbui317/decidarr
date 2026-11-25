@@ -1,7 +1,8 @@
 import { cookies, headers } from 'next/headers';
 import { connectDB } from './db';
 import { getOrCreateSettings, ISettings } from './models/Settings';
-import { IUser, loadUserWithToken } from './models/User';
+import { IUser, User } from './models/User';
+import { deriveKey } from './secrets';
 import { PlexLibrary } from './services/plex';
 import { createPlexService } from './services/plex-factory';
 import { createLogger } from './logger';
@@ -116,7 +117,7 @@ export async function readCookieSession(): Promise<SessionPayload> {
 
   let payload: SessionPayload;
   try {
-    payload = verifySessionJwt<SessionPayload>(token, settings.getJwtSecret());
+    payload = verifySessionJwt<SessionPayload>(token, deriveKey('web-session'));
   } catch {
     // Expired, tampered with, or signed before a DECIDARR_SECRET change.
     throw new SessionError('UNAUTHORIZED');
@@ -140,7 +141,7 @@ export async function requireUser(): Promise<AuthContext> {
 export async function authContextForSession(payload: SessionPayload): Promise<AuthContext> {
   const settings = await getOrCreateSettings();
 
-  const user = await loadUserWithToken(payload.sub);
+  const user = await User.findById(payload.sub);
   if (!user) {
     logger.warn('Auth failed: user not found', { sub: payload.sub });
     throw new SessionError('UNAUTHORIZED');

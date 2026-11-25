@@ -1,5 +1,5 @@
-import mongoose, { Document, Model, Types } from 'mongoose';
-import { getOrCreateSettings, encryptUserData, decryptUserData } from './Settings';
+import mongoose, { Document, Model } from 'mongoose';
+import { decryptSecret, encryptSecret, type SecretLocation } from '../secrets';
 import type { AppTheme, MediaType, TvSelectionMode, AnimationStyle, AnimationSpeed } from '@/types/shared';
 import { APP_THEMES, ANIMATION_STYLES, ANIMATION_SPEEDS } from '@/types/shared';
 
@@ -47,7 +47,8 @@ export interface IUser extends Document {
   preferences: IUserPreferences;
   createdAt: Date;
   updatedAt: Date;
-  setEncryptedToken(plainToken: string, encryptionKey: string): void;
+  setEncryptedToken(plainToken: string): void;
+  /** Throws SecretUnreadableError when the stored token cannot be decrypted. */
   getDecryptedToken(): string;
 }
 
@@ -113,26 +114,17 @@ const userSchema = new mongoose.Schema<IUser>(
 
 userSchema.index({ isApproved: 1 });
 
-userSchema.methods.setEncryptedToken = function (plainToken: string, encryptionKey: string): void {
-  this.plexToken = encryptUserData(plainToken, encryptionKey);
-};
-
-userSchema.methods.getDecryptedToken = function (): string {
-  const key = (this as IUser & { _encryptionKey?: string })._encryptionKey;
-  if (!key) {
-    throw new Error('Encryption key not loaded for user token decryption');
-  }
-  return decryptUserData(this.plexToken, key);
-};
-
-export async function loadUserWithToken(userId: Types.ObjectId | string): Promise<IUser | null> {
-  const settings = await getOrCreateSettings();
-  const encryptionKey = settings.getEncryptionKey();
-  const user = await User.findById(userId);
-  if (!user) return null;
-  (user as IUser & { _encryptionKey?: string })._encryptionKey = encryptionKey;
-  return user;
+export function userTokenLocation(user: Pick<IUser, '_id'>): SecretLocation {
+  return { recordType: 'user', recordId: String(user._id), field: 'plexToken' };
 }
+
+userSchema.methods.setEncryptedToken = function (this: IUser, plainToken: string): void {
+  this.plexToken = encryptSecret(plainToken, userTokenLocation(this));
+};
+
+userSchema.methods.getDecryptedToken = function (this: IUser): string {
+  return decryptSecret(this.plexToken, userTokenLocation(this));
+};
 
 export const User: Model<IUser> =
   mongoose.models.User || mongoose.model<IUser>('User', userSchema);

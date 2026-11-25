@@ -1,13 +1,16 @@
 /**
- * Seeds a pre-DECIDARR_SECRET install exactly as it sits on disk before the
- * secret migration: CryptoJS ciphertext with no version prefix, the master key
- * derived from MONGODB_URI, and no `secretsMigrationVersion`.
+ * Seeds a pre-v3 install exactly as it sits on disk before the secret migration.
+ * `seedLegacyInstall` writes a pre-DECIDARR_SECRET install: CryptoJS ciphertext
+ * with no version prefix and the master key derived from MONGODB_URI.
+ * `seedV2Install` writes an install that already ran with DECIDARR_SECRET:
+ * "v2:" AES-256-GCM values with no AAD.
  *
  * Shared by the Vitest upgrade test and the guarded E2E seed route, so both
  * exercise the same legacy data. Production builds stub this module out
  * (see next.config.js).
  */
 import CryptoJS from 'crypto-js';
+import { createCipheriv, createHash, randomBytes } from 'crypto';
 import type mongoose from 'mongoose';
 import { E2E_MOCK_OAUTH_USER } from './plex-oauth-mocks';
 
@@ -24,11 +27,12 @@ export const LEGACY_LIBRARY_ID = '1';
 /** The settings document as stored, for tests that read it without the model. */
 export interface StoredSettings {
   _id: string;
-  jwtSecret: string;
-  encryptionKey: string;
+  /** Written only by installs from before v3. */
+  jwtSecret?: string;
+  /** Written only by installs from before v3; kept to upgrade their values. */
+  encryptionKey?: string;
   plexToken?: string;
   tmdbApiKey?: string;
-  secretsMigrationVersion?: number;
   [field: string]: unknown;
 }
 
@@ -36,13 +40,34 @@ export interface LegacyInstallSeed {
   adminUserId: string;
 }
 
-export async function seedLegacyInstall(
+type LegacyEncrypt = (plain: string, key: string) => string;
+
+const cryptoJsEncrypt: LegacyEncrypt = (plain, key) => CryptoJS.AES.encrypt(plain, key).toString();
+
+/** The "v2:<iv>:<tag>:<ciphertext>" format: AES-256-GCM keyed by SHA-256 of the key string. */
+const v2Encrypt: LegacyEncrypt = (plain, key) => {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', createHash('sha256').update(key).digest(), iv);
+  const ciphertext = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
+  return `v2:${iv.toString('base64')}:${cipher.getAuthTag().toString('base64')}:${ciphertext.toString('base64')}`;
+};
+
+export function seedLegacyInstall(db: mongoose.mongo.Db, legacyMasterKey: string): Promise<LegacyInstallSeed> {
+  return seedInstall(db, legacyMasterKey, cryptoJsEncrypt);
+}
+
+export function seedV2Install(db: mongoose.mongo.Db, decidarrSecret: string): Promise<LegacyInstallSeed> {
+  const masterKey = CryptoJS.SHA256('decidarr-secret-' + decidarrSecret).toString().substring(0, 32);
+  return seedInstall(db, masterKey, v2Encrypt);
+}
+
+async function seedInstall(
   db: mongoose.mongo.Db,
-  legacyMasterKey: string
+  masterKey: string,
+  legacyEncrypt: LegacyEncrypt
 ): Promise<LegacyInstallSeed> {
   const jwtSecret = `legacy-jwt-secret-${Date.now()}`;
   const encryptionKey = `legacy-encryption-key-${Date.now()}`;
-  const legacyEncrypt = (plain: string, key: string) => CryptoJS.AES.encrypt(plain, key).toString();
 
   await Promise.all(
     ['settings', 'users', 'librarycaches'].map((name) => db.collection(name).deleteMany({}))
@@ -63,8 +88,8 @@ export async function seedLegacyInstall(
 
   await db.collection<StoredSettings>('settings').insertOne({
     _id: 'app-settings',
-    jwtSecret: legacyEncrypt(jwtSecret, legacyMasterKey),
-    encryptionKey: legacyEncrypt(encryptionKey, legacyMasterKey),
+    jwtSecret: legacyEncrypt(jwtSecret, masterKey),
+    encryptionKey: legacyEncrypt(encryptionKey, masterKey),
     plexToken: legacyEncrypt(LEGACY_PLAINTEXT.plexToken, encryptionKey),
     tmdbApiKey: legacyEncrypt(LEGACY_PLAINTEXT.tmdbApiKey, encryptionKey),
     plexServerUrl: 'http://192.168.1.10:32400',
