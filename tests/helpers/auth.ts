@@ -112,6 +112,7 @@ export async function authenticateTestSession(options?: {
   return { token, user };
 }
 
+/** A same-origin JSON request, with the Origin header a browser sends on every write. */
 export function createJsonRequest(
   url: string,
   method: string,
@@ -119,7 +120,7 @@ export function createJsonRequest(
 ): Request {
   return new Request(url, {
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', Origin: new URL(url).origin },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 }

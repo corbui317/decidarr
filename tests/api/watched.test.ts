@@ -179,7 +179,9 @@ describe('Watched and spin-history API routes', () => {
         spunAt: new Date(),
       });
 
-      const res = await spinHistoryDelete();
+      const res = await spinHistoryDelete(
+        createJsonRequest('http://localhost/api/spin-history', 'DELETE')
+      );
       const body = await res.json();
       expect(body.deleted).toBe(1);
 

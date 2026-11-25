@@ -1,43 +1,21 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth, isAuthError } from '@/lib/auth';
-import { connectDB } from '@/lib/db';
-import { SpinHistoryEntry } from '@/lib/models/SpinHistoryEntry';
-import { getCurrentUserId } from '@/lib/spin-history';
-import { emitSyncChange } from '@/lib/sync/service';
-import { createLogger } from '@/lib/logger';
+import { NextResponse } from 'next/server';
 import mongoose from 'mongoose';
+import { z } from 'zod';
+import { route } from '@/lib/request/route';
+import { DomainError } from '@/lib/request/errors';
+import { SpinHistoryEntry } from '@/lib/models/SpinHistoryEntry';
+import { emitSyncChange } from '@/lib/sync/service';
 
-const logger = createLogger('API:SpinHistoryItem');
+const entryParams = z.object({
+  id: z.string().refine((id) => mongoose.Types.ObjectId.isValid(id), 'Invalid history id'),
+});
 
-export async function DELETE(
-  _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    await requireAuth();
-    await connectDB();
-
-    const { id } = await params;
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return NextResponse.json({ error: 'Invalid history id' }, { status: 400 });
-    }
-
-    const userId = await getCurrentUserId();
-    const result = await SpinHistoryEntry.deleteOne({ _id: id, userId });
-
-    if (result.deletedCount === 0) {
-      return NextResponse.json({ error: 'History entry not found' }, { status: 404 });
-    }
-
-    await emitSyncChange(userId, 'spin_history', id, 'delete', null);
-
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    const msg = (error as Error)?.message;
-    if (isAuthError(error)) {
-      return NextResponse.json({ error: msg }, { status: 401 });
-    }
-    logger.error('Delete spin history entry failed', { error: msg });
-    return NextResponse.json({ error: 'Failed to delete history entry' }, { status: 500 });
+export const DELETE = route({ access: 'user', params: entryParams }, async ({ session, params }) => {
+  const result = await SpinHistoryEntry.deleteOne({ _id: params.id, userId: session.userId });
+  if (result.deletedCount === 0) {
+    throw new DomainError('NOT_FOUND', 'History entry not found');
   }
-}
+
+  await emitSyncChange(session.userId, 'spin_history', params.id, 'delete', null);
+  return NextResponse.json({ success: true });
+});

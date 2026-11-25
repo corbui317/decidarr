@@ -23,8 +23,11 @@ if (typeof window !== 'undefined') {
 }
 
 const testCookieStore = new Map<string, string>();
+// What next/headers' headers() returns; in the real runtime it mirrors the request.
+const testHeaderStore = new Map<string, string>();
 
 vi.mock('next/headers', () => ({
+  headers: vi.fn(async () => new Headers(Array.from(testHeaderStore))),
   cookies: vi.fn(async () => ({
     get: (name: string) => {
       const value = testCookieStore.get(name);
@@ -39,4 +42,4 @@ vi.mock('next/headers', () => ({
   })),
 }));
 
-export { testCookieStore };
+export { testCookieStore, testHeaderStore };

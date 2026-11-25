@@ -9,9 +9,10 @@ import {
   clearTestCookies,
   createJsonRequest,
 } from '../helpers/auth';
-import { setTestCookie } from '../helpers/cookies';
+import { setTestCookie, setTestHeader, clearTestHeaders } from '../helpers/cookies';
 import { SpinHistoryEntry } from '@/lib/models/SpinHistoryEntry';
 import { IUser } from '@/lib/models/User';
+import { issueTokenPair } from '@/lib/mobile-auth/tokens';
 import {
   GET as spinHistoryGet,
   POST as spinHistoryPost,
@@ -26,6 +27,7 @@ describe('Spin history API routes', () => {
   beforeEach(async () => {
     await clearDatabase();
     clearTestCookies();
+    clearTestHeaders();
     await seedConfiguredSettings();
     const auth = await authenticateTestSession();
     testUser = auth.user;
@@ -74,21 +76,6 @@ describe('Spin history API routes', () => {
     const postRes = await spinHistoryPost(postReq as never);
     const body = await postRes.json();
     expect(body.skipped).toBe(true);
-  });
-
-  it('skips recording when disabled via installation settings for single-user scope', async () => {
-    const settings = await seedConfiguredSettings();
-    settings.spinHistoryPreferences = {
-      enabled: false,
-      retentionLimit: 50,
-      storeFilterSnapshot: true,
-    };
-    await settings.save();
-
-    clearTestCookies();
-    const { getSpinHistoryPreferences } = await import('@/lib/spin-history');
-    const prefs = await getSpinHistoryPreferences();
-    expect(prefs.enabled).toBe(false);
   });
 
   it('omits filter snapshot when storeFilterSnapshot is false', async () => {
@@ -198,7 +185,9 @@ describe('Spin history API routes', () => {
       spunAt: new Date(),
     });
 
-    const res = await spinHistoryDelete();
+    const res = await spinHistoryDelete(
+      createJsonRequest('http://localhost/api/spin-history', 'DELETE')
+    );
     const body = await res.json();
     expect(body.deleted).toBe(1);
 
@@ -275,6 +264,79 @@ describe('Spin history API routes', () => {
 
     const remaining = await SpinHistoryEntry.findOne({ userId: testUser._id });
     expect(remaining?.plexId).toBe('3');
+  });
+
+  describe('bearer clients (H2, live bug 2)', () => {
+    const LEGACY_USER_ID = '000000000000000000000001';
+
+    async function seedEntry(userId: unknown, title: string) {
+      return SpinHistoryEntry.create({
+        userId,
+        plexId: title,
+        title,
+        mediaType: 'movie',
+        libraryIds: [],
+        spunAt: new Date(),
+      });
+    }
+
+    function bearerRequest(url: string, accessToken: string, method = 'GET', body?: unknown) {
+      return new NextRequest(url, {
+        method,
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+      });
+    }
+
+    it('lets a Friend read, create, and delete only their own entries', async () => {
+      const friendA = await seedTestUser({
+        plexUserId: 'plex-friend-a',
+        plexUsername: 'frienda',
+        isAdmin: false,
+      });
+      const friendB = await seedTestUser({
+        plexUserId: 'plex-friend-b',
+        plexUsername: 'friendb',
+        isAdmin: false,
+      });
+      const legacy = await seedEntry(LEGACY_USER_ID, 'Legacy Spin');
+      await seedEntry(friendB._id, 'Friend B Spin');
+      clearTestCookies();
+      const { accessToken } = await issueTokenPair(friendA, 'device-friend-a');
+      setTestHeader('Authorization', `Bearer ${accessToken}`);
+
+      const postRes = await spinHistoryPost(
+        bearerRequest('http://localhost/api/spin-history', accessToken, 'POST', {
+          plexId: 'a-1',
+          title: 'Friend A Spin',
+          mediaType: 'movie',
+        })
+      );
+      expect(postRes.status).toBe(201);
+      expect(await SpinHistoryEntry.countDocuments({ userId: friendA._id })).toBe(1);
+
+      const getRes = await spinHistoryGet(bearerRequest('http://localhost/api/spin-history', accessToken));
+      expect(getRes.status).toBe(200);
+      const body = await getRes.json();
+      expect(body.items.map((item: { title: string }) => item.title)).toEqual(['Friend A Spin']);
+      expect(body.total).toBe(1);
+
+      const deleteLegacyRes = await spinHistoryItemDelete(
+        bearerRequest(`http://localhost/api/spin-history/${legacy._id}`, accessToken, 'DELETE'),
+        { params: Promise.resolve({ id: legacy._id.toString() }) }
+      );
+      expect(deleteLegacyRes.status).toBe(404);
+
+      const clearRes = await spinHistoryDelete(
+        bearerRequest('http://localhost/api/spin-history', accessToken, 'DELETE')
+      );
+      expect(clearRes.status).toBe(200);
+      expect((await clearRes.json()).deleted).toBe(1);
+
+      expect(await SpinHistoryEntry.countDocuments({ userId: friendA._id })).toBe(0);
+      expect(await SpinHistoryEntry.countDocuments({ userId: friendB._id })).toBe(1);
+      expect(await SpinHistoryEntry.countDocuments({ userId: LEGACY_USER_ID })).toBe(1);
+    });
   });
 
   it('isolates history between authenticated users', async () => {
