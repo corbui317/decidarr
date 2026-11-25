@@ -95,7 +95,10 @@ export interface IntegrationClient {
 
 const NULL_BODY_STATUSES = new Set([101, 103, 204, 205, 304]);
 
-/** Node transport: connects to the pinned address, keeping the hostname for Host, SNI and the certificate check. */
+/**
+ * Node transport: connects to the pinned address, keeping the hostname for Host, SNI and the certificate check.
+ * A kept-alive socket the default agent reuses was itself opened to an address that passed the same policy.
+ */
 export const nodeTransport: IntegrationFetch = ({ url, method, headers, body, signal, address }) =>
   new Promise((resolve, reject) => {
     const pinnedLookup = ((_hostname: string, options: { all?: boolean }, callback: (...args: unknown[]) => void) =>
