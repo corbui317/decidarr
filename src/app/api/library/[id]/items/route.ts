@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireUser, getTmdbApiKey, getSyncFrequencyHours, getAccessibleLibraryIds, isAuthError, authErrorStatus } from '@/lib/auth';
 import { connectDB } from '@/lib/db';
 import { LibraryCache } from '@/lib/models/LibraryCache';
-import { createPlexService } from '@/lib/services/plex-factory';
+import { PlexService } from '@/lib/services/plex';
 import { TMDbService } from '@/lib/services/tmdb';
 import { enrichWithOverseerr } from '@/lib/services/overseerr-sync';
 import type { ILibraryItem } from '@/lib/models/LibraryCache';
@@ -106,7 +106,7 @@ export async function GET(
       }
     }
 
-    const plexService = await createPlexService(
+    const plexService = new PlexService(
       auth.plexToken,
       auth.plexServerUrl,
       auth.settings.plexMachineId

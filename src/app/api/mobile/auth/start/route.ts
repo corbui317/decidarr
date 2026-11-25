@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { MobileAuthCode } from '@/lib/models/MobileAuthCode';
-import { buildPlexAuthUrl } from '@/lib/services/plex-oauth';
-import { createAuthPin } from '@/lib/services/plex-oauth-factory';
+import { buildPlexAuthUrl, createAuthPin } from '@/lib/services/plex-oauth';
 import {
   authCodeExpiresAt,
   generateDeviceCode,

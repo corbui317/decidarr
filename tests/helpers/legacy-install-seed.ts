@@ -11,15 +11,15 @@
 import CryptoJS from 'crypto-js';
 import { createCipheriv, createHash, randomBytes } from 'crypto';
 import type mongoose from 'mongoose';
-import { E2E_MOCK_OAUTH_USER } from './plex-oauth-mocks';
+import { FAKE_PLEX_ACCOUNT } from './fake-integrations';
 
 export const LEGACY_PLAINTEXT = {
   plexToken: 'test-plex-token-legacy',
   tmdbApiKey: 'test-tmdb-key-legacy',
 } as const;
 
-/** The legacy admin signs in with the identity the mock Plex OAuth flow returns. */
-export const LEGACY_ADMIN_PLEX_USER_ID = E2E_MOCK_OAUTH_USER.id;
+/** The legacy admin signs in as the account the fake plex.tv returns. */
+export const LEGACY_ADMIN_PLEX_USER_ID = FAKE_PLEX_ACCOUNT.id;
 export const LEGACY_MACHINE_ID = 'legacy-machine-1';
 export const LEGACY_LIBRARY_ID = '1';
 
@@ -75,7 +75,7 @@ async function seedInstall(
   const now = new Date();
   const { insertedId: adminUserId } = await db.collection('users').insertOne({
     plexUserId: LEGACY_ADMIN_PLEX_USER_ID,
-    plexUsername: E2E_MOCK_OAUTH_USER.username,
+    plexUsername: FAKE_PLEX_ACCOUNT.username,
     plexToken: legacyEncrypt(LEGACY_PLAINTEXT.plexToken, encryptionKey),
     isAdmin: true,
     isApproved: true,
@@ -92,7 +92,7 @@ async function seedInstall(
     plexToken: legacyEncrypt(LEGACY_PLAINTEXT.plexToken, encryptionKey),
     tmdbApiKey: legacyEncrypt(LEGACY_PLAINTEXT.tmdbApiKey, encryptionKey),
     plexServerUrl: 'http://192.168.1.10:32400',
-    plexUsername: E2E_MOCK_OAUTH_USER.username,
+    plexUsername: FAKE_PLEX_ACCOUNT.username,
     plexMachineId: LEGACY_MACHINE_ID,
     adminUserId,
     approvedPlexUserIds: [],

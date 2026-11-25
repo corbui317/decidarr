@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createPlexService } from '@/lib/services/plex-factory';
+import { PlexService } from '@/lib/services/plex';
 import { requireAdmin, isAuthError, authErrorStatus } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
 import { assertSetupSecretAllowed } from '@/lib/security/setup-secret';
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
     }
 
     logger.debug('Validating Plex token');
-    const plexService = await createPlexService(plexToken);
+    const plexService = new PlexService(plexToken);
     const validation = await plexService.validateToken();
 
     if (!validation.valid || !validation.user) {
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
         const safeUrl = await assertSafeServiceUrl(plexServerUrl);
         const normalizedUrl = safeUrl.normalized || plexServerUrl;
         logger.debug('Testing server connection', { plexServerUrl: normalizedUrl });
-        const serverPlexService = await createPlexService(plexToken, normalizedUrl);
+        const serverPlexService = new PlexService(plexToken, normalizedUrl);
         const sections = await serverPlexService.getLibrarySections();
         serverValid = true;
         libraryCount = sections.length;

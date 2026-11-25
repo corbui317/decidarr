@@ -4,7 +4,6 @@ import { createIntegrationClient, type IntegrationClient } from '../integrations
 import { isSecureCookieEnabled } from '@/lib/security/cookie-options';
 
 const logger = createLogger('PlexOAuth');
-const PLEX_TV_BASE = 'https://plex.tv';
 const PLEX_TV_TIMEOUT_MS = 15_000;
 
 export const PLEX_PRODUCT = 'Decidarr';
@@ -51,7 +50,8 @@ export function getPlexClientHeaders(extra?: Record<string, string>): Record<str
 export function plexTvClient(authToken?: string): IntegrationClient {
   return createIntegrationClient({
     integration: 'plex.tv',
-    baseUrl: PLEX_TV_BASE,
+    // E2E points this at a fake plex.tv on loopback.
+    baseUrl: process.env.PLEX_TV_URL || 'https://plex.tv',
     auth: authToken ? { header: 'X-Plex-Token', value: authToken } : undefined,
     headers: getPlexClientHeaders(),
     timeoutMs: PLEX_TV_TIMEOUT_MS,

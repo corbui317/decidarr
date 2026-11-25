@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import mongoose from 'mongoose';
 import { resetE2eDatabase, completeSetupWizard } from './helpers/e2e-test-helpers';
-import { E2E_DECIDARR_SECRET, E2E_MONGO_URI, E2E_RESET_SECRET } from './e2e-env';
+import { E2E_DECIDARR_SECRET, E2E_MONGO_URI, E2E_PLEX_SERVER_URL, E2E_RESET_SECRET } from './e2e-env';
 import {
   LEGACY_ADMIN_PLEX_USER_ID,
   LEGACY_PLAINTEXT,
@@ -113,7 +113,13 @@ test.describe('DECIDARR_SECRET encryption', () => {
     // An install from before DECIDARR_SECRET (CryptoJS, master key from MONGODB_URI)
     // is restarted with DECIDARR_SECRET set: write that legacy data, then boot it
     // the way the restart would, which runs the migration.
-    await withE2eDb((db) => seedLegacyInstall(db, legacyMasterKeyFor(E2E_MONGO_URI)).then(() => undefined));
+    // Its Plex server is the fake one on loopback, so the dashboard can list libraries.
+    await withE2eDb(async (db) => {
+      await seedLegacyInstall(db, legacyMasterKeyFor(E2E_MONGO_URI));
+      await db
+        .collection<StoredSettings>('settings')
+        .updateOne({ _id: 'app-settings' }, { $set: { plexServerUrl: E2E_PLEX_SERVER_URL } });
+    });
     const restart = await request.post('/api/test/restart', {
       headers: { 'X-E2E-Reset-Secret': E2E_RESET_SECRET },
     });
@@ -141,7 +147,7 @@ test.describe('DECIDARR_SECRET encryption', () => {
     await expect(signIn).toBeVisible({ timeout: 15000 });
     await expect(page.getByText('Welcome to Decidarr')).toHaveCount(0);
 
-    // Sign in through the mock OAuth flow as the seeded legacy admin and spin once.
+    // Sign in through the fake plex.tv as the seeded legacy admin and spin once.
     await signIn.click();
     await page
       .getByRole('group', { name: 'Movies' })

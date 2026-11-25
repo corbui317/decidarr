@@ -60,9 +60,17 @@ When the run ends, Playwright sends `SIGTERM` to the Mongo process group, which 
 
 | Variable | Purpose |
 |----------|---------|
-| `E2E_MOCK_PLEX` | When `true` outside production, Plex OAuth and API calls use mock responses (set automatically in `playwright.config.ts`). |
+| `E2E_MOCK_PLEX` | When `true` outside production, the test-only routes are enabled (set automatically in `playwright.config.ts`). |
+| `PLEX_TV_URL` | Where the app reaches plex.tv. Playwright points it at the fake plex.tv on loopback. |
 | `E2E_MONGODB_URI` | Optional, local runs only: use this MongoDB instead of the in-memory server. |
 | `E2E_TEST_RESET_SECRET` | The value the test-only routes (`POST /api/test/reset`, `POST /api/test/restart`) require in the `X-E2E-Reset-Secret` header. Playwright defaults it to `decidarr-e2e-reset`. When it is unset on the server, both routes answer 403. |
+
+### Fake Plex
+
+Playwright's global setup (`tests/e2e/fake-plex.ts`) starts two real HTTP servers on loopback: a fake plex.tv on `127.0.0.1:3102` and a fake Plex Media Server on `127.0.0.1:3103`.
+They answer with the same handlers as `tests/helpers/fake-integrations.ts`.
+The app reaches them through its integration client and URL policy like any real service, which is why the E2E server runs with `DECIDARR_ALLOW_PRIVATE_URLS=true`: loopback is only allowed under that opt-in.
+Production code has no E2E branch for Plex.
 
 ### Legacy upgrade seed
 

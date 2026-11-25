@@ -3,9 +3,8 @@ import { signSessionJwt } from './security/session-jwt';
 import { Types } from 'mongoose';
 import { getOrCreateSettings } from './models/Settings';
 import { User, IUser } from './models/User';
-import { PlexServer } from './services/plex';
-import { createPlexService } from './services/plex-factory';
-import { fetchPlexUser } from './services/plex-oauth-factory';
+import { PlexServer, PlexService } from './services/plex';
+import { fetchPlexUser } from './services/plex-oauth';
 import { assertSafeServiceUrl } from './security/service-url';
 import { createLogger } from './logger';
 import { IntegrationError } from './integrations/client';
@@ -63,7 +62,7 @@ export async function completePlexLogin(
   }
 
   const settings = await getOrCreateSettings();
-  const plexService = await createPlexService(authToken);
+  const plexService = new PlexService(authToken);
 
   let servers: PlexServer[] = [];
   try {

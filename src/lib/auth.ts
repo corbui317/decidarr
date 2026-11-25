@@ -3,8 +3,7 @@ import { connectDB } from './db';
 import { getOrCreateSettings, ISettings } from './models/Settings';
 import { IUser, User } from './models/User';
 import { deriveKey } from './secrets';
-import { PlexLibrary } from './services/plex';
-import { createPlexService } from './services/plex-factory';
+import { PlexLibrary, PlexService } from './services/plex';
 import { createLogger } from './logger';
 import { runMigrations } from './migrate';
 import { verifyAccessToken } from './mobile-auth/tokens';
@@ -228,7 +227,7 @@ export async function getAccessibleLibraryIds(
     return filterRequestedLibraryIds(cached.ids, requestedIds);
   }
 
-  const plexService = await createPlexService(
+  const plexService = new PlexService(
     auth.plexToken,
     auth.plexServerUrl,
     auth.settings.plexMachineId || null

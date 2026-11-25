@@ -9,7 +9,7 @@ import {
 import { connectDB } from '@/lib/db';
 import { LibraryCache } from '@/lib/models/LibraryCache';
 import { WatchedItem } from '@/lib/models/WatchedItem';
-import { createPlexService } from '@/lib/services/plex-factory';
+import { PlexService } from '@/lib/services/plex';
 import { TMDbService } from '@/lib/services/tmdb';
 import { createLogger } from '@/lib/logger';
 import { applyFullFilters, fetchCollectionItemIds } from '@/lib/selection/filters';
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(errorResponse, { status: 404 });
     }
 
-    const plexService = await createPlexService(plexToken, plexServerUrl, settings.plexMachineId);
+    const plexService = new PlexService(plexToken, plexServerUrl, settings.plexMachineId);
 
     let collectionItemIds: Set<string> | null = null;
     if (filters.collections && filters.collections.length > 0) {

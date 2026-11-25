@@ -9,7 +9,7 @@ import {
 import { connectDB } from '@/lib/db';
 import { LibraryCache } from '@/lib/models/LibraryCache';
 import { WatchedItem } from '@/lib/models/WatchedItem';
-import { createPlexService } from '@/lib/services/plex-factory';
+import { PlexService } from '@/lib/services/plex';
 import { createLogger } from '@/lib/logger';
 import { computeDataStats, getPoolCountWithBreakdown, fetchCollectionItemIds } from '@/lib/selection/filters';
 import { parseSelectionRequestBody } from '@/lib/validation/selection';
@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
 
     let collectionItemIds: Set<string> | null = null;
     if (filters.collections && filters.collections.length > 0) {
-      const plexService = await createPlexService(plexToken, plexServerUrl, settings.plexMachineId);
+      const plexService = new PlexService(plexToken, plexServerUrl, settings.plexMachineId);
       collectionItemIds = await fetchCollectionItemIds(
         filters.collections,
         plexService,
