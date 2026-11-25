@@ -1,74 +1,32 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { requireUser, isAuthError, authErrorStatus } from '@/lib/auth';
-import { connectDB } from '@/lib/db';
+import { NextResponse } from 'next/server';
+import { z } from 'zod';
+import { route } from '@/lib/request/route';
 import { WatchedItem } from '@/lib/models/WatchedItem';
-import { parsePlexIdParam, parseWatchedCreateBody } from '@/lib/validation/watched';
+import type { WatchedMediaType } from '@/lib/validation/watched';
 import { emitSyncChange, toWatchedContract } from '@/lib/sync/service';
-import { createLogger } from '@/lib/logger';
 
-const logger = createLogger('API:WatchedItem');
+const plexIdParams = z.object({ plexId: z.string().min(1) });
+const watchedCreateBody = z.object({
+  mediaType: z.enum(['movie', 'show', 'episode']),
+  title: z.string().trim().min(1),
+});
 
-export async function GET(
-  _request: NextRequest,
-  { params }: { params: Promise<{ plexId: string }> }
-) {
-  try {
-    const auth = await requireUser();
-    const { plexId } = await params;
-    const plexIdResult = parsePlexIdParam(plexId);
-    if (!plexIdResult.ok) {
-      return NextResponse.json({ error: plexIdResult.error }, { status: 400 });
-    }
+export const GET = route({ access: 'user', params: plexIdParams }, async ({ session, params }) => {
+  const item = await WatchedItem.findOne({
+    userId: session.userId,
+    plexId: params.plexId,
+  }).lean();
 
-    await connectDB();
+  return NextResponse.json({ watched: !!item });
+});
 
-    const item = await WatchedItem.findOne({
-      userId: auth.user._id,
-      plexId: plexIdResult.data,
-    }).lean();
-
-    return NextResponse.json({ watched: !!item });
-  } catch (error) {
-    const msg = (error as Error)?.message;
-    if (isAuthError(error)) {
-      return NextResponse.json({ error: msg }, { status: authErrorStatus(error) });
-    }
-    logger.error('Get watched status error:', { error: (error as Error).message });
-    return NextResponse.json({ error: 'Failed to get watched status' }, { status: 500 });
-  }
-}
-
-export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ plexId: string }> }
-) {
-  try {
-    const auth = await requireUser();
-
-    if (!auth.user.isAdmin) {
-      return NextResponse.json(
-        { error: 'Manual watched marking is admin-only' },
-        { status: 403 }
-      );
-    }
-
-    const { plexId } = await params;
-    const plexIdResult = parsePlexIdParam(plexId);
-    if (!plexIdResult.ok) {
-      return NextResponse.json({ error: plexIdResult.error }, { status: 400 });
-    }
-
-    const parsed = parseWatchedCreateBody(await request.json());
-    if (!parsed.ok) {
-      return NextResponse.json({ error: parsed.error }, { status: 400 });
-    }
-
-    const { mediaType, title } = parsed.data;
-
-    await connectDB();
+export const POST = route(
+  { access: 'admin', params: plexIdParams, body: watchedCreateBody },
+  async ({ session, params, body }) => {
+    const { mediaType, title } = body as { mediaType: WatchedMediaType; title: string };
 
     const item = await WatchedItem.findOneAndUpdate(
-      { userId: auth.user._id, plexId: plexIdResult.data },
+      { userId: session.userId, plexId: params.plexId },
       {
         mediaType,
         title,
@@ -79,58 +37,16 @@ export async function POST(
       { upsert: true, new: true }
     );
 
-    await emitSyncChange(
-      auth.user._id,
-      'watched',
-      plexIdResult.data,
-      'upsert',
-      toWatchedContract(item)
-    );
+    await emitSyncChange(session.userId, 'watched', params.plexId, 'upsert', toWatchedContract(item));
 
     return NextResponse.json({ item });
-  } catch (error) {
-    const msg = (error as Error)?.message;
-    if (isAuthError(error)) {
-      return NextResponse.json({ error: msg }, { status: authErrorStatus(error) });
-    }
-    logger.error('Mark watched error:', { error: (error as Error).message });
-    return NextResponse.json({ error: 'Failed to mark as watched' }, { status: 500 });
   }
-}
+);
 
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: Promise<{ plexId: string }> }
-) {
-  try {
-    const auth = await requireUser();
+export const DELETE = route({ access: 'admin', params: plexIdParams }, async ({ session, params }) => {
+  await WatchedItem.deleteOne({ userId: session.userId, plexId: params.plexId });
 
-    if (!auth.user.isAdmin) {
-      return NextResponse.json(
-        { error: 'Manual watched marking is admin-only' },
-        { status: 403 }
-      );
-    }
+  await emitSyncChange(session.userId, 'watched', params.plexId, 'delete', null);
 
-    const { plexId } = await params;
-    const plexIdResult = parsePlexIdParam(plexId);
-    if (!plexIdResult.ok) {
-      return NextResponse.json({ error: plexIdResult.error }, { status: 400 });
-    }
-
-    await connectDB();
-
-    await WatchedItem.deleteOne({ userId: auth.user._id, plexId: plexIdResult.data });
-
-    await emitSyncChange(auth.user._id, 'watched', plexIdResult.data, 'delete', null);
-
-    return NextResponse.json({ message: 'Marked as unwatched' });
-  } catch (error) {
-    const msg = (error as Error)?.message;
-    if (isAuthError(error)) {
-      return NextResponse.json({ error: msg }, { status: authErrorStatus(error) });
-    }
-    logger.error('Mark unwatched error:', { error: (error as Error).message });
-    return NextResponse.json({ error: 'Failed to mark as unwatched' }, { status: 500 });
-  }
-}
+  return NextResponse.json({ message: 'Marked as unwatched' });
+});

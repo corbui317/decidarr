@@ -1,21 +1,18 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { Types } from 'mongoose';
-import type { AuthContext } from '@/lib/auth';
 import { fakeIntegrations, plexSections, type SentRequest } from '../../helpers/fake-integrations';
 
 import {
   getAccessibleLibraryIds,
   invalidateAccessibleLibraryCache,
+  type LibraryAccess,
 } from '@/lib/auth';
 
-function createAuthContext(overrides?: Partial<AuthContext>): AuthContext {
+function createAccess(overrides?: Partial<LibraryAccess>): LibraryAccess {
   return {
-    user: { _id: 'user-123' as unknown as Types.ObjectId } as AuthContext['user'],
-    settings: { plexMachineId: 'machine-1' } as AuthContext['settings'],
+    userId: 'user-123',
+    plexMachineId: 'machine-1',
     plexToken: 'token',
     plexServerUrl: 'http://plex.local:32400',
-    isAdmin: false,
-    expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
     ...overrides,
   };
 }
@@ -36,44 +33,40 @@ describe('getAccessibleLibraryIds sections cache', () => {
   });
 
   it('calls Plex only once per user during rapid repeated requests', async () => {
-    const auth = createAuthContext();
+    const access = createAccess();
 
-    await getAccessibleLibraryIds(auth);
-    await getAccessibleLibraryIds(auth);
-    await getAccessibleLibraryIds(auth);
+    await getAccessibleLibraryIds(access);
+    await getAccessibleLibraryIds(access);
+    await getAccessibleLibraryIds(access);
 
     expect(sectionRequests()).toBe(1);
   });
 
   it('filters requested library ids from cached section list', async () => {
-    const auth = createAuthContext();
+    const access = createAccess();
 
-    const result = await getAccessibleLibraryIds(auth, ['lib-1', 'lib-3', 'missing']);
+    const result = await getAccessibleLibraryIds(access, ['lib-1', 'lib-3', 'missing']);
 
     expect(result).toEqual(['lib-1']);
-    await getAccessibleLibraryIds(auth, ['lib-2']);
+    await getAccessibleLibraryIds(access, ['lib-2']);
     expect(sectionRequests()).toBe(1);
   });
 
   it('invalidates cached sections for a user', async () => {
-    const auth = createAuthContext();
+    const access = createAccess();
 
-    await getAccessibleLibraryIds(auth);
-    invalidateAccessibleLibraryCache(String(auth.user._id));
-    await getAccessibleLibraryIds(auth);
+    await getAccessibleLibraryIds(access);
+    invalidateAccessibleLibraryCache(access.userId);
+    await getAccessibleLibraryIds(access);
 
     expect(sectionRequests()).toBe(2);
   });
 
   it('uses separate cache entries per machine id', async () => {
-    const auth = createAuthContext();
+    const access = createAccess();
 
-    await getAccessibleLibraryIds(auth);
-    await getAccessibleLibraryIds(
-      createAuthContext({
-        settings: { plexMachineId: 'machine-2' } as AuthContext['settings'],
-      })
-    );
+    await getAccessibleLibraryIds(access);
+    await getAccessibleLibraryIds(createAccess({ plexMachineId: 'machine-2' }));
 
     expect(sectionRequests()).toBe(2);
   });

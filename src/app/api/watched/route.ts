@@ -1,51 +1,38 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { requireUser, isAuthError, authErrorStatus } from '@/lib/auth';
-import { connectDB } from '@/lib/db';
+import { NextResponse } from 'next/server';
+import { z } from 'zod';
+import { route } from '@/lib/request/route';
 import { WatchedItem } from '@/lib/models/WatchedItem';
-import { createLogger } from '@/lib/logger';
 
 // Reads the session and database on every request; never prerender at build time.
 export const dynamic = 'force-dynamic';
 
-const logger = createLogger('API:Watched');
+const watchedListQuery = z.object({
+  mediaType: z.string().optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+});
 
-export async function GET(request: NextRequest) {
-  try {
-    const auth = await requireUser();
-    const mediaType = request.nextUrl.searchParams.get('mediaType');
-    const rawPage = parseInt(request.nextUrl.searchParams.get('page') || '1');
-    const rawLimit = parseInt(request.nextUrl.searchParams.get('limit') || '50');
-    const page = Math.max(1, isNaN(rawPage) ? 1 : rawPage);
-    const limit = Math.max(1, Math.min(200, isNaN(rawLimit) ? 50 : rawLimit));
+export const GET = route({ access: 'user', query: watchedListQuery }, async ({ session, query }) => {
+  const { mediaType, page, limit } = query;
 
-    await connectDB();
-
-    const query: Record<string, unknown> = { userId: auth.user._id };
-    if (mediaType) {
-      query.mediaType = mediaType;
-    }
-
-    const skip = (page - 1) * limit;
-    const [items, total] = await Promise.all([
-      WatchedItem.find(query).sort({ watchedAt: -1 }).skip(skip).limit(limit).lean(),
-      WatchedItem.countDocuments(query),
-    ]);
-
-    return NextResponse.json({
-      items,
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit),
-      },
-    });
-  } catch (error) {
-    const msg = (error as Error)?.message;
-    if (isAuthError(error)) {
-      return NextResponse.json({ error: msg }, { status: authErrorStatus(error) });
-    }
-    logger.error('Get watched error:', { error: (error as Error).message });
-    return NextResponse.json({ error: 'Failed to get watched items' }, { status: 500 });
+  const filter: Record<string, unknown> = { userId: session.userId };
+  if (mediaType) {
+    filter.mediaType = mediaType;
   }
-}
+
+  const skip = (page - 1) * limit;
+  const [items, total] = await Promise.all([
+    WatchedItem.find(filter).sort({ watchedAt: -1 }).skip(skip).limit(limit).lean(),
+    WatchedItem.countDocuments(filter),
+  ]);
+
+  return NextResponse.json({
+    items,
+    pagination: {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit),
+    },
+  });
+});
