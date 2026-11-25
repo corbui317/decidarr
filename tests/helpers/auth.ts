@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import { getOrCreateSettings } from '@/lib/models/Settings';
 import { User, IUser } from '@/lib/models/User';
 import { connectDB } from '@/lib/db';
+import { deriveKey } from '@/lib/secrets';
 import { setTestCookie, clearTestCookies } from './cookies';
 
 export { clearTestCookies };
@@ -56,7 +57,6 @@ export async function seedTestUser(overrides?: {
 }): Promise<IUser> {
   await connectDB();
   const settings = await getOrCreateSettings();
-  const encryptionKey = settings.getEncryptionKey();
   const plexUserId = overrides?.plexUserId ?? 'plex-user-test-1';
   const plexToken = settings.getDecryptedPlexToken() ?? 'test-plex-token-abcdefghijklmnop';
 
@@ -70,7 +70,7 @@ export async function seedTestUser(overrides?: {
       sessionVersion: 0,
       preferences: {},
     });
-    user.setEncryptedToken(plexToken, encryptionKey);
+    user.setEncryptedToken(plexToken);
     await user.save();
   }
 
@@ -88,7 +88,6 @@ export async function seedTestUser(overrides?: {
 }
 
 export async function createModernSessionToken(user: IUser): Promise<string> {
-  const settings = await getOrCreateSettings();
   return jwt.sign(
     {
       sub: user._id.toString(),
@@ -96,7 +95,7 @@ export async function createModernSessionToken(user: IUser): Promise<string> {
       isAdmin: user.isAdmin,
       sessionVersion: user.sessionVersion,
     },
-    settings.getJwtSecret(),
+    deriveKey('web-session'),
     { expiresIn: '7d' }
   );
 }

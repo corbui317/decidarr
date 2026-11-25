@@ -1,5 +1,5 @@
 import mongoose, { Document, Model, Types } from 'mongoose';
-import { decryptUserData, encryptUserData } from './Settings';
+import { decryptSecret, encryptSecret, type SecretLocation } from '../secrets';
 
 export interface IMobileAuthCode extends Document {
   deviceCode: string;
@@ -8,13 +8,14 @@ export interface IMobileAuthCode extends Document {
   pinId: number;
   pinCode: string;
   userId?: Types.ObjectId;
-  /** The approved Plex token, AES-256-GCM encrypted ("v2:") with the settings encryption key. */
+  /** The approved Plex token, encrypted in the v3 format (see docs/stored-secrets.md). */
   plexAuthToken?: string;
   expiresAt: Date;
   exchangedAt?: Date;
   createdAt: Date;
-  setEncryptedPlexAuthToken(plainToken: string, encryptionKey: string): void;
-  getDecryptedPlexAuthToken(encryptionKey: string): string | null;
+  setEncryptedPlexAuthToken(plainToken: string): void;
+  /** Null when no token is stored or it cannot be decrypted; the PIN is then polled again. */
+  getDecryptedPlexAuthToken(): string | null;
 }
 
 const mobileAuthCodeSchema = new mongoose.Schema<IMobileAuthCode>(
@@ -34,18 +35,26 @@ const mobileAuthCodeSchema = new mongoose.Schema<IMobileAuthCode>(
 
 mobileAuthCodeSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
+export function authCodeTokenLocation(code: Pick<IMobileAuthCode, '_id'>): SecretLocation {
+  return { recordType: 'mobileAuthCode', recordId: String(code._id), field: 'plexAuthToken' };
+}
+
 mobileAuthCodeSchema.methods.setEncryptedPlexAuthToken = function (
-  plainToken: string,
-  encryptionKey: string
+  this: IMobileAuthCode,
+  plainToken: string
 ): void {
-  this.plexAuthToken = encryptUserData(plainToken, encryptionKey);
+  this.plexAuthToken = encryptSecret(plainToken, authCodeTokenLocation(this));
 };
 
 mobileAuthCodeSchema.methods.getDecryptedPlexAuthToken = function (
-  encryptionKey: string
+  this: IMobileAuthCode
 ): string | null {
   if (!this.plexAuthToken) return null;
-  return decryptUserData(this.plexAuthToken, encryptionKey);
+  try {
+    return decryptSecret(this.plexAuthToken, authCodeTokenLocation(this));
+  } catch {
+    return null;
+  }
 };
 
 export const MobileAuthCode: Model<IMobileAuthCode> =

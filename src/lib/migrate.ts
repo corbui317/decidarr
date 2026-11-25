@@ -1,23 +1,28 @@
 import mongoose from 'mongoose';
-import { getOrCreateSettings, recoverFromSecretChange } from './models/Settings';
-import { User } from './models/User';
+import {
+  getOrCreateSettings,
+  SETTINGS_ID,
+  SETTINGS_SECRET_FIELDS,
+  type ISettings,
+} from './models/Settings';
+import { User, userTokenLocation } from './models/User';
 import { WatchedItem } from './models/WatchedItem';
 import { LibraryCache } from './models/LibraryCache';
 import { SpinHistoryEntry } from './models/SpinHistoryEntry';
-import { MobileAuthCode } from './models/MobileAuthCode';
+import { MobileAuthCode, authCodeTokenLocation } from './models/MobileAuthCode';
 import {
   extractThumbPathFromUrl,
   containsPlexToken,
 } from './plex-image';
 import {
-  getLegacyMasterKey,
-  getMasterKey,
-  CURRENT_MIGRATION_VERSION,
-  encryptWithAesGcm,
-  decryptVersioned,
-  encryptUserData,
-  decryptUserData,
-} from './models/Settings';
+  decryptLegacy,
+  decryptSecret,
+  encryptSecret,
+  isCurrentCiphertext,
+  isLegacyCiphertext,
+  unwrapLegacyDataKey,
+  type SecretLocation,
+} from './secrets';
 import { createLogger } from './logger';
 import { assertTestOnly } from './test-only';
 
@@ -25,7 +30,8 @@ const logger = createLogger('Migration');
 
 const LEGACY_USER_ID = new mongoose.Types.ObjectId('000000000000000000000001');
 
-let migrationRan = false;
+/** The one migration run of this process, shared by concurrent callers (ADR 0001). */
+let migration: Promise<void> | null = null;
 
 function sanitizeCachedItem(item: Record<string, unknown>): boolean {
   let changed = false;
@@ -93,243 +99,155 @@ async function migrateTokenizedMediaUrls(): Promise<void> {
   }
 }
 
-async function migrateSettingsMasterKey(settings: Awaited<ReturnType<typeof getOrCreateSettings>>): Promise<void> {
-  // Check if migration is needed
-  if (settings.secretsMigrationVersion === CURRENT_MIGRATION_VERSION) {
-    return;
-  }
-
-  // If no DECIDARR_SECRET in non-production, skip migration
-  if (!process.env.DECIDARR_SECRET?.trim() && process.env.NODE_ENV !== 'production') {
-    return;
-  }
-
-  const legacyKey = getLegacyMasterKey();
-  const newKey = getMasterKey();
-
-  // If keys are the same, we're not using DECIDARR_SECRET, skip migration
-  if (legacyKey === newKey) {
-    settings.secretsMigrationVersion = CURRENT_MIGRATION_VERSION;
-    await settings.save();
-    return;
-  }
-
-  logger.info('Starting secret migration to AES-256-GCM');
-
-  const reencrypt = (encrypted: string, fieldName: string): string => {
-    // If already in v2 format, no migration needed
-    if (encrypted.startsWith('v2:')) {
-      return encrypted;
-    }
-
-    try {
-      // Decrypt with legacy key
-      const plain = decryptVersioned(encrypted, legacyKey);
-      if (!plain) {
-        logger.warn(`Empty decryption result for ${fieldName}, skipping re-encryption`);
-        return encrypted;
-      }
-
-      // Re-encrypt with new key using AES-256-GCM
-      return encryptWithAesGcm(plain, newKey);
-    } catch (err) {
-      logger.error(`Failed to migrate ${fieldName}`, { error: String(err) });
-      throw new Error(`Secret migration failed for ${fieldName}: ${String(err)}`);
-    }
-  };
-
-  try {
-    const newJwtSecret = reencrypt(settings.jwtSecret, 'jwtSecret');
-    const newEncryptionKey = reencrypt(settings.encryptionKey, 'encryptionKey');
-
-    // Only save if values actually changed
-    if (newJwtSecret !== settings.jwtSecret || newEncryptionKey !== settings.encryptionKey) {
-      settings.jwtSecret = newJwtSecret;
-      settings.encryptionKey = newEncryptionKey;
-      settings.secretsMigrationVersion = CURRENT_MIGRATION_VERSION;
-      await settings.save();
-      logger.info('Successfully migrated secrets to AES-256-GCM');
-    } else {
-      // Values didn't change, but mark migration as complete
-      settings.secretsMigrationVersion = CURRENT_MIGRATION_VERSION;
-      await settings.save();
-      logger.info('Secrets already in current format, marked migration complete');
-    }
-  } catch (err) {
-    // Secret migration failure likely means DECIDARR_SECRET changed
-    logger.error('Secret migration failed - DECIDARR_SECRET may have changed', {
-      error: String(err),
-    });
-
-    // Trigger recovery: generate fresh keys, clear encrypted fields
-    await recoverFromSecretChange();
-
-    logger.info('Recovery complete - admin can now re-login to re-enter credentials');
-  }
-}
+const SETTINGS_SECRET_LABELS: Record<(typeof SETTINGS_SECRET_FIELDS)[number], string> = {
+  plexToken: 'Plex token (server settings)',
+  tmdbApiKey: 'TMDB API key',
+  tautulliApiKey: 'Tautulli API key',
+  overseerrApiKey: 'Overseerr API key',
+};
 
 /**
- * After the one-time migration, the stored jwtSecret and encryptionKey are
- * wrapped with the key derived from DECIDARR_SECRET. If they no longer decrypt,
- * the operator changed DECIDARR_SECRET: start over with fresh keys rather than
- * failing every request.
+ * Re-encrypts every readable value written before v3 (v2 or CryptoJS, under the legacy
+ * data key) and encrypts plaintext Plex tokens left on pending mobile sign-ins.
+ * A value that cannot be read is left exactly as it is: nothing is ever cleared here.
+ * Each write only lands if the stored value is still the one that was read.
  */
-async function recoverIfSecretChanged(
-  settings: Awaited<ReturnType<typeof getOrCreateSettings>>
-): Promise<Awaited<ReturnType<typeof getOrCreateSettings>>> {
-  if (settings.secretsMigrationVersion !== CURRENT_MIGRATION_VERSION) {
-    return settings;
-  }
+async function upgradeStoredSecrets(settings: ISettings): Promise<void> {
+  let legacyDataKey: string | null | undefined;
+  const readLegacyDataKey = (): string | null => {
+    if (legacyDataKey === undefined) {
+      try {
+        legacyDataKey = settings.encryptionKey ? unwrapLegacyDataKey(settings.encryptionKey) : null;
+      } catch {
+        legacyDataKey = null;
+      }
+    }
+    return legacyDataKey;
+  };
 
-  try {
-    settings.getJwtSecret();
-    settings.getEncryptionKey();
-    return settings;
-  } catch {
-    logger.error(
-      'Stored secrets cannot be decrypted with the current DECIDARR_SECRET (it changed). ' +
-        'Generating fresh keys and clearing stored credentials: sign in again with Plex as the ' +
-        'server owner and re-enter integration credentials in Settings.'
-    );
-    return recoverFromSecretChange();
-  }
-}
-
-async function migrateIntegrationCredentials(settings: Awaited<ReturnType<typeof getOrCreateSettings>>): Promise<void> {
-  // Get encryption key - must be decrypted at this point
-  let encryptionKey: string;
-  try {
-    encryptionKey = settings.getEncryptionKey();
-  } catch (err) {
-    logger.warn('Skipping integration credentials migration - encryption key unavailable');
-    return;
-  }
-
-  let changed = false;
-
-  // Helper to re-encrypt if not already v2:
-  const reencryptUserData = (encrypted: string | undefined, fieldName: string): string | undefined => {
-    if (!encrypted) return encrypted;
-    if (encrypted.startsWith('v2:')) return encrypted;
-
+  const upgrade = (stored: string, location: SecretLocation): string | null => {
+    if (isCurrentCiphertext(stored)) return null;
+    if (!isLegacyCiphertext(stored)) {
+      // Only pending mobile sign-ins ever stored a Plex token in plaintext.
+      return location.recordType === 'mobileAuthCode' ? encryptSecret(stored, location) : null;
+    }
+    const dataKey = readLegacyDataKey();
+    if (!dataKey) return null;
     try {
-      // Legacy CryptoJS ciphertext, validated and decrypted with the encryption key
-      const plain = decryptUserData(encrypted, encryptionKey);
-
-      // Re-encrypt with AES-256-GCM
-      return encryptUserData(plain, encryptionKey);
-    } catch (err) {
-      logger.error(`Failed to migrate ${fieldName}`, { error: String(err) });
-      return encrypted;
+      return encryptSecret(decryptLegacy(stored, dataKey), location);
+    } catch {
+      return null;
     }
   };
 
-  // Migrate integration credentials
-  if (settings.plexToken) {
-    const migrated = reencryptUserData(settings.plexToken, 'plexToken');
-    if (migrated !== settings.plexToken) {
-      settings.plexToken = migrated;
-      changed = true;
+  let upgraded = 0;
+
+  const settingsUpdate: Record<string, string> = {};
+  const settingsFilter: Record<string, string> = { _id: SETTINGS_ID };
+  for (const field of SETTINGS_SECRET_FIELDS) {
+    const stored = settings[field];
+    const next = stored && upgrade(stored, { recordType: 'settings', recordId: SETTINGS_ID, field });
+    if (stored && next) {
+      settingsFilter[field] = stored;
+      settingsUpdate[field] = next;
+    }
+  }
+  if (Object.keys(settingsUpdate).length > 0) {
+    const result = await mongoose.connection
+      .collection('settings')
+      .updateOne(settingsFilter as never, { $set: settingsUpdate });
+    if (result.modifiedCount === 1) {
+      Object.assign(settings, settingsUpdate);
+      upgraded += Object.keys(settingsUpdate).length;
     }
   }
 
-  if (settings.tmdbApiKey) {
-    const migrated = reencryptUserData(settings.tmdbApiKey, 'tmdbApiKey');
-    if (migrated !== settings.tmdbApiKey) {
-      settings.tmdbApiKey = migrated;
-      changed = true;
-    }
-  }
-
-  if (settings.tautulliApiKey) {
-    const migrated = reencryptUserData(settings.tautulliApiKey, 'tautulliApiKey');
-    if (migrated !== settings.tautulliApiKey) {
-      settings.tautulliApiKey = migrated;
-      changed = true;
-    }
-  }
-
-  if (settings.overseerrApiKey) {
-    const migrated = reencryptUserData(settings.overseerrApiKey, 'overseerrApiKey');
-    if (migrated !== settings.overseerrApiKey) {
-      settings.overseerrApiKey = migrated;
-      changed = true;
-    }
-  }
-
-  if (changed) {
-    await settings.save();
-    logger.info('Successfully migrated integration credentials to AES-256-GCM');
-  }
-
-  // Migrate all user plexTokens
-  const users = await User.find({ plexToken: { $exists: true, $ne: null } });
-  let userCount = 0;
-
+  const users = await User.find({ plexToken: { $exists: true, $nin: [null, ''] } }, { plexToken: 1 });
   for (const user of users) {
-    if (user.plexToken && !user.plexToken.startsWith('v2:')) {
-      const migrated = reencryptUserData(user.plexToken, `user ${user._id} plexToken`);
-      if (migrated && migrated !== user.plexToken) {
-        user.plexToken = migrated;
-        await user.save();
-        userCount++;
-      }
-    }
+    const next = upgrade(user.plexToken, userTokenLocation(user));
+    if (!next) continue;
+    const result = await User.updateOne(
+      { _id: user._id, plexToken: user.plexToken },
+      { $set: { plexToken: next } }
+    );
+    upgraded += result.modifiedCount;
   }
 
-  if (userCount > 0) {
-    logger.info(`Successfully migrated ${userCount} user plexTokens to AES-256-GCM`);
+  const codes = await MobileAuthCode.find(
+    { plexAuthToken: { $exists: true, $nin: [null, ''] } },
+    { plexAuthToken: 1 }
+  );
+  for (const code of codes) {
+    const next = code.plexAuthToken && upgrade(code.plexAuthToken, authCodeTokenLocation(code));
+    if (!next) continue;
+    const result = await MobileAuthCode.updateOne(
+      { _id: code._id, plexAuthToken: code.plexAuthToken },
+      { $set: { plexAuthToken: next } }
+    );
+    upgraded += result.modifiedCount;
+  }
+
+  if (upgraded > 0) {
+    logger.info('Upgraded stored secrets to the v3 format', { count: upgraded });
   }
 }
 
 /**
- * Pending mobile sign-ins created before the AES-256-GCM scheme stored the approved Plex
- * token in plaintext. Encrypt those in place; codes are short-lived, so this only ever
- * touches sign-ins that were in flight during the upgrade.
+ * Labels of the stored credentials that cannot be decrypted with the current keys.
+ * They are kept unchanged; the Admin re-enters them, or restarts with the previous
+ * DECIDARR_SECRET and MONGODB_URI to get them back.
  */
-async function migrateMobileAuthCodeTokens(
-  settings: Awaited<ReturnType<typeof getOrCreateSettings>>
-): Promise<void> {
-  let encryptionKey: string;
-  try {
-    encryptionKey = settings.getEncryptionKey();
-  } catch {
-    logger.warn('Skipping mobile auth code migration - encryption key unavailable');
-    return;
+export async function findCredentialsNeedingReentry(): Promise<string[]> {
+  const settings = await getOrCreateSettings();
+  const labels: string[] = [];
+  const unreadable = (stored: string, location: SecretLocation): boolean => {
+    try {
+      decryptSecret(stored, location);
+      return false;
+    } catch {
+      return true;
+    }
+  };
+
+  for (const field of SETTINGS_SECRET_FIELDS) {
+    const stored = settings[field];
+    if (stored && unreadable(stored, { recordType: 'settings', recordId: SETTINGS_ID, field })) {
+      labels.push(SETTINGS_SECRET_LABELS[field]);
+    }
   }
 
-  const codes = await MobileAuthCode.find({
-    plexAuthToken: { $exists: true, $nin: [null, ''], $not: /^v2:/ },
-  });
-
-  for (const code of codes) {
-    code.setEncryptedPlexAuthToken(code.plexAuthToken as string, encryptionKey);
-    await code.save();
+  const users = await User.find(
+    { plexToken: { $exists: true, $nin: [null, ''] } },
+    { plexToken: 1, plexUsername: 1, plexUserId: 1 }
+  ).sort({ plexUsername: 1 });
+  for (const user of users) {
+    if (unreadable(user.plexToken, userTokenLocation(user))) {
+      labels.push(`Plex sign-in for ${user.plexUsername || user.plexUserId}`);
+    }
   }
 
-  if (codes.length > 0) {
-    logger.info('Encrypted pending mobile auth code Plex tokens with AES-256-GCM', {
-      count: codes.length,
-    });
-  }
+  return labels;
 }
 
-export async function runMigrations(): Promise<void> {
-  if (migrationRan) return;
+/** Runs this process's migrations once; concurrent callers share the same run, and a failed run is retried. */
+export function runMigrations(): Promise<void> {
+  migration ??= migrate().catch((err) => {
+    migration = null;
+    throw err;
+  });
+  return migration;
+}
 
-  await migrateSettingsMasterKey(await getOrCreateSettings());
-  // Re-read: the master-key migration or its recovery may have replaced the document.
-  const settings = await recoverIfSecretChanged(await getOrCreateSettings());
+async function migrate(): Promise<void> {
+  const settings = await getOrCreateSettings();
 
-  await migrateIntegrationCredentials(settings);
-  await migrateMobileAuthCodeTokens(settings);
+  await upgradeStoredSecrets(settings);
   await migrateTokenizedMediaUrls();
 
   if (settings.setupComplete && !settings.adminUserId) {
     const legacyToken = settings.getDecryptedPlexToken();
     if (legacyToken && settings.plexUsername) {
       logger.info('Migrating legacy single-user install to admin User');
-      const encryptionKey = settings.getEncryptionKey();
       let admin = await User.findOne({ plexUserId: settings.plexMachineId ? `legacy-${settings.plexUsername}` : settings.plexUsername });
 
       if (!admin && settings.plexUsername) {
@@ -347,7 +265,7 @@ export async function runMigrations(): Promise<void> {
             animationSpeed: settings.uiPreferences?.animationSpeed || 'normal',
           },
         });
-        admin.setEncryptedToken(legacyToken, encryptionKey);
+        admin.setEncryptedToken(legacyToken);
         await admin.save();
       }
 
@@ -392,11 +310,18 @@ export async function runMigrations(): Promise<void> {
     }
   }
 
-  migrationRan = true;
+  const needReentry = await findCredentialsNeedingReentry();
+  if (needReentry.length > 0) {
+    logger.warn(
+      'Some stored credentials cannot be decrypted with the current DECIDARR_SECRET and MONGODB_URI. ' +
+        'They are kept unchanged: restart with the previous values to recover them, or re-enter them.',
+      { credentials: needReentry }
+    );
+  }
 }
 
 /** @internal Test-only reset for migration state */
 export function resetMigrationStateForTests(): void {
   assertTestOnly('resetMigrationStateForTests');
-  migrationRan = false;
+  migration = null;
 }

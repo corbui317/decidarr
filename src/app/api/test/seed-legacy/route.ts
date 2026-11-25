@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import { connectDB, forgetConnectionForTests } from '@/lib/db';
 import { resetMigrationStateForTests } from '@/lib/migrate';
-import { getLegacyMasterKey } from '@/lib/models/Settings';
+import { getLegacyMasterKey } from '@/lib/secrets';
 
 /**
  * Test-only: seed a legacy (pre-DECIDARR_SECRET) install, then boot it the way

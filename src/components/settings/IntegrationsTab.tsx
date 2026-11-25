@@ -11,6 +11,13 @@ import OverseerrIntegration from './integrations/OverseerrIntegration';
 
 type IntegrationSubTab = 'plex' | 'tmdb' | 'tautulli' | 'overseerr';
 
+const INTEGRATION_LABELS: Record<IntegrationSubTab, string> = {
+  plex: 'Plex',
+  tmdb: 'TMDB',
+  tautulli: 'Tautulli',
+  overseerr: 'Overseerr',
+};
+
 export default function IntegrationsTab() {
   const { isAdmin } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -91,6 +98,24 @@ export default function IntegrationsTab() {
         </div>
       )}
 
+      {settings && settings.credentialsNeedingReentry.length > 0 && (
+        <div
+          role="alert"
+          className="mb-5 p-4 rounded-lg bg-amber-900/30 border border-amber-700/50 text-amber-200 text-sm"
+        >
+          <p className="font-medium">These stored credentials cannot be decrypted and need re-entering:</p>
+          <ul className="mt-2 list-disc pl-5">
+            {settings.credentialsNeedingReentry.map((label) => (
+              <li key={label}>{label}</li>
+            ))}
+          </ul>
+          <p className="mt-2">
+            They are kept unchanged. If <code>DECIDARR_SECRET</code> or <code>MONGODB_URI</code> changed,
+            restart with the previous values to get them back.
+          </p>
+        </div>
+      )}
+
       {success && (
         <div className="mb-5 bg-green-500/10 border border-green-500/50 rounded-lg p-4">
           <p className="text-green-400">{success}</p>
@@ -115,7 +140,7 @@ export default function IntegrationsTab() {
                 : 'text-decidarr-text-muted hover:text-decidarr-text'
             }`}
           >
-            {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            {INTEGRATION_LABELS[tab]}
           </button>
         ))}
       </div>

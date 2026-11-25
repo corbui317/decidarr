@@ -10,7 +10,7 @@ const logger = createLogger('API:AuthRefresh');
 export async function POST() {
   try {
     await connectDB();
-    const { user, settings, plexToken } = await requireUser();
+    const { user, plexToken } = await requireUser();
 
     const plexService = await createPlexService(plexToken);
     const validation = await plexService.validateToken();
@@ -25,7 +25,7 @@ export async function POST() {
     user.tokenValidatedAt = new Date();
     await user.save();
 
-    await issueSessionCookie(user, settings.getJwtSecret());
+    await issueSessionCookie(user);
 
     // Calculate expiry (7 days from now, matching issueSessionCookie)
     const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
