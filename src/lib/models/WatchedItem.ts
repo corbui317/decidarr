@@ -1,5 +1,5 @@
 import mongoose, { Document, Model, Types } from 'mongoose';
-import type { MediaTypeWithEpisode } from '@/types/shared';
+import type { MediaTypeWithEpisode } from '@decidarr/api-contracts';
 
 export interface IWatchedItem extends Document {
   userId: Types.ObjectId;

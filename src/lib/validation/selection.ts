@@ -1,5 +1,4 @@
-import type { Filters } from '@/types/filters';
-import type { MediaType, TvSelectionMode } from '@/types/shared';
+import type { Filters, MediaType, TvSelectionMode } from '@decidarr/api-contracts';
 import { type ParseResult, isNonEmptyString, parseStringArray } from './common';
 
 export interface SelectionRequestBody {

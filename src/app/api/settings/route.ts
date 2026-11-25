@@ -4,7 +4,7 @@ import { requireAdmin, isAuthError, authErrorStatus, invalidateAccessibleLibrary
 import { createLogger } from '@/lib/logger';
 import { findCredentialsNeedingReentry } from '@/lib/migrate';
 import { assertSafeServiceUrl } from '@/lib/security/service-url';
-import { APP_THEMES, ANIMATION_STYLES, ANIMATION_SPEEDS } from '@/types/shared';
+import { APP_THEMES, ANIMATION_STYLES, ANIMATION_SPEEDS } from '@decidarr/api-contracts';
 
 // Reads the session and database on every request; never prerender at build time.
 export const dynamic = 'force-dynamic';

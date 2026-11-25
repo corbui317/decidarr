@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { spinHistoryApi, SpinHistoryEntry } from '@/lib/api';
 import { plexImageUrl } from '@/lib/plex-image';
-import { Filters } from '@/types/filters';
+import { Filters } from '@decidarr/api-contracts';
 
 interface RecentSpinsProps {
   refreshKey?: number;

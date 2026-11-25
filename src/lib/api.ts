@@ -1,9 +1,9 @@
 'use client';
 
-import type { Filters } from '@/types/filters';
 import type { LoginErrorCode } from './auth-errors';
-import type { SelectionResultResponse } from '@/types/api/selection';
 import type {
+  Filters,
+  SelectionResultResponse,
   MediaType,
   MediaTypeWithEpisode,
   TvSelectionMode,
@@ -11,7 +11,7 @@ import type {
   AnimationStyle,
   AnimationSpeed,
   SelectionParameters,
-} from '@/types/shared';
+} from '@decidarr/api-contracts';
 import type { WatchedMediaType } from '@/lib/validation/watched';
 
 // Re-export commonly used types

@@ -1,5 +1,13 @@
-import type { MediaType, TvSelectionMode, AppTheme, AnimationStyle, AnimationSpeed } from '@/types/shared';
-import { APP_THEMES, ANIMATION_STYLES, ANIMATION_SPEEDS } from '@/types/shared';
+import {
+  APP_THEMES,
+  ANIMATION_STYLES,
+  ANIMATION_SPEEDS,
+  type MediaType,
+  type TvSelectionMode,
+  type AppTheme,
+  type AnimationStyle,
+  type AnimationSpeed,
+} from '@decidarr/api-contracts';
 
 import { type ParseResult, parseStringArray } from './common';
 

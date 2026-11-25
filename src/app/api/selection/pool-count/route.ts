@@ -13,7 +13,7 @@ import { PlexService } from '@/lib/services/plex';
 import { createLogger } from '@/lib/logger';
 import { computeDataStats, getPoolCountWithBreakdown, fetchCollectionItemIds } from '@/lib/selection/filters';
 import { parseSelectionRequestBody } from '@/lib/validation/selection';
-import { EMPTY_DATA_STATS } from '@/types/shared';
+import { EMPTY_DATA_STATS } from '@decidarr/api-contracts';
 
 const logger = createLogger('API:PoolCount');
 

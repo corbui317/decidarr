@@ -1,7 +1,15 @@
 import mongoose, { Document, Model } from 'mongoose';
 import { decryptSecret, encryptSecret, type SecretLocation } from '../secrets';
-import type { AppTheme, MediaType, TvSelectionMode, AnimationStyle, AnimationSpeed } from '@/types/shared';
-import { APP_THEMES, ANIMATION_STYLES, ANIMATION_SPEEDS } from '@/types/shared';
+import {
+  APP_THEMES,
+  ANIMATION_STYLES,
+  ANIMATION_SPEEDS,
+  type AppTheme,
+  type MediaType,
+  type TvSelectionMode,
+  type AnimationStyle,
+  type AnimationSpeed,
+} from '@decidarr/api-contracts';
 
 // Re-export for backward compatibility
 export type { AppTheme, AnimationStyle, AnimationSpeed };

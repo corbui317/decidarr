@@ -15,8 +15,7 @@ import { createLogger } from '@/lib/logger';
 import { applyFullFilters, fetchCollectionItemIds } from '@/lib/selection/filters';
 import { sanitizeLibraryItemForClient } from '@/lib/plex-image';
 import { parseSelectionRequestBody } from '@/lib/validation/selection';
-import type { SelectionResultResponse } from '@/types/api/selection';
-import type { SelectionError } from '@/types/shared';
+import type { SelectionResultResponse, SelectionError } from '@decidarr/api-contracts';
 
 const logger = createLogger('API:Random');
 
