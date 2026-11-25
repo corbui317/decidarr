@@ -19,7 +19,8 @@
     "test:e2e": "playwright test",
     "verify:pwa": "node scripts/verify-pwa-origin.mjs",
     "mobile:start": "npm run start --workspace=@decidarr/mobile",
-    "mobile:typecheck": "npm run typecheck --workspace=@decidarr/mobile"
+    "mobile:typecheck": "npm run typecheck --workspace=@decidarr/mobile",
+    "test:boot": "node --test tests/boot/*.test.mjs"
   },
   "dependencies": {
     "@decidarr/api-contracts": "*",
