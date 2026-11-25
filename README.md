@@ -2,7 +2,7 @@
 
 Can't decide what to watch? Let fate decide!
 
-Decidarr is a movie roulette application that randomly selects movies or TV shows from your Plex libraries. Built with Next.js 14 and MongoDB.
+Decidarr is a movie roulette application that randomly selects movies or TV shows from your Plex libraries. Built with Next.js 16, React 19 and MongoDB, on Node.js 24 LTS.
 
 ## Features
 
@@ -36,11 +36,14 @@ Decidarr is a movie roulette application that randomly selects movies or TV show
    cp .env.example .env
    ```
    
-   Edit `.env` and set `DECIDARR_SECRET`:
+   Generate a secret and put it in `.env` as `DECIDARR_SECRET`:
    ```bash
-   # Required in production
-   DECIDARR_SECRET=$(openssl rand -hex 32)
+   openssl rand -hex 32
    ```
+   ```env
+   DECIDARR_SECRET=<the 64-character value printed above>
+   ```
+   Decidarr refuses to start in production when `DECIDARR_SECRET` is missing or shorter than 32 characters.
 
 3. Start the application:
    ```bash
@@ -96,7 +99,7 @@ All settings are managed through the **Settings** panel (gear icon in the header
 | `PORT` | 3100 | Port to expose the application |
 | `LOG_LEVEL` | info | Logging level: debug, info, warn, error |
 | `SECURE_COOKIES` | `true` in production | Set `false` only for local HTTP development |
-| `DECIDARR_SECRET` | _(none)_ | **Required in production** - High-entropy secret for JWT/encryption (generate with `openssl rand -hex 32`) |
+| `DECIDARR_SECRET` | _(none)_ | **Required in production** - High-entropy secret for JWT/encryption, at least 32 characters (generate with `openssl rand -hex 32`). Without it, or with a shorter value, the server exits at boot. |
 | `DECIDARR_ALLOW_PRIVATE_URLS` | false | **LAN opt-in** - Set to `true` if your Plex/Tautulli/Overseerr are on your local network (192.168.x.x, 10.x.x.x). Private addresses are blocked by default for security. |
 | `APP_URL` | _(none)_ | Public origin users open Decidarr at (for example `https://decidarr.example.com`). After Plex sign-in, Plex sends the browser back only to this origin; without it, sign-in still works but the Plex window does not return to Decidarr on its own. |
 | `TRUST_PROXY` | false | Set to `true` only behind a reverse proxy that sets `X-Forwarded-For`, so sign-in rate limits are counted per client. Otherwise they are keyed by `X-Real-IP`, and clients without it share one limit. |
@@ -156,7 +159,8 @@ Or visit: https://support.plex.tv/articles/204059436-finding-an-authentication-t
 
 ## Tech Stack
 
-- **Framework**: Next.js 14 with App Router
+- **Runtime**: Node.js 24 LTS
+- **Framework**: Next.js 16 with App Router, React 19
 - **Language**: TypeScript
 - **Database**: MongoDB
 - **Styling**: TailwindCSS with CSS Variables for theming
@@ -191,6 +195,8 @@ decidarr/
 
 ## Development
 
+Requires Node.js 24 LTS.
+
 ```bash
 # Install dependencies
 npm install
@@ -204,8 +210,12 @@ npm run dev
 # Build for production
 npm run build
 
-# Type check
-npx tsc --noEmit
+# Lint and type check
+npm run lint
+npm run typecheck
+
+# Check the production server refuses a missing or short DECIDARR_SECRET (after a build)
+npm run test:boot
 ```
 
 ## Updating
@@ -227,7 +237,8 @@ Your settings and watch history are stored in MongoDB and will be preserved.
 - Plex tokens, TMDB keys, and Tautulli keys are encrypted in the database
 - Session-based authentication with JWT
 - SSRF protection for server URLs
-- No sensitive data stored in environment variables or config files
+- Production refuses to start without a `DECIDARR_SECRET` of at least 32 characters
+- `DECIDARR_SECRET` is the only secret kept outside the database
 
 ## License
 

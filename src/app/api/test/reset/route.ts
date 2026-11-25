@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import { connectDB, forgetConnectionForTests } from '@/lib/db';
 import { resetMigrationStateForTests } from '@/lib/migrate';
+import { clearRateLimitStore } from '@/lib/security/rate-limit';
 
 export async function POST(request: Request) {
   if (process.env.NODE_ENV === 'production' || process.env.E2E_MOCK_PLEX !== 'true') {
@@ -27,6 +28,7 @@ export async function POST(request: Request) {
     // An empty database should behave like a fresh install on a fresh process.
     forgetConnectionForTests();
     resetMigrationStateForTests();
+    clearRateLimitStore();
 
     return NextResponse.json({ ok: true });
   } catch (error) {

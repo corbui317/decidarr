@@ -26,6 +26,7 @@ export default function Header() {
       await logout();
     } catch (err) {
       // Force redirect anyway to ensure user can get to a clean state
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full reload clears all client state
       window.location.href = '/';
     }
   }, [logout, loggingOut]);

@@ -139,6 +139,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
     setUser(null);
     setExpiresAt(null);
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full reload clears all client state
     window.location.href = '/';
   }, []);
 
