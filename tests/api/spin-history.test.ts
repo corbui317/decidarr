@@ -78,21 +78,6 @@ describe('Spin history API routes', () => {
     expect(body.skipped).toBe(true);
   });
 
-  it('skips recording when disabled via installation settings for single-user scope', async () => {
-    const settings = await seedConfiguredSettings();
-    settings.spinHistoryPreferences = {
-      enabled: false,
-      retentionLimit: 50,
-      storeFilterSnapshot: true,
-    };
-    await settings.save();
-
-    clearTestCookies();
-    const { getSpinHistoryPreferences } = await import('@/lib/spin-history');
-    const prefs = await getSpinHistoryPreferences();
-    expect(prefs.enabled).toBe(false);
-  });
-
   it('omits filter snapshot when storeFilterSnapshot is false', async () => {
     testUser.preferences = testUser.preferences || {};
     testUser.preferences.spinHistory = {
@@ -200,7 +185,9 @@ describe('Spin history API routes', () => {
       spunAt: new Date(),
     });
 
-    const res = await spinHistoryDelete();
+    const res = await spinHistoryDelete(
+      createJsonRequest('http://localhost/api/spin-history', 'DELETE')
+    );
     const body = await res.json();
     expect(body.deleted).toBe(1);
 

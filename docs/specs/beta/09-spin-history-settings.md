@@ -22,9 +22,10 @@
 
 **Model** (`SpinHistoryEntry`): `userId`, `plexId`, `title`, `mediaType`, `posterUrl`, `year`, `libraryIds`, `filtersSnapshot`, `tvSelectionMode`, `poolSizeAtSpin`, `spunAt`.
 
-**User resolution:** `getCurrentUserId()` in `src/lib/spin-history.ts` — modern JWT `sub` + `sessionVersion` → `User` lookup, legacy `username` fallback, else `SINGLE_USER_ID`.
+**User resolution:** the routes are declared with `route({ access: 'user' })` from `src/lib/request/route.ts`, so every entry is read, written, and deleted for the Session's user, whether the request carries the web cookie or a mobile bearer token.
+There is no single-user fallback: a request without a valid Session gets `401`.
 
-**Preferences storage:** `Settings.spinHistoryPreferences` for single-user; `User.preferences.spinHistory` when real user found.
+**Preferences storage:** `User.preferences.spinHistory`, with schema defaults when unset.
 
 **Defaults:** enabled `true`, retention `50` (min 1, max 500), `storeFilterSnapshot` `true`.
 
@@ -160,15 +161,16 @@ interface CreateSpinHistoryBody {
 ## 7. Migration Plan
 
 1. ~~Model, API, UI.~~ Done.
-2. Align all routes on `getCurrentUserId()` when multi-user auth ships.
+2. ~~Align all routes on the Session's user.~~ Done for spin history (v2 ticket #20); the other routes move in #21 and #22.
 3. Tune retention defaults based on usage feedback.
 
 ## 8. Verification
 
 **Automated:**
 
-- `tests/unit/lib/spin-history.test.ts` (sanitization, retention, preferences, user resolution)
-- `tests/api/spin-history.test.ts` (CRUD, isolation, retention trim, preferences PATCH)
+- `tests/unit/lib/spin-history.test.ts` (sanitization, retention, preferences)
+- `tests/api/spin-history.test.ts` (CRUD, isolation for cookie and bearer clients, retention trim, preferences PATCH)
+- `tests/api/request-route.test.ts` (Session seam, error codes, Origin check, pinned JWT algorithm)
 - `tests/components/RecentSpins.test.tsx` (list, reapply, delete)
 
 **Gaps:** None for closeout scope. Optional later: full history page beyond recent-10 module.

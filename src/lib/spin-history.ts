@@ -1,12 +1,7 @@
 import mongoose from 'mongoose';
-import { cookies } from 'next/headers';
-import jwt from 'jsonwebtoken';
-import { connectDB } from './db';
-import { getOrCreateSettings, ISpinHistoryPreferences, ISettings } from './models/Settings';
+import { ISpinHistoryPreferences } from './models/Settings';
 import { User } from './models/User';
 import { SpinHistoryEntry } from './models/SpinHistoryEntry';
-
-export const SINGLE_USER_ID = new mongoose.Types.ObjectId('000000000000000000000001');
 
 export const SPIN_HISTORY_MIN_RETENTION = 1;
 export const SPIN_HISTORY_MAX_RETENTION = 500;
@@ -97,110 +92,12 @@ export function sanitizeFilterSnapshot(
   return sanitized;
 }
 
-type SessionPayload = {
-  sub?: string;
-  plexUserId?: string;
-  sessionVersion?: number;
-  username?: string;
-};
-
-export async function getCurrentUserId(): Promise<mongoose.Types.ObjectId> {
-  await connectDB();
-  const settings = await getOrCreateSettings();
-
-  try {
-    const cookieStore = await cookies();
-    const token = cookieStore.get('decidarr_session')?.value;
-    if (!token) {
-      return SINGLE_USER_ID;
-    }
-
-    const payload = jwt.verify(token, settings.getJwtSecret()) as SessionPayload;
-
-    if (payload.sub && payload.sessionVersion !== undefined) {
-      if (mongoose.Types.ObjectId.isValid(payload.sub)) {
-        const user = await User.findById(payload.sub);
-        if (user && user.sessionVersion === payload.sessionVersion) {
-          return user._id as mongoose.Types.ObjectId;
-        }
-      }
-    }
-
-    if (payload.username) {
-      const user = await User.findOne({ plexUsername: payload.username });
-      if (user?._id) {
-        return user._id as mongoose.Types.ObjectId;
-      }
-    }
-  } catch {
-    // Fall back to single-user id for legacy installs.
-  }
-
-  return SINGLE_USER_ID;
-}
-
-export async function getSpinHistoryPreferences(): Promise<ISpinHistoryPreferences> {
-  await connectDB();
-  const settings = await getOrCreateSettings();
-  const userId = await getCurrentUserId();
-
-  if (!userId.equals(SINGLE_USER_ID)) {
-    const user = await User.findById(userId);
-    if (user?.preferences?.spinHistory) {
-      return {
-        enabled: user.preferences.spinHistory.enabled ?? true,
-        retentionLimit: normalizeRetentionLimit(user.preferences.spinHistory.retentionLimit),
-        storeFilterSnapshot: user.preferences.spinHistory.storeFilterSnapshot ?? true,
-      };
-    }
-  }
-
-  const prefs = settings.spinHistoryPreferences;
-  if (prefs) {
-    return {
-      enabled: prefs.enabled ?? true,
-      retentionLimit: normalizeRetentionLimit(prefs.retentionLimit),
-      storeFilterSnapshot: prefs.storeFilterSnapshot ?? true,
-    };
-  }
-
-  return getDefaultSpinHistoryPreferences();
-}
-
-export async function saveSpinHistoryPreferences(
-  patch: Partial<ISpinHistoryPreferences>
+/** The user's spin-history preferences, with schema defaults for anything unset. */
+export async function getSpinHistoryPreferences(
+  userId: mongoose.Types.ObjectId
 ): Promise<ISpinHistoryPreferences> {
-  await connectDB();
-  const settings = await getOrCreateSettings();
-  const userId = await getCurrentUserId();
-  const current = await getSpinHistoryPreferences();
-
-  const next: ISpinHistoryPreferences = {
-    enabled: patch.enabled ?? current.enabled,
-    retentionLimit:
-      patch.retentionLimit !== undefined
-        ? normalizeRetentionLimit(patch.retentionLimit)
-        : current.retentionLimit,
-    storeFilterSnapshot: patch.storeFilterSnapshot ?? current.storeFilterSnapshot,
-  };
-
-  if (!userId.equals(SINGLE_USER_ID)) {
-    const user = await User.findById(userId);
-    if (user) {
-      user.preferences = user.preferences || {};
-      user.preferences.spinHistory = next;
-      await user.save();
-    }
-  } else {
-    settings.spinHistoryPreferences = next;
-    await settings.save();
-  }
-
-  if (patch.retentionLimit !== undefined && patch.retentionLimit < current.retentionLimit) {
-    await trimSpinHistoryToRetention(userId, next.retentionLimit);
-  }
-
-  return next;
+  const user = await User.findById(userId).select('preferences.spinHistory');
+  return normalizeSpinHistoryPreferences(user?.preferences?.spinHistory);
 }
 
 export async function trimSpinHistoryToRetention(
@@ -222,9 +119,4 @@ export async function trimSpinHistoryToRetention(
   if (ids.length > 0) {
     await SpinHistoryEntry.deleteMany({ _id: { $in: ids }, userId });
   }
-}
-
-export async function getSettingsForAuth(): Promise<ISettings> {
-  await connectDB();
-  return getOrCreateSettings();
 }

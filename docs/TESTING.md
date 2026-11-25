@@ -14,6 +14,10 @@ Run a subset:
 npm run test -- tests/components/FilterPanel
 ```
 
+API route tests call the handlers in-process against the test MongoDB.
+`createJsonRequest` in `tests/helpers/auth.ts` sends the same-origin `Origin` header a browser sends, because cookie-authenticated writes on routes declared with `route()` (`src/lib/request/route.ts`) reject any other origin.
+For a bearer client, mint a token with `issueTokenPair` from `src/lib/mobile-auth/tokens.ts` and send it as `Authorization: Bearer <token>`.
+
 ## End-to-end tests (Playwright)
 
 ```bash

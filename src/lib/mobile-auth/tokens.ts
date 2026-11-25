@@ -1,5 +1,4 @@
 import crypto from 'crypto';
-import jwt from 'jsonwebtoken';
 import { Types } from 'mongoose';
 import {
   ACCESS_TOKEN_TTL_SECONDS,
@@ -11,6 +10,7 @@ import { IUser, loadUserWithToken } from '@/lib/models/User';
 import { MobileRefreshToken } from '@/lib/models/MobileRefreshToken';
 import { createLogger } from '@/lib/logger';
 import { SessionError } from '@/lib/auth-errors';
+import { signSessionJwt, verifySessionJwt } from '@/lib/security/session-jwt';
 
 const logger = createLogger('MobileAuth');
 
@@ -59,7 +59,7 @@ export async function signAccessToken(
     deviceId,
     aud: MOBILE_AUDIENCE,
   };
-  return jwt.sign(payload, settings.getJwtSecret(), {
+  return signSessionJwt(payload, settings.getJwtSecret(), {
     expiresIn: ACCESS_TOKEN_TTL_SECONDS,
   });
 }
@@ -69,9 +69,9 @@ export async function verifyAccessToken(token: string): Promise<MobileAccessPayl
   const settings = await getOrCreateSettings();
   let payload: MobileAccessPayload;
   try {
-    payload = jwt.verify(token, settings.getJwtSecret(), {
+    payload = verifySessionJwt<MobileAccessPayload>(token, settings.getJwtSecret(), {
       audience: MOBILE_AUDIENCE,
-    }) as MobileAccessPayload;
+    });
   } catch {
     // Expired, tampered with, or signed before a DECIDARR_SECRET change.
     throw new SessionError('UNAUTHORIZED');
