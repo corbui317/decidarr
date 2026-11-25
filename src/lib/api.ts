@@ -1,5 +1,6 @@
 'use client';
 
+import { createWebTransport, ApiError } from '@decidarr/api-contracts';
 import type { LoginErrorCode } from './auth-errors';
 import type {
   Filters,
@@ -13,6 +14,8 @@ import type {
   SelectionParameters,
 } from '@decidarr/api-contracts';
 import type { WatchedMediaType } from '@/lib/validation/watched';
+
+export { ApiError };
 
 // Re-export commonly used types
 export type { AnimationStyle, AnimationSpeed };
@@ -57,19 +60,6 @@ export class AuthError extends Error {
 // Helper to check if an error is an auth error
 export function isAuthError(error: unknown): error is AuthError {
   return error instanceof AuthError || (error as AuthError)?.isAuthError === true;
-}
-
-// Custom error class for API errors with status and code
-export class ApiError extends Error {
-  public status: number;
-  public code?: string;
-
-  constructor(message: string, status: number, code?: string) {
-    super(message);
-    this.name = 'ApiError';
-    this.status = status;
-    this.code = code;
-  }
 }
 
 export class PlexLoginError extends Error {
@@ -125,41 +115,20 @@ export function formatPlexLoginError(error: unknown): string {
   return 'Login failed';
 }
 
+const transport = createWebTransport({ baseUrl: API_BASE });
+
 async function request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, headers = {} } = options;
-
-  const config: RequestInit = {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      ...headers,
-    },
-    credentials: 'include',
-    signal: options.signal,
-  };
-
-  if (body) {
-    config.body = JSON.stringify(body);
-  }
-
-  const response = await fetch(`${API_BASE}${endpoint}`, config);
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({ error: 'Request failed' }));
-    const errorMessage = errorData.error || errorData.message || 'Request failed';
-    const errorCode = errorData.code;
-
-    if (response.status === 401) {
-      console.warn(`[API] 401 Unauthorized on ${endpoint}:`, errorMessage);
+  try {
+    return await transport.request<T>(endpoint, options);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401) {
+      console.warn(`[API] 401 Unauthorized on ${endpoint}:`, error.message);
       // Throw a typed AuthError instead of auto-redirecting
       // This lets components decide how to handle the auth failure
-      throw new AuthError(errorMessage, 401);
+      throw new AuthError(error.message, 401);
     }
-
-    throw new ApiError(errorMessage, response.status, errorCode);
+    throw error;
   }
-
-  return response.json();
 }
 
 export interface AuthUser {
