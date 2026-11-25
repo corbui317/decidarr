@@ -115,4 +115,37 @@ describe('GET /api/plex/image', () => {
     expect(body.error).toMatch(/invalid image path/i);
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it('refuses an upstream response with a non-image content type', async () => {
+    await seedConfiguredSettings();
+    await authenticateTestSession();
+    fetchMock.mockResolvedValue(
+      new Response('<script>alert(1)</script>', {
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+      })
+    );
+
+    const res = await plexImageGet(imageRequest('/library/metadata/1/thumb/2'));
+    const body = await res.json();
+
+    expect(res.status).toBe(415);
+    expect(body.error).toMatch(/content type/i);
+  });
+
+  it('allows an upstream content type with charset parameters', async () => {
+    await seedConfiguredSettings();
+    await authenticateTestSession();
+    fetchMock.mockResolvedValue(
+      new Response(new Uint8Array([1, 2, 3]), {
+        status: 200,
+        headers: { 'content-type': 'image/jpeg; charset=binary' },
+      })
+    );
+
+    const res = await plexImageGet(imageRequest('/library/metadata/1/thumb/2'));
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('image/jpeg; charset=binary');
+  });
 });
