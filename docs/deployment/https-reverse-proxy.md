@@ -19,7 +19,7 @@ Disabling TLS or setting `SECURE_COOKIES=false` on a public origin is unsupporte
 | TLS certificate | Valid, unexpired certificate with complete chain |
 | Reverse proxy | Terminates TLS and forwards to Decidarr |
 | Production env | `NODE_ENV=production` and `SECURE_COOKIES=true` (Docker Compose default) |
-| Secret | `DECIDARR_SECRET` set to a high-entropy value |
+| Secret | `DECIDARR_SECRET` set to a high-entropy value of at least 32 characters (the server exits at boot otherwise) |
 
 Choose a single canonical origin. Accessing the same instance by raw LAN IP and by domain creates separate cookies and service-worker registrations.
 
