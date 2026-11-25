@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { POST } from '@/app/api/test/reset/route';
+import { checkRateLimit } from '@/lib/security/rate-limit';
 
 function createResetRequest(secret?: string): Request {
   const headers: Record<string, string> = {};
@@ -57,5 +58,16 @@ describe('POST /api/test/reset', () => {
 
     const res = await POST(createResetRequest('test-secret'));
     expect(res.status).toBe(404);
+  });
+
+  it('forgets rate-limit buckets so the next run starts like a fresh process', async () => {
+    vi.stubEnv('E2E_TEST_RESET_SECRET', 'test-secret');
+    const config = { windowMs: 60_000, maxAttempts: 1 };
+    checkRateLimit('auth:start:unknown', config);
+    expect(checkRateLimit('auth:start:unknown', config).allowed).toBe(false);
+
+    const res = await POST(createResetRequest('test-secret'));
+    expect(res.status).toBe(200);
+    expect(checkRateLimit('auth:start:unknown', config).allowed).toBe(true);
   });
 });

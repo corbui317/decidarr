@@ -58,6 +58,7 @@ export default function LibrarySelector({
 
   const handleReLogin = useCallback(() => {
     // Clear any stale state and redirect to home for re-authentication
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full reload clears all client state
     window.location.href = '/';
   }, []);
 
