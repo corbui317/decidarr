@@ -1,5 +1,5 @@
 import { cookies } from 'next/headers';
-import jwt from 'jsonwebtoken';
+import { signSessionJwt } from './security/session-jwt';
 import { Types } from 'mongoose';
 import { getOrCreateSettings } from './models/Settings';
 import { User, IUser } from './models/User';
@@ -254,7 +254,7 @@ export async function completePlexLogin(
 }
 
 export async function issueSessionCookie(user: IUser, jwtSecret: string): Promise<void> {
-  const token = jwt.sign(
+  const token = signSessionJwt(
     {
       sub: user._id.toString(),
       plexUserId: user.plexUserId,

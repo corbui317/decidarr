@@ -1,5 +1,4 @@
 import { cookies, headers } from 'next/headers';
-import jwt from 'jsonwebtoken';
 import { connectDB } from './db';
 import { getOrCreateSettings, ISettings } from './models/Settings';
 import { IUser, loadUserWithToken } from './models/User';
@@ -9,6 +8,7 @@ import { createLogger } from './logger';
 import { runMigrations } from './migrate';
 import { verifyAccessToken } from './mobile-auth/tokens';
 import { SessionError } from './auth-errors';
+import { verifySessionJwt } from './security/session-jwt';
 
 export { SessionError, isAuthError, authErrorStatus } from './auth-errors';
 export type { SessionErrorCode } from './auth-errors';
@@ -97,6 +97,11 @@ async function parseSession(): Promise<SessionPayload> {
     return bearerPayload;
   }
 
+  return readCookieSession();
+}
+
+/** Verifies the web session cookie. Throws SessionError when it is missing or invalid. */
+export async function readCookieSession(): Promise<SessionPayload> {
   const settings = await getOrCreateSettings();
 
   if (!settings.setupComplete) {
@@ -111,7 +116,7 @@ async function parseSession(): Promise<SessionPayload> {
 
   let payload: SessionPayload;
   try {
-    payload = jwt.verify(token, settings.getJwtSecret()) as SessionPayload;
+    payload = verifySessionJwt<SessionPayload>(token, settings.getJwtSecret());
   } catch {
     // Expired, tampered with, or signed before a DECIDARR_SECRET change.
     throw new SessionError('UNAUTHORIZED');
@@ -183,24 +188,6 @@ export async function requireAdmin(): Promise<AuthContext> {
     throw new SessionError('FORBIDDEN');
   }
   return ctx;
-}
-
-/** @deprecated Use requireUser() — kept for gradual migration */
-export async function requireAuth(): Promise<{
-  plexToken: string;
-  plexServerUrl: string;
-  settings: ISettings;
-  user: IUser;
-  isAdmin: boolean;
-}> {
-  const ctx = await requireUser();
-  return {
-    plexToken: ctx.plexToken,
-    plexServerUrl: ctx.plexServerUrl,
-    settings: ctx.settings,
-    user: ctx.user,
-    isAdmin: ctx.isAdmin,
-  };
 }
 
 const sectionsCache = new Map<string, { ids: string[]; expiresAt: number }>();
