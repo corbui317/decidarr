@@ -7,12 +7,7 @@ import { GET as bootstrapGet } from '@/app/api/v1/sync/bootstrap/route';
 import { seedConfiguredSettings, seedTestUser } from '../helpers/auth';
 import { clearDatabase } from '../helpers/mongo';
 import { clearRateLimitStore } from '@/lib/security/rate-limit';
-
-vi.mock('@/lib/services/plex-oauth', () => ({
-  createAuthPin: vi.fn().mockResolvedValue({ id: 12345, code: 'ABCD' }),
-  buildPlexAuthUrl: vi.fn().mockReturnValue('https://app.plex.tv/auth#?code=ABCD'),
-  pollAuthPin: vi.fn().mockResolvedValue({ id: 12345, code: 'ABCD', authToken: 'plex-token-test' }),
-}));
+import { fakeIntegrations, fakePlexTv } from '../helpers/fake-integrations';
 
 vi.mock('@/lib/auth-login', () => ({
   completePlexLogin: vi.fn().mockResolvedValue({
@@ -31,6 +26,7 @@ describe('mobile auth and sync API', () => {
     await clearDatabase();
     clearRateLimitStore();
     await seedConfiguredSettings();
+    fakeIntegrations(fakePlexTv({ pin: { id: 12345, code: 'ABCD' }, authToken: 'plex-token-test' }));
   });
 
   it('starts device authorization with rate-limited public endpoint', async () => {

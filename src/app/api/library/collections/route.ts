@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireUser, getAccessibleLibraryIds, isAuthError, authErrorStatus } from '@/lib/auth';
-import { createPlexService } from '@/lib/services/plex-factory';
+import { PlexService } from '@/lib/services/plex';
 import { createLogger } from '@/lib/logger';
 
 // Reads the session and database on every request; never prerender at build time.
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     }
 
     const allowed = await getAccessibleLibraryIds(auth, ids);
-    const plexService = await createPlexService(
+    const plexService = new PlexService(
       auth.plexToken,
       auth.plexServerUrl,
       auth.settings.plexMachineId

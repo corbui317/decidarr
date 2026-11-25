@@ -18,6 +18,13 @@ API route tests call the handlers in-process against the test MongoDB.
 `createJsonRequest` in `tests/helpers/auth.ts` sends the same-origin `Origin` header a browser sends, because cookie-authenticated writes on routes declared with `route()` (`src/lib/request/route.ts`) reject any other origin.
 For a bearer client, mint a token with `issueTokenPair` from `src/lib/mobile-auth/tokens.ts` and send it as `Authorization: Bearer <token>`.
 
+### Faking integrations
+
+Every outbound request to Plex, plex.tv, Tautulli, Overseerr and TMDb goes through the integration client in `src/lib/integrations/client.ts`, which takes an injectable fetch and DNS lookup.
+Tests fake integrations there with `fakeIntegrations()` from `tests/helpers/fake-integrations.ts`, never by mocking the service modules.
+It routes each request to a handler you write, records what was sent (URL, headers, the address the connection was pinned to), and can script DNS answers with `sequenceLookup()`.
+By default (`tests/setup-integrations.ts`) every hostname resolves to a public test address and any request a test did not fake fails, so no test reaches the network.
+
 ## End-to-end tests (Playwright)
 
 ```bash
@@ -53,15 +60,24 @@ When the run ends, Playwright sends `SIGTERM` to the Mongo process group, which 
 
 | Variable | Purpose |
 |----------|---------|
-| `E2E_MOCK_PLEX` | When `true` outside production, Plex OAuth and API calls use mock responses (set automatically in `playwright.config.ts`). |
+| `E2E_MOCK_PLEX` | When `true` outside production, the test-only routes are enabled (set automatically in `playwright.config.ts`). |
+| `PLEX_TV_URL` | Where the app reaches plex.tv. Playwright points it at the fake plex.tv on loopback. |
 | `E2E_MONGODB_URI` | Optional, local runs only: use this MongoDB instead of the in-memory server. |
-| `E2E_TEST_RESET_SECRET` | The value the test-only routes (`POST /api/test/reset`, `POST /api/test/seed-legacy`) require in the `X-E2E-Reset-Secret` header. Playwright defaults it to `decidarr-e2e-reset`. When it is unset on the server, both routes answer 403. |
+| `E2E_TEST_RESET_SECRET` | The value the test-only routes (`POST /api/test/reset`, `POST /api/test/restart`) require in the `X-E2E-Reset-Secret` header. Playwright defaults it to `decidarr-e2e-reset`. When it is unset on the server, both routes answer 403. |
+
+### Fake Plex
+
+Playwright's global setup (`tests/e2e/fake-plex.ts`) starts two real HTTP servers on loopback: a fake plex.tv on `127.0.0.1:3102` and a fake Plex Media Server on `127.0.0.1:3103`.
+They answer with the same handlers as `tests/helpers/fake-integrations.ts`.
+The app reaches them through its integration client and URL policy like any real service, which is why the E2E server runs with `DECIDARR_ALLOW_PRIVATE_URLS=true`: loopback is only allowed under that opt-in.
+Production code has no E2E branch for Plex.
 
 ### Legacy upgrade seed
 
-`POST /api/test/seed-legacy` writes a pre-`DECIDARR_SECRET` install (CryptoJS ciphertext, master key derived from `MONGODB_URI`) and then boots it the way a restart after the upgrade would, so the secret migration runs before the next request.
+The upgrade spec writes a pre-`DECIDARR_SECRET` install (CryptoJS ciphertext, master key derived from `MONGODB_URI`) straight into the E2E MongoDB.
+It then calls `POST /api/test/restart`, which boots that data the way a restart after the upgrade would, so the secret migration runs before the next request.
 The seed data comes from `tests/helpers/legacy-install-seed.ts`, which the Vitest upgrade test (`tests/api/legacy-upgrade.test.ts`) shares.
-Production builds stub that module out, and the route answers 404 in production.
+No application code imports it, and the restart route answers 404 in production.
 
 ## Lint, typecheck, and build
 

@@ -1,5 +1,7 @@
+import { createIntegrationClient, type IntegrationClient } from '../integrations/client';
+
 const TMDB_BASE = 'https://api.themoviedb.org/3';
-const FETCH_TIMEOUT_MS = 10_000;
+const TMDB_TIMEOUT_MS = 10_000;
 
 export interface TMDbMatch {
   tmdbId: number;
@@ -38,27 +40,36 @@ async function getLimit(): Promise<LimitFn> {
   return _pLimit(5);
 }
 
-async function tmdbFetch(url: string): Promise<Response> {
-  return fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
-}
-
 export class TMDbService {
-  private apiKey: string;
+  private client: IntegrationClient;
   private imageBaseUrl = 'https://image.tmdb.org/t/p';
 
   constructor(apiKey: string) {
-    this.apiKey = apiKey;
+    this.client = createIntegrationClient({
+      integration: 'TMDb',
+      baseUrl: TMDB_BASE,
+      auth: { query: 'api_key', value: apiKey },
+      timeoutMs: TMDB_TIMEOUT_MS,
+    });
+  }
+
+  /** Checks the API key; returns TMDb's image base URL when it is valid. */
+  async testApiKey(): Promise<{ valid: boolean; imageBaseUrl: string | null }> {
+    const response = await this.client.request('/configuration');
+    if (!response.ok) {
+      await response.body?.cancel();
+      return { valid: false, imageBaseUrl: null };
+    }
+    const data = await response.json();
+    return { valid: true, imageBaseUrl: data.images?.secure_base_url || null };
   }
 
   async searchMovie(title: string, year?: number): Promise<unknown[]> {
     try {
-      const params = new URLSearchParams({
-        api_key: this.apiKey,
-        query: title,
-      });
-      if (year) params.append('year', year.toString());
+      const query: Record<string, string | number> = { query: title };
+      if (year) query.year = year;
 
-      const response = await tmdbFetch(`${TMDB_BASE}/search/movie?${params}`);
+      const response = await this.client.request('/search/movie', { query });
       if (!response.ok) return [];
 
       const data = await response.json();
@@ -70,13 +81,10 @@ export class TMDbService {
 
   async searchTVShow(title: string, year?: number): Promise<unknown[]> {
     try {
-      const params = new URLSearchParams({
-        api_key: this.apiKey,
-        query: title,
-      });
-      if (year) params.append('first_air_date_year', year.toString());
+      const query: Record<string, string | number> = { query: title };
+      if (year) query.first_air_date_year = year;
 
-      const response = await tmdbFetch(`${TMDB_BASE}/search/tv?${params}`);
+      const response = await this.client.request('/search/tv', { query });
       if (!response.ok) return [];
 
       const data = await response.json();
@@ -88,9 +96,9 @@ export class TMDbService {
 
   async getMovieDetails(tmdbId: number): Promise<unknown> {
     try {
-      const response = await tmdbFetch(
-        `${TMDB_BASE}/movie/${tmdbId}?api_key=${this.apiKey}&append_to_response=credits,keywords`
-      );
+      const response = await this.client.request(`/movie/${tmdbId}`, {
+        query: { append_to_response: 'credits,keywords' },
+      });
       if (!response.ok) return null;
       return response.json();
     } catch {
@@ -100,9 +108,9 @@ export class TMDbService {
 
   async getTVDetails(tmdbId: number): Promise<unknown> {
     try {
-      const response = await tmdbFetch(
-        `${TMDB_BASE}/tv/${tmdbId}?api_key=${this.apiKey}&append_to_response=credits,keywords`
-      );
+      const response = await this.client.request(`/tv/${tmdbId}`, {
+        query: { append_to_response: 'credits,keywords' },
+      });
       if (!response.ok) return null;
       return response.json();
     } catch {
@@ -112,9 +120,7 @@ export class TMDbService {
 
   async getMovieCertification(tmdbId: number, country = 'US'): Promise<string | null> {
     try {
-      const response = await tmdbFetch(
-        `${TMDB_BASE}/movie/${tmdbId}/release_dates?api_key=${this.apiKey}`
-      );
+      const response = await this.client.request(`/movie/${tmdbId}/release_dates`);
       if (!response.ok) return null;
 
       const data = await response.json();
@@ -137,9 +143,7 @@ export class TMDbService {
 
   async getTVContentRating(tmdbId: number, country = 'US'): Promise<string | null> {
     try {
-      const response = await tmdbFetch(
-        `${TMDB_BASE}/tv/${tmdbId}/content_ratings?api_key=${this.apiKey}`
-      );
+      const response = await this.client.request(`/tv/${tmdbId}/content_ratings`);
       if (!response.ok) return null;
 
       const data = await response.json();
@@ -159,9 +163,7 @@ export class TMDbService {
 
   async getMovieFullDetails(tmdbId: number): Promise<TMDbEnrichmentData> {
     try {
-      const response = await tmdbFetch(
-        `${TMDB_BASE}/movie/${tmdbId}?api_key=${this.apiKey}`
-      );
+      const response = await this.client.request(`/movie/${tmdbId}`);
       if (!response.ok) return {};
 
       const data = await response.json();
@@ -176,9 +178,7 @@ export class TMDbService {
 
   async getTVFullDetails(tmdbId: number): Promise<TMDbEnrichmentData> {
     try {
-      const response = await tmdbFetch(
-        `${TMDB_BASE}/tv/${tmdbId}?api_key=${this.apiKey}`
-      );
+      const response = await this.client.request(`/tv/${tmdbId}`);
       if (!response.ok) return {};
 
       const data = await response.json();

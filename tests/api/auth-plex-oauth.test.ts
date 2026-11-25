@@ -4,28 +4,11 @@ import { clearDatabase } from '../helpers/mongo';
 import { clearTestCookies, getTestCookie, setTestCookie } from '../helpers/cookies';
 import { seedConfiguredSettings } from '../helpers/auth';
 import { getOrCreateSettings } from '@/lib/models/Settings';
-
-const plexOAuthMocks = vi.hoisted(() => ({
-  createAuthPin: vi.fn(),
-  buildPlexAuthUrl: vi.fn(),
-  generateOAuthState: vi.fn(),
-  pollAuthPin: vi.fn(),
-}));
+import { fakeIntegrations, fakePlexTv, type FakeHandler, type SentRequest } from '../helpers/fake-integrations';
 
 const authLoginMocks = vi.hoisted(() => ({
   completePlexLogin: vi.fn(),
 }));
-
-vi.mock('@/lib/services/plex-oauth', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/services/plex-oauth')>();
-  return {
-    ...actual,
-    createAuthPin: plexOAuthMocks.createAuthPin,
-    buildPlexAuthUrl: plexOAuthMocks.buildPlexAuthUrl,
-    generateOAuthState: plexOAuthMocks.generateOAuthState,
-    pollAuthPin: plexOAuthMocks.pollAuthPin,
-  };
-});
 
 vi.mock('@/lib/auth-login', () => ({
   completePlexLogin: authLoginMocks.completePlexLogin,
@@ -39,6 +22,9 @@ import {
   OAUTH_STATE_COOKIE,
 } from '@/lib/services/plex-oauth';
 
+let sent: SentRequest[];
+const pinPolls = () => sent.filter((r) => r.url.pathname.startsWith('/api/v2/pins/'));
+
 function pollRequest(url: string): NextRequest {
   return new NextRequest(url);
 }
@@ -48,10 +34,7 @@ describe('Plex OAuth API routes', () => {
     await clearDatabase();
     clearTestCookies();
     vi.clearAllMocks();
-    plexOAuthMocks.createAuthPin.mockResolvedValue({ id: 123, code: 'pin-code' });
-    plexOAuthMocks.buildPlexAuthUrl.mockReturnValue('https://app.plex.tv/auth#?code=pin-code');
-    plexOAuthMocks.generateOAuthState.mockReturnValue('state-abc');
-    plexOAuthMocks.pollAuthPin.mockResolvedValue({ id: 123, code: 'pin-code' });
+    ({ sent } = fakeIntegrations(fakePlexTv({ pin: { id: 123, code: 'pin-code' } })));
     authLoginMocks.completePlexLogin.mockResolvedValue({
       success: true,
       user: { id: 'user-1', username: 'testuser', serverUrl: 'http://192.168.1.10:32400', isAdmin: true },
@@ -69,12 +52,10 @@ describe('Plex OAuth API routes', () => {
     const body = await res.json();
 
     expect(res.status).toBe(200);
-    expect(body).toMatchObject({
-      authUrl: 'https://app.plex.tv/auth#?code=pin-code',
-      pinId: 123,
-      state: 'state-abc',
-    });
-    expect(getTestCookie(OAUTH_STATE_COOKIE)).toBe('state-abc');
+    expect(body).toMatchObject({ pinId: 123, state: expect.stringMatching(/^[0-9a-f]{64}$/) });
+    expect(new URLSearchParams(body.authUrl.split('#?')[1]).get('code')).toBe('pin-code');
+    expect(body.authUrl.startsWith('https://app.plex.tv/auth#?')).toBe(true);
+    expect(getTestCookie(OAUTH_STATE_COOKIE)).toBe(body.state);
     expect(getTestCookie(OAUTH_PIN_COOKIE)).toBe('123');
     expect(getTestCookie(OAUTH_PIN_CODE_COOKIE)).toBe('pin-code');
   });
@@ -102,7 +83,7 @@ describe('Plex OAuth API routes', () => {
     expect(res.status).toBe(400);
     expect(body.code).toBe('INVALID_OAUTH_STATE');
     expect(getTestCookie(OAUTH_STATE_COOKIE)).toBeUndefined();
-    expect(plexOAuthMocks.pollAuthPin).not.toHaveBeenCalled();
+    expect(pinPolls()).toEqual([]);
   });
 
   it('GET /api/auth/plex/poll rejects invalid state', async () => {
@@ -117,7 +98,7 @@ describe('Plex OAuth API routes', () => {
     expect(res.status).toBe(400);
     expect(body.code).toBe('INVALID_OAUTH_STATE');
     expect(getTestCookie(OAUTH_PIN_COOKIE)).toBeUndefined();
-    expect(plexOAuthMocks.pollAuthPin).not.toHaveBeenCalled();
+    expect(pinPolls()).toEqual([]);
   });
 
   it('GET /api/auth/plex/poll rejects pin values not bound to cookies', async () => {
@@ -133,7 +114,7 @@ describe('Plex OAuth API routes', () => {
 
     expect(res.status).toBe(400);
     expect(body.code).toBe('INVALID_OAUTH_PIN');
-    expect(plexOAuthMocks.pollAuthPin).not.toHaveBeenCalled();
+    expect(pinPolls()).toEqual([]);
   });
 
   it('GET /api/auth/plex/poll clears cookies and returns expired error for expired pins', async () => {
@@ -141,7 +122,10 @@ describe('Plex OAuth API routes', () => {
     setTestCookie(OAUTH_PIN_COOKIE, '123');
     setTestCookie(OAUTH_PIN_CODE_COOKIE, 'pin-code');
     setTestCookie(OAUTH_STATE_COOKIE, 'state-abc');
-    plexOAuthMocks.pollAuthPin.mockRejectedValue(new Error('PLEX_PIN_EXPIRED'));
+    const plexTv: FakeHandler = fakePlexTv();
+    fakeIntegrations((request) =>
+      request.url.pathname.startsWith('/api/v2/pins/') ? new Response('gone', { status: 404 }) : plexTv(request)
+    );
 
     const res = await oauthPollGet(pollRequest('http://localhost/api/auth/plex/poll?state=state-abc'));
     const body = await res.json();
@@ -163,6 +147,6 @@ describe('Plex OAuth API routes', () => {
 
     expect(res.status).toBe(403);
     expect(body.code).toBe('INVALID_SETUP_SECRET');
-    expect(plexOAuthMocks.pollAuthPin).not.toHaveBeenCalled();
+    expect(pinPolls()).toEqual([]);
   });
 });

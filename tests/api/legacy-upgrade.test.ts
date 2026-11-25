@@ -6,8 +6,10 @@ import {
   seedLegacyInstall,
   LEGACY_PLAINTEXT,
   LEGACY_ADMIN_PLEX_USER_ID,
+  LEGACY_MACHINE_ID,
   type StoredSettings,
 } from '../helpers/legacy-install-seed';
+import { fakeIntegrations, fakePlex } from '../helpers/fake-integrations';
 import { connectDB, forgetConnectionForTests } from '@/lib/db';
 import { resetMigrationStateForTests } from '@/lib/migrate';
 import { getOrCreateSettings } from '@/lib/models/Settings';
@@ -15,9 +17,9 @@ import { User } from '@/lib/models/User';
 import { getLegacyMasterKey, isCurrentCiphertext } from '@/lib/secrets';
 import { completePlexLogin } from '@/lib/auth-login';
 import { GET as statusGet } from '@/app/api/settings/status/route';
+import { POST as restartPost } from '@/app/api/test/restart/route';
 import { GET as settingsGet } from '@/app/api/settings/route';
 import { seedConfiguredSettings, seedTestUser } from '../helpers/auth';
-import { POST as seedLegacyPost } from '@/app/api/test/seed-legacy/route';
 
 /** A real upgrade restarts the server: no cached connection, no migration run yet. */
 function simulateRestart(): void {
@@ -25,12 +27,16 @@ function simulateRestart(): void {
   resetMigrationStateForTests();
 }
 
+/** plex.tv signs the legacy admin in, and lists the legacy server as theirs. */
+function fakeLegacyPlex() {
+  return fakeIntegrations(fakePlex({ serverUri: 'http://192.168.1.10:32400', machineId: LEGACY_MACHINE_ID }));
+}
+
 describe('Upgrading a legacy install to DECIDARR_SECRET', () => {
   beforeEach(async () => {
     await clearDatabase();
     clearTestCookies();
     vi.stubEnv('NODE_ENV', 'development');
-    vi.stubEnv('E2E_MOCK_PLEX', 'true');
   });
 
   afterEach(() => {
@@ -70,22 +76,27 @@ describe('Upgrading a legacy install to DECIDARR_SECRET', () => {
     expect(isCurrentCiphertext(admin!.plexToken)).toBe(true);
     expect(admin?.getDecryptedToken()).toBe(LEGACY_PLAINTEXT.plexToken);
 
-    // The legacy admin signs in through the (mock) Plex OAuth flow and keeps admin rights.
-    const login = await completePlexLogin('e2e-test-plex-token-valid');
+    // The legacy admin signs in through Plex OAuth and keeps admin rights.
+    const { sent } = fakeLegacyPlex();
+    const login = await completePlexLogin('fresh-oauth-token');
     expect(login).toMatchObject({ success: true, user: { isAdmin: true } });
+    expect(sent.map(({ url, headers }) => [url.pathname, headers.get('X-Plex-Token')])).toEqual([
+      ['/api/v2/user', 'fresh-oauth-token'],
+      ['/api/v2/resources', 'fresh-oauth-token'],
+    ]);
     expect(getTestCookie('decidarr_session')).toBeTruthy();
     expect(await User.countDocuments({ plexUserId: LEGACY_ADMIN_PLEX_USER_ID })).toBe(1);
   });
 });
 
-function seedRequest(secret?: string): Request {
-  return new Request('http://localhost/api/test/seed-legacy', {
+function restartRequest(secret?: string): Request {
+  return new Request('http://localhost/api/test/restart', {
     method: 'POST',
     headers: secret === undefined ? {} : { 'X-E2E-Reset-Secret': secret },
   });
 }
 
-describe('POST /api/test/seed-legacy', () => {
+describe('POST /api/test/restart', () => {
   beforeEach(async () => {
     await clearDatabase();
     vi.stubEnv('NODE_ENV', 'development');
@@ -99,24 +110,25 @@ describe('POST /api/test/seed-legacy', () => {
 
   it('returns 404 in production even with the correct secret', async () => {
     vi.stubEnv('NODE_ENV', 'production');
-    expect((await seedLegacyPost(seedRequest('seed-secret'))).status).toBe(404);
+    expect((await restartPost(restartRequest('seed-secret'))).status).toBe(404);
   });
 
   it('returns 404 when E2E_MOCK_PLEX is not true', async () => {
     vi.stubEnv('E2E_MOCK_PLEX', 'false');
-    expect((await seedLegacyPost(seedRequest('seed-secret'))).status).toBe(404);
+    expect((await restartPost(restartRequest('seed-secret'))).status).toBe(404);
   });
 
   it('returns 403 without the matching reset secret', async () => {
-    expect((await seedLegacyPost(seedRequest())).status).toBe(403);
-    expect((await seedLegacyPost(seedRequest('wrong'))).status).toBe(403);
+    expect((await restartPost(restartRequest())).status).toBe(403);
+    expect((await restartPost(restartRequest('wrong'))).status).toBe(403);
   });
 
-  it('seeds a legacy install on a running server and boots it through the migration', async () => {
+  it('boots a legacy install seeded on a running server through the migration', async () => {
     vi.stubEnv('DECIDARR_SECRET', 'upgrade-test-secret');
     await connectDB();
+    await seedLegacyInstall(mongoose.connection.db!, getLegacyMasterKey());
 
-    const res = await seedLegacyPost(seedRequest('seed-secret'));
+    const res = await restartPost(restartRequest('seed-secret'));
     expect(res.status).toBe(200);
 
     const raw = await mongoose.connection.db!
@@ -132,7 +144,6 @@ describe('Restarting with a different DECIDARR_SECRET', () => {
     await clearDatabase();
     clearTestCookies();
     vi.stubEnv('NODE_ENV', 'development');
-    vi.stubEnv('E2E_MOCK_PLEX', 'true');
   });
 
   afterEach(() => {
@@ -162,7 +173,8 @@ describe('Restarting with a different DECIDARR_SECRET', () => {
     const before = await statusGet();
     expect(before.status).toBe(200);
 
-    const login = await completePlexLogin('e2e-test-plex-token-valid');
+    fakeIntegrations(fakePlex({ serverUri: 'http://192.168.1.10:32400', machineId: 'machine-a' }));
+    const login = await completePlexLogin('fresh-oauth-token');
     expect(login).toMatchObject({ success: true, user: { isAdmin: true } });
     expect(getTestCookie('decidarr_session')).toBeTruthy();
 
@@ -196,7 +208,8 @@ describe('Restarting with a different DECIDARR_SECRET', () => {
     expect(await storedSecrets()).toEqual(before);
 
     // The admin signs in again (which re-enters their own Plex token) and is shown the rest.
-    const login = await completePlexLogin('e2e-test-plex-token-valid');
+    fakeIntegrations(fakePlex({ serverUri: 'http://192.168.1.10:32400', machineId: 'machine-1' }));
+    const login = await completePlexLogin('fresh-oauth-token');
     expect(login).toMatchObject({ success: true, user: { isAdmin: true } });
     const res = await settingsGet();
     expect(res.status).toBe(200);
@@ -243,7 +256,6 @@ describe('Restarting a legacy install with a changed MONGODB_URI', () => {
     await clearDatabase();
     clearTestCookies();
     vi.stubEnv('NODE_ENV', 'development');
-    vi.stubEnv('E2E_MOCK_PLEX', 'true');
   });
 
   afterEach(async () => {
