@@ -196,7 +196,7 @@ describe('Mobile auth hardening (spec #1 rules on the mobile routes)', () => {
   });
 
   describe('typed session errors on bearer routes', () => {
-    it('answers an expired access token with 401 UNAUTHORIZED, not a server error', async () => {
+    it('answers an expired access token with 401 UNAUTHENTICATED, not a server error', async () => {
       const user = await seedTestUser();
       const expired = jwt.sign(
         {
@@ -218,10 +218,10 @@ describe('Mobile auth hardening (spec #1 rules on the mobile routes)', () => {
       );
 
       expect(response.status).toBe(401);
-      expect((await response.json()).code).toBe('UNAUTHORIZED');
+      expect((await response.json()).code).toBe('UNAUTHENTICATED');
     });
 
-    it('answers a revoked session with 401 UNAUTHORIZED', async () => {
+    it('answers a revoked session with 401 UNAUTHENTICATED', async () => {
       const user = await seedTestUser();
       const tokens = await issueTokenPair(user, DEVICE_ID);
       user.sessionVersion += 1;
@@ -234,7 +234,7 @@ describe('Mobile auth hardening (spec #1 rules on the mobile routes)', () => {
       );
 
       expect(response.status).toBe(401);
-      expect((await response.json()).code).toBe('UNAUTHORIZED');
+      expect((await response.json()).code).toBe('UNAUTHENTICATED');
     });
 
     it('answers an unknown refresh token with 401 UNAUTHORIZED', async () => {

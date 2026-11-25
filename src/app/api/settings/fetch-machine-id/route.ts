@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
-import { requireAdmin } from '@/lib/auth';
+import { route } from '@/lib/request/route';
+import { DomainError } from '@/lib/request/errors';
+import { getOrCreateSettings } from '@/lib/models/Settings';
 import { createPlexService } from '@/lib/services/plex-factory';
 import { createLogger } from '@/lib/logger';
 
@@ -7,47 +9,33 @@ const logger = createLogger('API:FetchMachineId');
 
 // POST /api/settings/fetch-machine-id
 // Fetches the machineId from the configured Plex server and stores it
-export async function POST() {
-  try {
-    const { plexToken, plexServerUrl, settings } = await requireAdmin();
+export const POST = route({ access: 'admin' }, async ({ session }) => {
+  const settings = await getOrCreateSettings();
 
-    // If we already have a machineId, return it
-    if (settings.plexMachineId) {
-      logger.debug('MachineId already stored', { machineId: settings.plexMachineId });
-      return NextResponse.json({
-        success: true,
-        machineId: settings.plexMachineId,
-        cached: true,
-      });
-    }
-
-    // Fetch from server
-    logger.info('Fetching machineId from Plex server');
-    const plexService = await createPlexService(plexToken, plexServerUrl);
-    const machineId = await plexService.fetchMachineIdFromServer();
-
-    if (!machineId) {
-      return NextResponse.json(
-        { error: 'Could not fetch machineId from Plex server' },
-        { status: 500 }
-      );
-    }
-
-    // Store it
-    settings.plexMachineId = machineId;
-    await settings.save();
-
-    logger.info('MachineId stored successfully', { machineId });
+  if (settings.plexMachineId) {
+    logger.debug('MachineId already stored', { machineId: settings.plexMachineId });
     return NextResponse.json({
       success: true,
-      machineId,
-      cached: false,
+      machineId: settings.plexMachineId,
+      cached: true,
     });
-  } catch (error) {
-    logger.error('Error fetching machineId', { error: (error as Error).message });
-    return NextResponse.json(
-      { error: 'Failed to fetch machineId' },
-      { status: 500 }
-    );
   }
-}
+
+  logger.info('Fetching machineId from Plex server');
+  const plexService = await createPlexService(session.plex.token, session.plex.serverUrl);
+  const machineId = await plexService.fetchMachineIdFromServer();
+
+  if (!machineId) {
+    throw new DomainError('INTEGRATION_UNAVAILABLE', 'Could not fetch machineId from Plex server');
+  }
+
+  settings.plexMachineId = machineId;
+  await settings.save();
+
+  logger.info('MachineId stored successfully', { machineId });
+  return NextResponse.json({
+    success: true,
+    machineId,
+    cached: false,
+  });
+});

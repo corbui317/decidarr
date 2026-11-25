@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { connectDB } from '@/lib/db';
+import { NextResponse } from 'next/server';
+import { z } from 'zod';
+import { route } from '@/lib/request/route';
 import { MobileAuthCode } from '@/lib/models/MobileAuthCode';
 import { buildPlexAuthUrl } from '@/lib/services/plex-oauth';
 import { createAuthPin } from '@/lib/services/plex-oauth-factory';
@@ -8,83 +9,76 @@ import {
   generateDeviceCode,
   redactToken,
 } from '@/lib/mobile-auth/tokens';
-import { enforceRateLimit } from '@/lib/security/rate-limit';
 import { resolveOAuthForwardUrl } from '@/lib/security/oauth-redirect';
 import { assertSetupSecretAllowed } from '@/lib/security/setup-secret';
 import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('API:MobileAuthStart');
 
+const bodyContract = z.object({
+  deviceId: z.string().min(8, 'deviceId is required'),
+  deviceName: z.string().optional(),
+});
+
 /** Same budget as the browser sign-in start (POST /api/auth/plex/start). */
-const RATE_LIMIT_CONFIG = {
-  windowMs: 15 * 60 * 1000,
-  maxAttempts: 5,
-};
+export const POST = route(
+  {
+    access: 'public',
+    body: bodyContract,
+    rateLimit: { scope: 'mobile-auth:start', windowMs: 15 * 60 * 1000, maxAttempts: 5 },
+  },
+  async ({ request, body }) => {
+    try {
+      // A mobile sign-in on a server that has not finished setup would make the caller the
+      // admin, so it needs the same setup secret as the browser flow.
+      const setupCheck = await assertSetupSecretAllowed(request);
+      if (!setupCheck.ok) {
+        return NextResponse.json(
+          { error: setupCheck.error, code: setupCheck.code },
+          { status: setupCheck.status }
+        );
+      }
 
-export async function POST(request: NextRequest) {
-  try {
-    const rateLimitResponse = enforceRateLimit(request, 'mobile-auth:start', RATE_LIMIT_CONFIG);
-    if (rateLimitResponse) {
-      logger.warn('Rate limit exceeded for mobile auth start');
-      return rateLimitResponse;
+      const deviceId = body.deviceId.trim();
+      const deviceName = body.deviceName?.trim() || undefined;
+
+      const pin = await createAuthPin();
+      const deviceCode = generateDeviceCode();
+      const expiresAt = authCodeExpiresAt();
+
+      const authUrl = buildPlexAuthUrl(pin.code, { forwardUrl: resolveOAuthForwardUrl(request) });
+
+      await MobileAuthCode.create({
+        deviceCode,
+        deviceId,
+        deviceName,
+        pinId: pin.id,
+        pinCode: pin.code,
+        expiresAt,
+      });
+
+      logger.info('Mobile auth started', {
+        deviceId,
+        pinId: pin.id,
+        deviceCode: redactToken(deviceCode),
+      });
+
+      return NextResponse.json({
+        authUrl,
+        pinId: pin.id,
+        deviceCode,
+        expiresAt: expiresAt.toISOString(),
+      });
+    } catch (err) {
+      const msg = (err as Error).message;
+      if (msg === 'PLEX_UNAVAILABLE') {
+        return NextResponse.json(
+          { error: 'Plex.tv is unavailable. Please try again later.', code: 'PLEX_UNAVAILABLE' },
+          { status: 503 }
+        );
+      }
+      logger.error('Mobile auth start failed', { error: msg });
+      return NextResponse.json({ error: 'Failed to start authorization' }, { status: 500 });
     }
-
-    await connectDB();
-
-    // A mobile sign-in on a server that has not finished setup would make the caller the
-    // admin, so it needs the same setup secret as the browser flow.
-    const setupCheck = await assertSetupSecretAllowed(request);
-    if (!setupCheck.ok) {
-      return NextResponse.json(
-        { error: setupCheck.error, code: setupCheck.code },
-        { status: setupCheck.status }
-      );
-    }
-
-    const body = await request.json().catch(() => null);
-    const deviceId = typeof body?.deviceId === 'string' ? body.deviceId.trim() : '';
-    const deviceName = typeof body?.deviceName === 'string' ? body.deviceName.trim() : undefined;
-
-    if (!deviceId || deviceId.length < 8) {
-      return NextResponse.json({ error: 'deviceId is required' }, { status: 400 });
-    }
-
-    const pin = await createAuthPin();
-    const deviceCode = generateDeviceCode();
-    const expiresAt = authCodeExpiresAt();
-
-    const authUrl = buildPlexAuthUrl(pin.code, { forwardUrl: resolveOAuthForwardUrl(request) });
-
-    await MobileAuthCode.create({
-      deviceCode,
-      deviceId,
-      deviceName,
-      pinId: pin.id,
-      pinCode: pin.code,
-      expiresAt,
-    });
-
-    logger.info('Mobile auth started', {
-      deviceId,
-      pinId: pin.id,
-      deviceCode: redactToken(deviceCode),
-    });
-
-    return NextResponse.json({
-      authUrl,
-      pinId: pin.id,
-      deviceCode,
-      expiresAt: expiresAt.toISOString(),
-    });
-  } catch (err) {
-    const msg = (err as Error).message;
-    if (msg === 'PLEX_UNAVAILABLE') {
-      return NextResponse.json(
-        { error: 'Plex.tv is unavailable. Please try again later.', code: 'PLEX_UNAVAILABLE' },
-        { status: 503 }
-      );
-    }
-    logger.error('Mobile auth start failed', { error: msg });
-    return NextResponse.json({ error: 'Failed to start authorization' }, { status: 500 });
   }
-}
+);

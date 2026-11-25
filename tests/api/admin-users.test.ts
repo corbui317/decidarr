@@ -50,7 +50,7 @@ describe('Admin users API routes', () => {
     });
     await authenticateTestSession({ user });
 
-    const res = await adminUsersGet();
+    const res = await adminUsersGet(createJsonRequest('http://localhost/api/admin/users', 'GET'));
     const body = await res.json();
 
     expect(res.status).toBe(403);
@@ -76,7 +76,7 @@ describe('Admin users API routes', () => {
     await settings.save();
     await authenticateTestSession({ user: admin });
 
-    const res = await adminUsersGet();
+    const res = await adminUsersGet(createJsonRequest('http://localhost/api/admin/users', 'GET'));
     const body = await res.json();
 
     expect(res.status).toBe(200);
@@ -154,7 +154,7 @@ describe('Admin users API routes', () => {
     expect(revokedUser?.sessionVersion).toBe(1);
 
     setTestCookie('decidarr_session', staleSession);
-    const meRes = await meGet();
+    const meRes = await meGet(createJsonRequest('http://localhost/api/auth/me', 'GET'));
     expect(meRes.status).toBe(401);
   });
 });

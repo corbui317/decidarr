@@ -66,7 +66,12 @@ describe('request-handling module', () => {
       const [cookieSession, bearerSession] = seen;
       expect(cookieSession.credential).toBe('cookie');
       expect(bearerSession.credential).toBe('bearer');
-      expect({ ...cookieSession, credential: null }).toEqual({ ...bearerSession, credential: null });
+      // expiresAt is excluded: web sessions and mobile access tokens have different lifetimes.
+      expect({ ...cookieSession, credential: null, expiresAt: null }).toEqual({
+        ...bearerSession,
+        credential: null,
+        expiresAt: null,
+      });
       expect(cookieSession.userId.toString()).toBe(friend._id.toString());
       expect(cookieSession.isAdmin).toBe(false);
     });

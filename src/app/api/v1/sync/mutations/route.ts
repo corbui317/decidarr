@@ -1,40 +1,37 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { connectDB } from '@/lib/db';
-import { requireMobileUser } from '@/lib/mobile-auth/context';
-import { isAuthError, authErrorStatus } from '@/lib/auth';
+import { NextResponse } from 'next/server';
+import { z } from 'zod';
+import { route } from '@/lib/request/route';
+import { DomainError } from '@/lib/request/errors';
+import { User } from '@/lib/models/User';
 import { applyMutations, validateMutationBatch } from '@/lib/sync/service';
 import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('API:SyncMutations');
 
-export async function POST(request: NextRequest) {
+const bodyContract = z.object({ mutations: z.array(z.unknown()) });
+
+export const POST = route({ access: 'user', body: bodyContract }, async ({ session, body }) => {
+  if (session.credential !== 'bearer') {
+    throw new DomainError('UNAUTHENTICATED');
+  }
+
+  let mutations;
   try {
-    await connectDB();
-    const auth = await requireMobileUser(request);
-    const body = await request.json();
+    mutations = validateMutationBatch(body.mutations);
+  } catch (err) {
+    throw new DomainError('VALIDATION_FAILED', (err as Error).message);
+  }
 
-    if (!body || typeof body !== 'object' || !Array.isArray(body.mutations)) {
-      return NextResponse.json({ error: 'mutations array is required' }, { status: 400 });
-    }
+  const user = await User.findById(session.userId);
+  if (!user) {
+    throw new DomainError('UNAUTHENTICATED');
+  }
 
-    let mutations;
-    try {
-      mutations = validateMutationBatch(body.mutations);
-    } catch (err) {
-      return NextResponse.json({ error: (err as Error).message }, { status: 400 });
-    }
-
-    const result = await applyMutations(auth.user, mutations);
+  try {
+    const result = await applyMutations(user, mutations);
     return NextResponse.json(result);
   } catch (error) {
-    const msg = (error as Error)?.message;
-    if (isAuthError(error)) {
-      return NextResponse.json(
-        { error: error.message, code: error.code },
-        { status: authErrorStatus(error) }
-      );
-    }
-    logger.error('Sync mutations failed', { error: msg });
-    return NextResponse.json({ error: 'Failed to apply mutations' }, { status: 500 });
+    logger.error('Sync mutations failed', { error: (error as Error)?.message });
+    throw error;
   }
-}
+});

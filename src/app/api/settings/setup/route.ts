@@ -1,43 +1,29 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { connectDB } from '@/lib/db';
+import { NextResponse } from 'next/server';
+import { z } from 'zod';
+import { route, requireAdminSession } from '@/lib/request/route';
 import { getOrCreateSettings } from '@/lib/models/Settings';
-import { requireAdmin, isAuthError, authErrorStatus } from '@/lib/auth';
-import { createLogger } from '@/lib/logger';
 
-const logger = createLogger('API:Setup');
+const bodyContract = z.object({ tmdbApiKey: z.string().optional() });
 
 /** Save optional TMDB key after OAuth setup, or update integration keys during admin reconfigure */
-export async function POST(request: NextRequest) {
-  try {
-    await connectDB();
-    const settings = await getOrCreateSettings();
-    const body = await request.json();
-    const { tmdbApiKey } = body;
+export const POST = route({ access: 'public', body: bodyContract }, async ({ request, body }) => {
+  const settings = await getOrCreateSettings();
+  const { tmdbApiKey } = body;
 
-    if (settings.setupComplete) {
-      await requireAdmin();
-      if (tmdbApiKey) {
-        settings.tmdbApiKey = tmdbApiKey;
-        await settings.save();
-      }
-      return NextResponse.json({ success: true, message: 'Settings updated' });
+  if (settings.setupComplete) {
+    await requireAdminSession(request);
+    if (tmdbApiKey) {
+      settings.tmdbApiKey = tmdbApiKey;
+      await settings.save();
     }
-
-    return NextResponse.json(
-      {
-        error: 'Complete setup by signing in with Plex.',
-        useOAuth: true,
-      },
-      { status: 400 }
-    );
-  } catch (error) {
-    if (isAuthError(error)) {
-      return NextResponse.json(
-        { error: (error as Error).message },
-        { status: authErrorStatus(error) }
-      );
-    }
-    logger.error('Setup error', { error: (error as Error).message });
-    return NextResponse.json({ error: 'Setup failed. Please try again.' }, { status: 500 });
+    return NextResponse.json({ success: true, message: 'Settings updated' });
   }
-}
+
+  return NextResponse.json(
+    {
+      error: 'Complete setup by signing in with Plex.',
+      useOAuth: true,
+    },
+    { status: 400 }
+  );
+});

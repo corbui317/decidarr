@@ -22,7 +22,7 @@ describe('Settings API routes', () => {
 
   describe('GET /api/settings', () => {
     it('returns masked secrets', async () => {
-      const res = await settingsGet();
+      const res = await settingsGet(createJsonRequest('http://localhost/api/settings', 'GET'));
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.plex.hasToken).toBe(true);
@@ -32,14 +32,14 @@ describe('Settings API routes', () => {
 
     it('returns 401 without session', async () => {
       clearTestCookies();
-      const res = await settingsGet();
+      const res = await settingsGet(createJsonRequest('http://localhost/api/settings', 'GET'));
       expect(res.status).toBe(401);
     });
   });
 
   describe('PUT /api/settings', () => {
     it('does not overwrite token when masked value sent', async () => {
-      const getRes = await settingsGet();
+      const getRes = await settingsGet(createJsonRequest('http://localhost/api/settings', 'GET'));
       const current = await getRes.json();
 
       const putReq = createJsonRequest('http://localhost/api/settings', 'PUT', {
@@ -48,7 +48,7 @@ describe('Settings API routes', () => {
       const putRes = await settingsPut(putReq as never);
       expect(putRes.status).toBe(200);
 
-      const afterRes = await settingsGet();
+      const afterRes = await settingsGet(createJsonRequest('http://localhost/api/settings', 'GET'));
       const after = await afterRes.json();
       expect(after.plex.hasToken).toBe(true);
     });

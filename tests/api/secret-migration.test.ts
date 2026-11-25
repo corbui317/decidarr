@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import mongoose from 'mongoose';
 import { clearDatabase } from '../helpers/mongo';
 import { clearTestCookies, setTestCookie } from '../helpers/cookies';
-import { authenticateTestSession, createModernSessionToken, seedConfiguredSettings, seedTestUser } from '../helpers/auth';
+import { authenticateTestSession, createJsonRequest, createModernSessionToken, seedConfiguredSettings, seedTestUser } from '../helpers/auth';
 import {
   seedLegacyInstall,
   seedV2Install,
@@ -101,7 +101,7 @@ describe('Stored secrets', () => {
       const tmdbCiphertext = (await rawSettings()).tmdbApiKey!;
       await settingsCollection().updateOne({ _id: 'app-settings' }, { $set: { tautulliApiKey: tmdbCiphertext } });
 
-      const res = await settingsGet();
+      const res = await settingsGet(createJsonRequest('http://localhost/api/settings', 'GET'));
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.tmdb.hasKey).toBe(true);
@@ -117,10 +117,10 @@ describe('Stored secrets', () => {
       await User.updateOne({ _id: friend._id }, { $set: { plexToken: admin.plexToken } });
 
       setTestCookie('decidarr_session', await createModernSessionToken(friend));
-      expect((await meGet()).status).toBe(401);
+      expect((await meGet(createJsonRequest('http://localhost/api/auth/me', 'GET'))).status).toBe(401);
 
       setTestCookie('decidarr_session', await createModernSessionToken(admin));
-      expect((await meGet()).status).toBe(200);
+      expect((await meGet(createJsonRequest('http://localhost/api/auth/me', 'GET'))).status).toBe(200);
       expect(await findCredentialsNeedingReentry()).toEqual(['Plex sign-in for friend']);
       expect((await User.findById(friend._id))?.plexToken).toBe(admin.plexToken);
     });
@@ -133,7 +133,7 @@ describe('Stored secrets', () => {
       const legacyWrappedKey = (await rawSettings()).encryptionKey;
 
       simulateRestart();
-      expect((await statusGet()).status).toBe(200);
+      expect((await statusGet(createJsonRequest('http://localhost/api/settings/status', 'GET'))).status).toBe(200);
 
       const raw = await rawSettings();
       expect(isCurrentCiphertext(raw.plexToken!)).toBe(true);
@@ -197,9 +197,9 @@ describe('Stored secrets', () => {
       const info = vi.spyOn(console, 'log').mockImplementation(() => {});
 
       const responses = await Promise.all([
-        statusGet(),
+        statusGet(createJsonRequest('http://localhost/api/settings/status', 'GET')),
         runMigrations(),
-        statusGet(),
+        statusGet(createJsonRequest('http://localhost/api/settings/status', 'GET')),
         runMigrations(),
         runMigrations(),
       ]);

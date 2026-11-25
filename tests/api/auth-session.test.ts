@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   authenticateTestSession,
   clearTestCookies,
+  createJsonRequest,
   seedConfiguredSettings,
 } from '../helpers/auth';
 import { getTestCookie, setTestCookie } from '../helpers/cookies';
@@ -36,7 +37,7 @@ describe('Auth session API routes', () => {
     await seedConfiguredSettings();
     const { user } = await authenticateTestSession();
 
-    const res = await refreshPost();
+    const res = await refreshPost(createJsonRequest('http://localhost/api/auth/refresh', 'POST'));
     const body = await res.json();
 
     expect(res.status).toBe(200);
@@ -53,7 +54,7 @@ describe('Auth session API routes', () => {
     await authenticateTestSession();
     plexMock.validateToken.mockResolvedValue({ valid: false });
 
-    const res = await refreshPost();
+    const res = await refreshPost(createJsonRequest('http://localhost/api/auth/refresh', 'POST'));
     const body = await res.json();
 
     expect(res.status).toBe(401);
@@ -63,11 +64,11 @@ describe('Auth session API routes', () => {
   it('returns 401 when refresh is requested without a session', async () => {
     await seedConfiguredSettings();
 
-    const res = await refreshPost();
+    const res = await refreshPost(createJsonRequest('http://localhost/api/auth/refresh', 'POST'));
     const body = await res.json();
 
     expect(res.status).toBe(401);
-    expect(body.error).toBe('Session expired');
+    expect(body.error).toBe('Unauthorized');
     expect(plexMock.validateToken).not.toHaveBeenCalled();
   });
 
@@ -76,7 +77,7 @@ describe('Auth session API routes', () => {
     await authenticateTestSession();
     expect(getTestCookie('decidarr_session')).toBeTruthy();
 
-    const res = await logoutDelete();
+    const res = await logoutDelete(createJsonRequest('http://localhost/api/auth/logout', 'DELETE'));
     const body = await res.json();
 
     expect(res.status).toBe(200);
@@ -99,16 +100,16 @@ describe('Auth session API routes', () => {
 
     it('GET /api/auth/me answers 401, not 500', async () => {
       await setForeignSessionCookie();
-      const res = await meGet();
+      const res = await meGet(createJsonRequest('http://localhost/api/auth/me', 'GET'));
       expect(res.status).toBe(401);
-      expect(await res.json()).toEqual({ error: 'Unauthorized' });
+      expect(await res.json()).toEqual({ error: 'Unauthorized', code: 'UNAUTHENTICATED' });
     });
 
-    it('POST /api/auth/refresh answers 401 Session expired', async () => {
+    it('POST /api/auth/refresh answers 401 for a session the server cannot verify', async () => {
       await setForeignSessionCookie();
-      const res = await refreshPost();
+      const res = await refreshPost(createJsonRequest('http://localhost/api/auth/refresh', 'POST'));
       expect(res.status).toBe(401);
-      expect(await res.json()).toEqual({ error: 'Session expired' });
+      expect(await res.json()).toEqual({ error: 'Unauthorized', code: 'UNAUTHENTICATED' });
     });
 
     it('a protected route answers 401 Session expired for an expired session', async () => {
