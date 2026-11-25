@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { clearDatabase } from '../helpers/mongo';
 import {
@@ -12,33 +12,27 @@ import {
 import { setTestCookie } from '../helpers/cookies';
 import { getOrCreateSettings } from '@/lib/models/Settings';
 import { User } from '@/lib/models/User';
-
-const plexOAuthMocks = vi.hoisted(() => ({
-  fetchPlexFriends: vi.fn(),
-}));
-
-vi.mock('@/lib/services/plex-oauth', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/services/plex-oauth')>();
-  return {
-    ...actual,
-    fetchPlexFriends: plexOAuthMocks.fetchPlexFriends,
-  };
-});
+import { fakeIntegrations, fakePlexTv, type SentRequest } from '../helpers/fake-integrations';
 
 import { GET as adminUsersGet } from '@/app/api/admin/users/route';
 import { PUT as adminUserPut } from '@/app/api/admin/users/[plexUserId]/route';
 import { GET as meGet } from '@/app/api/auth/me/route';
 
 describe('Admin users API routes', () => {
+  let sent: SentRequest[];
+
   beforeEach(async () => {
     await clearDatabase();
     clearTestCookies();
     await seedConfiguredSettings();
-    vi.clearAllMocks();
-    plexOAuthMocks.fetchPlexFriends.mockResolvedValue([
-      { id: 'friend-1', username: 'alice', thumb: 'alice.jpg' },
-      { id: 'friend-2', username: 'bob', thumb: 'bob.jpg' },
-    ]);
+    ({ sent } = fakeIntegrations(
+      fakePlexTv({
+        friends: [
+          { id: 'friend-1', username: 'alice', thumb: 'alice.jpg' },
+          { id: 'friend-2', username: 'bob', thumb: 'bob.jpg' },
+        ],
+      })
+    ));
   });
 
   it('returns 403 for non-admin users', async () => {
@@ -55,7 +49,7 @@ describe('Admin users API routes', () => {
 
     expect(res.status).toBe(403);
     expect(body.error).toBe('Forbidden');
-    expect(plexOAuthMocks.fetchPlexFriends).not.toHaveBeenCalled();
+    expect(sent).toEqual([]);
   });
 
   it('lets admins list pending Plex friends and local users', async () => {

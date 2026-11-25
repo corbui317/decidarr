@@ -22,6 +22,7 @@ export default defineConfig({
         'src/lib/auth.ts': { lines: 70 },
         'src/lib/auth-login.ts': { lines: 70 },
         'src/lib/security/**': { lines: 70 },
+        'src/lib/integrations/**': { lines: 70 },
         'src/app/api/auth/**': { lines: 70 },
         'src/lib/services/overseerr.ts': { lines: 70 },
       },
@@ -39,7 +40,7 @@ export default defineConfig({
           name: 'unit-api',
           include: ['tests/unit/**/*.test.ts', 'tests/api/**/*.test.ts'],
           environment: 'node',
-          setupFiles: ['./vitest.setup.ts', './tests/setup-db.ts'],
+          setupFiles: ['./vitest.setup.ts', './tests/setup-db.ts', './tests/setup-integrations.ts'],
         },
       },
       {

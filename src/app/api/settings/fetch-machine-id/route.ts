@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { route } from '@/lib/request/route';
 import { DomainError } from '@/lib/request/errors';
 import { getOrCreateSettings } from '@/lib/models/Settings';
-import { createPlexService } from '@/lib/services/plex-factory';
+import { PlexService } from '@/lib/services/plex';
 import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('API:FetchMachineId');
@@ -22,7 +22,7 @@ export const POST = route({ access: 'admin' }, async ({ session }) => {
   }
 
   logger.info('Fetching machineId from Plex server');
-  const plexService = await createPlexService(session.plex.token, session.plex.serverUrl);
+  const plexService = new PlexService(session.plex.token, session.plex.serverUrl);
   const machineId = await plexService.fetchMachineIdFromServer();
 
   if (!machineId) {

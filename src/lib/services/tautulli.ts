@@ -1,7 +1,8 @@
 import { createLogger } from '../logger';
+import { createIntegrationClient, type IntegrationClient } from '../integrations/client';
 
 const logger = createLogger('TautulliService');
-const FETCH_TIMEOUT_MS = 10_000;
+const TAUTULLI_TIMEOUT_MS = 10_000;
 
 export interface TautulliUser {
   user_id: number;
@@ -36,36 +37,25 @@ export interface TautulliHistoryItem {
   user: string;
 }
 
-async function fetchWithTimeout(url: string, options?: RequestInit): Promise<Response> {
-  return fetch(url, {
-    ...options,
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
-}
-
 export class TautulliService {
-  private baseUrl: string;
-  private apiKey: string;
+  private client: IntegrationClient;
 
   constructor(baseUrl: string, apiKey: string) {
-    this.baseUrl = baseUrl.replace(/\/$/, '');
-    this.apiKey = apiKey;
+    this.client = createIntegrationClient({
+      integration: 'Tautulli',
+      baseUrl,
+      auth: { query: 'apikey', value: apiKey },
+      timeoutMs: TAUTULLI_TIMEOUT_MS,
+    });
   }
 
-  private buildUrl(cmd: string, params: Record<string, string | number> = {}): string {
-    const url = new URL(`${this.baseUrl}/api/v2`);
-    url.searchParams.set('apikey', this.apiKey);
-    url.searchParams.set('cmd', cmd);
-    for (const [key, value] of Object.entries(params)) {
-      url.searchParams.set(key, String(value));
-    }
-    return url.toString();
+  private command(cmd: string, params: Record<string, string | number> = {}): Promise<Response> {
+    return this.client.request('/api/v2', { query: { cmd, ...params } });
   }
 
   async testConnection(): Promise<{ success: boolean; error?: string }> {
     try {
-      const url = this.buildUrl('get_tautulli_info');
-      const response = await fetchWithTimeout(url);
+      const response = await this.command('get_tautulli_info');
       if (!response.ok) {
         return { success: false, error: `HTTP ${response.status}` };
       }
@@ -84,8 +74,7 @@ export class TautulliService {
 
   async getUsers(): Promise<TautulliUser[]> {
     try {
-      const url = this.buildUrl('get_users');
-      const response = await fetchWithTimeout(url);
+      const response = await this.command('get_users');
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
       const data = await response.json();
@@ -119,8 +108,7 @@ export class TautulliService {
       if (userId !== undefined) params.user_id = userId;
       if (mediaType) params.media_type = mediaType;
 
-      const url = this.buildUrl('get_history', params);
-      const response = await fetchWithTimeout(url);
+      const response = await this.command('get_history', params);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
       const data = await response.json();

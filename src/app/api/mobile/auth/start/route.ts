@@ -2,8 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { route } from '@/lib/request/route';
 import { MobileAuthCode } from '@/lib/models/MobileAuthCode';
-import { buildPlexAuthUrl } from '@/lib/services/plex-oauth';
-import { createAuthPin } from '@/lib/services/plex-oauth-factory';
+import { buildPlexAuthUrl, createAuthPin } from '@/lib/services/plex-oauth';
 import {
   authCodeExpiresAt,
   generateDeviceCode,

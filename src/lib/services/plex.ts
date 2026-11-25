@@ -1,9 +1,9 @@
 import { createLogger } from '../logger';
-import { getPlexClientHeaders } from './plex-oauth';
+import { createIntegrationClient, type IntegrationClient } from '../integrations/client';
+import { getPlexClientHeaders, plexTvClient } from './plex-oauth';
 
 const logger = createLogger('PlexService');
-const PLEX_TV_BASE = 'https://plex.tv';
-const FETCH_TIMEOUT_MS = 15_000;
+const PLEX_SERVER_TIMEOUT_MS = 15_000;
 
 export interface PlexUser {
   id: string;
@@ -102,31 +102,33 @@ export interface PlexItem {
 export class PlexService {
   private serverUrl: string | null;
   private machineId: string | null;
-  private headers: Record<string, string>;
+  private plexTv: IntegrationClient;
+  private server: IntegrationClient | null;
 
   constructor(token: string, serverUrl: string | null = null, machineId: string | null = null) {
     this.serverUrl = serverUrl;
     this.machineId = machineId;
-    this.headers = {
-      ...getPlexClientHeaders(),
-      'X-Plex-Token': token,
-    };
+    this.plexTv = plexTvClient(token);
+    this.server = serverUrl
+      ? createIntegrationClient({
+          integration: 'Plex',
+          baseUrl: serverUrl,
+          auth: { header: 'X-Plex-Token', value: token },
+          headers: getPlexClientHeaders(),
+          timeoutMs: PLEX_SERVER_TIMEOUT_MS,
+        })
+      : null;
   }
 
-  private async fetchWithTimeout(url: string, options?: RequestInit): Promise<Response> {
-    return fetch(url, {
-      ...options,
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
+  private requireServer(): IntegrationClient {
+    if (!this.server) throw new Error('Server URL not set');
+    return this.server;
   }
 
   async validateToken(): Promise<{ valid: boolean; user?: PlexUser; error?: string }> {
     try {
-      const response = await this.fetchWithTimeout(`${PLEX_TV_BASE}/api/v2/user`, {
-        headers: {
-          ...this.headers,
-          'X-Plex-Client-Identifier': 'decidarr',
-        },
+      const response = await this.plexTv.request('/api/v2/user', {
+        headers: { 'X-Plex-Client-Identifier': 'decidarr' },
       });
 
       if (!response.ok) {
@@ -152,16 +154,9 @@ export class PlexService {
   }
 
   async getServers(): Promise<PlexServer[]> {
-    const resourcesUrl = `${PLEX_TV_BASE}/api/v2/resources?includeHttps=1&includeRelay=1`;
-    const response = await this.fetchWithTimeout(resourcesUrl, {
-      headers: this.headers,
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to get servers');
-    }
-
-    const data = await response.json();
+    const data = await this.plexTv.json<Record<string, unknown>[]>(
+      '/api/v2/resources?includeHttps=1&includeRelay=1'
+    );
     const servers = data.filter((r: Record<string, unknown>) => r.provides === 'server');
 
     logger.debug('Fetched servers', { count: servers.length });
@@ -188,16 +183,14 @@ export class PlexService {
   // Fetch machineId directly from the Plex server's identity endpoint
   // This is more reliable than server discovery when the URL is manually entered
   async fetchMachineIdFromServer(): Promise<string | null> {
-    if (!this.serverUrl) {
+    if (!this.server) {
       logger.warn('Cannot fetch machineId: no server URL');
       return null;
     }
 
     try {
       logger.debug('Fetching machineId from server identity', { serverUrl: this.serverUrl });
-      const response = await this.fetchWithTimeout(`${this.serverUrl}/identity`, {
-        headers: { ...this.headers, Accept: 'application/json' },
-      });
+      const response = await this.server.request('/identity');
 
       if (!response.ok) {
         logger.warn('Failed to fetch server identity', { status: response.status });
@@ -222,12 +215,10 @@ export class PlexService {
   }
 
   async getLibrarySections(): Promise<PlexLibrary[]> {
-    if (!this.serverUrl) throw new Error('Server URL not set');
+    const server = this.requireServer();
 
     logger.debug('Fetching library sections', { serverUrl: this.serverUrl });
-    const response = await this.fetchWithTimeout(`${this.serverUrl}/library/sections`, {
-      headers: this.headers,
-    });
+    const response = await server.request('/library/sections');
 
     if (!response.ok) {
       logger.warn('Failed to get library sections', { status: response.status });
@@ -250,13 +241,10 @@ export class PlexService {
   }
 
   async getLibraryItems(sectionId: string): Promise<PlexItem[]> {
-    if (!this.serverUrl) throw new Error('Server URL not set');
+    const server = this.requireServer();
 
     logger.debug('Fetching library items', { sectionId });
-    const response = await this.fetchWithTimeout(
-      `${this.serverUrl}/library/sections/${sectionId}/all`,
-      { headers: { ...this.headers, Accept: 'application/json' } }
-    );
+    const response = await server.request(`/library/sections/${sectionId}/all`);
 
     if (!response.ok) {
       logger.warn('Failed to get library items', { sectionId, status: response.status });
@@ -271,13 +259,10 @@ export class PlexService {
   }
 
   async getItemMetadata(ratingKey: string): Promise<PlexItem> {
-    if (!this.serverUrl) throw new Error('Server URL not set');
+    const server = this.requireServer();
 
     logger.debug('Fetching item metadata', { ratingKey });
-    const response = await this.fetchWithTimeout(
-      `${this.serverUrl}/library/metadata/${ratingKey}`,
-      { headers: { ...this.headers, Accept: 'application/json' } }
-    );
+    const response = await server.request(`/library/metadata/${ratingKey}`);
 
     if (!response.ok) {
       logger.warn('Failed to get item metadata', { ratingKey, status: response.status });
@@ -290,13 +275,10 @@ export class PlexService {
   }
 
   async getShowEpisodes(showRatingKey: string): Promise<Record<string, unknown>[]> {
-    if (!this.serverUrl) throw new Error('Server URL not set');
+    const server = this.requireServer();
 
     logger.debug('Fetching show episodes', { showRatingKey });
-    const response = await this.fetchWithTimeout(
-      `${this.serverUrl}/library/metadata/${showRatingKey}/allLeaves`,
-      { headers: { ...this.headers, Accept: 'application/json' } }
-    );
+    const response = await server.request(`/library/metadata/${showRatingKey}/allLeaves`);
 
     if (!response.ok) {
       logger.warn('Failed to get show episodes', { showRatingKey, status: response.status });
@@ -362,13 +344,10 @@ export class PlexService {
   }
 
   async getCollections(sectionId: string): Promise<PlexCollection[]> {
-    if (!this.serverUrl) throw new Error('Server URL not set');
+    const server = this.requireServer();
 
     try {
-      const response = await this.fetchWithTimeout(
-        `${this.serverUrl}/library/sections/${sectionId}/collections`,
-        { headers: { ...this.headers, Accept: 'application/json' } }
-      );
+      const response = await server.request(`/library/sections/${sectionId}/collections`);
 
       if (!response.ok) {
         logger.warn('Failed to get collections', { sectionId, status: response.status });
@@ -393,13 +372,10 @@ export class PlexService {
   }
 
   async getCollectionItems(collectionRatingKey: string): Promise<PlexItem[]> {
-    if (!this.serverUrl) throw new Error('Server URL not set');
+    const server = this.requireServer();
 
     try {
-      const response = await this.fetchWithTimeout(
-        `${this.serverUrl}/library/collections/${collectionRatingKey}/children`,
-        { headers: { ...this.headers, Accept: 'application/json' } }
-      );
+      const response = await server.request(`/library/collections/${collectionRatingKey}/children`);
 
       if (!response.ok) {
         logger.warn('Failed to get collection items', { collectionRatingKey, status: response.status });
@@ -415,6 +391,14 @@ export class PlexService {
       logger.error('Error fetching collection items', { collectionRatingKey, error: (err as Error).message });
       return [];
     }
+  }
+
+  /** A library image, as the Plex server returns it; `path` is an already validated /library/ path. */
+  async getImage(path: string, width?: number): Promise<Response> {
+    return this.requireServer().request(path, {
+      headers: { Accept: 'image/*,*/*' },
+      query: width === undefined ? undefined : { width },
+    });
   }
 
   // Build a deep link to view/play content in Plex

@@ -5,7 +5,7 @@ import { DomainError } from '@/lib/request/errors';
 import { invalidateAccessibleLibraryCache } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
 import { findCredentialsNeedingReentry } from '@/lib/migrate';
-import { assertSafeServiceUrl, allowPrivateServiceUrls } from '@/lib/security/service-url';
+import { assertSafeServiceUrl } from '@/lib/security/service-url';
 import { getOrCreateSettings } from '@/lib/models/Settings';
 import { APP_THEMES, ANIMATION_STYLES, ANIMATION_SPEEDS } from '@/types/shared';
 
@@ -125,9 +125,7 @@ export const PUT = route({ access: 'admin', body: putBodyContract }, async ({ bo
       }
     }
     if (body.plex.serverUrl !== undefined && body.plex.serverUrl) {
-      const urlCheck = await assertSafeServiceUrl(body.plex.serverUrl, {
-        allowPrivateNetworks: allowPrivateServiceUrls(),
-      });
+      const urlCheck = await assertSafeServiceUrl(body.plex.serverUrl);
       if (!urlCheck.valid) {
         throw new DomainError('VALIDATION_FAILED', urlCheck.error || 'Invalid or disallowed service URL');
       }
@@ -154,9 +152,7 @@ export const PUT = route({ access: 'admin', body: putBodyContract }, async ({ bo
   if (body.overseerr) {
     if (body.overseerr.url !== undefined) {
       if (body.overseerr.url) {
-        const urlCheck = await assertSafeServiceUrl(body.overseerr.url, {
-          allowPrivateNetworks: allowPrivateServiceUrls(),
-        });
+        const urlCheck = await assertSafeServiceUrl(body.overseerr.url);
         if (!urlCheck.valid) {
           throw new DomainError('VALIDATION_FAILED', urlCheck.error || 'Invalid or disallowed service URL');
         }
@@ -180,9 +176,7 @@ export const PUT = route({ access: 'admin', body: putBodyContract }, async ({ bo
   if (body.tautulli) {
     if (body.tautulli.url !== undefined) {
       if (body.tautulli.url) {
-        const urlCheck = await assertSafeServiceUrl(body.tautulli.url, {
-          allowPrivateNetworks: allowPrivateServiceUrls(),
-        });
+        const urlCheck = await assertSafeServiceUrl(body.tautulli.url);
         if (!urlCheck.valid) {
           throw new DomainError('VALIDATION_FAILED', urlCheck.error || 'Invalid or disallowed service URL');
         }

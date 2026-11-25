@@ -10,26 +10,14 @@ import { MobileRefreshToken } from '@/lib/models/MobileRefreshToken';
 import { runMigrations, resetMigrationStateForTests } from '@/lib/migrate';
 import { issueTokenPair } from '@/lib/mobile-auth/tokens';
 import { deriveKey, isCurrentCiphertext } from '@/lib/secrets';
+import {
+  fakeIntegrations,
+  fakePlexTv,
+  type FakePlexTvOptions,
+  type SentRequest,
+} from '../helpers/fake-integrations';
 
 const PLEX_TOKEN = 'plex-token-hardening-test';
-
-const plexOAuthMock = {
-  createAuthPin: vi.fn(),
-  pollAuthPin: vi.fn(),
-};
-
-vi.mock('@/lib/services/plex-oauth', () => ({
-  createAuthPin: (...args: unknown[]) => plexOAuthMock.createAuthPin(...args),
-  pollAuthPin: (...args: unknown[]) => plexOAuthMock.pollAuthPin(...args),
-  fetchPlexUser: vi.fn(),
-  buildPlexAuthUrl: (code: string, options?: { forwardUrl?: string }) => {
-    const params = new URLSearchParams({ code });
-    if (options?.forwardUrl) {
-      params.append('forwardUrl', options.forwardUrl);
-    }
-    return `https://app.plex.tv/auth#?${params.toString()}`;
-  },
-}));
 
 vi.mock('@/lib/auth-login', () => ({
   completePlexLogin: vi.fn(),
@@ -42,6 +30,12 @@ import { GET as bootstrapGet } from '@/app/api/v1/sync/bootstrap/route';
 import { completePlexLogin } from '@/lib/auth-login';
 
 const DEVICE_ID = 'device-hardening-1';
+
+let plexTv: FakePlexTvOptions;
+let sent: SentRequest[];
+
+const pinsCreated = () => sent.filter((r) => r.method === 'POST' && r.url.pathname === '/api/v2/pins');
+const pinPolls = () => sent.filter((r) => r.url.pathname.startsWith('/api/v2/pins/'));
 
 function startRequest(url = 'http://localhost/api/mobile/auth/start', headers?: HeadersInit) {
   return new NextRequest(url, {
@@ -71,8 +65,8 @@ describe('Mobile auth hardening (spec #1 rules on the mobile routes)', () => {
     resetMigrationStateForTests();
     vi.clearAllMocks();
     await seedConfiguredSettings();
-    plexOAuthMock.createAuthPin.mockResolvedValue({ id: 777, code: 'PIN777' });
-    plexOAuthMock.pollAuthPin.mockResolvedValue({ id: 777, code: 'PIN777', authToken: PLEX_TOKEN });
+    plexTv = { pin: { id: 777, code: 'PIN777' }, authToken: PLEX_TOKEN };
+    ({ sent } = fakeIntegrations(fakePlexTv(plexTv)));
   });
 
   afterEach(() => {
@@ -128,7 +122,7 @@ describe('Mobile auth hardening (spec #1 rules on the mobile routes)', () => {
       const rejected = await startPost(startRequest());
       expect(rejected.status).toBe(403);
       expect((await rejected.json()).code).toBe('INVALID_SETUP_SECRET');
-      expect(plexOAuthMock.createAuthPin).not.toHaveBeenCalled();
+      expect(pinsCreated()).toEqual([]);
 
       const allowed = await startPost(
         startRequest(undefined, { 'X-Decidarr-Setup-Secret': 'first-run-secret' })
@@ -173,7 +167,7 @@ describe('Mobile auth hardening (spec #1 rules on the mobile routes)', () => {
 
       const response = await exchangePost(exchangeRequest(deviceCode));
       expect(response.status).toBe(200);
-      expect(plexOAuthMock.pollAuthPin).toHaveBeenCalledTimes(1);
+      expect(pinPolls()).toHaveLength(1);
       expect(vi.mocked(completePlexLogin)).toHaveBeenLastCalledWith(PLEX_TOKEN);
 
       const stored = await MobileAuthCode.findOne({ deviceCode });
@@ -182,7 +176,7 @@ describe('Mobile auth hardening (spec #1 rules on the mobile routes)', () => {
     });
 
     it('rate limits repeated exchanges of one device code', async () => {
-      plexOAuthMock.pollAuthPin.mockResolvedValue({ id: 777, code: 'PIN777' });
+      plexTv.authToken = null;
 
       const deviceCode = await startDeviceCode();
       let lastStatus = 0;
@@ -191,7 +185,7 @@ describe('Mobile auth hardening (spec #1 rules on the mobile routes)', () => {
       }
 
       expect(lastStatus).toBe(429);
-      expect(plexOAuthMock.pollAuthPin).toHaveBeenCalledTimes(60);
+      expect(pinPolls()).toHaveLength(60);
     });
   });
 

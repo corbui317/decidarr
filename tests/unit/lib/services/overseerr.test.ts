@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { OverseerrService } from '@/lib/services/overseerr';
+import { fakeIntegrations } from '../../../helpers/fake-integrations';
 import multiPageFixture from '../../../fixtures/overseerr-multi-page.json';
 
 const PAGE_SIZE = 100;
@@ -9,41 +10,25 @@ function makeMediaRecord(tmdbId: number, status = 5) {
 }
 
 describe('OverseerrService.fetchAllMediaStatus', () => {
-  const fetchMock = vi.fn();
-
-  beforeEach(() => {
-    fetchMock.mockReset();
-    vi.stubGlobal('fetch', fetchMock);
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
   it('uses skip offset for pages after the first', async () => {
     const pages = multiPageFixture.pages.map((page, index) => ({
       ...page,
       _page: index,
     }));
 
-    fetchMock.mockImplementation(async (url: string) => {
-      const skipMatch = url.match(/skip=(\d+)/);
-      const skip = skipMatch ? Number(skipMatch[1]) : 0;
-      const pageIndex = skip / PAGE_SIZE;
-      const payload = pages[pageIndex];
-      return {
-        ok: true,
-        json: async () => payload,
-      };
-    });
+    const { sent } = fakeIntegrations(({ url }) =>
+      Response.json(pages[Number(url.searchParams.get('skip') ?? 0) / PAGE_SIZE])
+    );
 
     const service = new OverseerrService('http://overseerr.local', 'test-key');
     const index = await service.fetchAllMediaStatus();
 
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(fetchMock.mock.calls[0][0]).toContain('skip=0');
-    expect(fetchMock.mock.calls[1][0]).toContain(`skip=${PAGE_SIZE}`);
-    expect(fetchMock.mock.calls[2][0]).toContain(`skip=${PAGE_SIZE * 2}`);
+    expect(sent.map(({ url }) => `${url.pathname} ${url.searchParams.get('skip')}`)).toEqual([
+      '/api/v1/media 0',
+      `/api/v1/media ${PAGE_SIZE}`,
+      `/api/v1/media ${PAGE_SIZE * 2}`,
+    ]);
+    expect(sent.every(({ headers }) => headers.get('X-Api-Key') === 'test-key')).toBe(true);
     expect(index.totalRecords).toBe(5);
     expect(index.byKey.get('movie:101')).toBeDefined();
     expect(index.byKey.get('tv:102')).toBeDefined();
@@ -54,17 +39,14 @@ describe('OverseerrService.fetchAllMediaStatus', () => {
     const page0 = Array.from({ length: PAGE_SIZE }, (_, i) => makeMediaRecord(i + 1));
     const page1 = [makeMediaRecord(999)];
 
-    let call = 0;
-    fetchMock.mockImplementation(async () => {
-      const payload = call === 0 ? { results: page0 } : { results: page1 };
-      call += 1;
-      return { ok: true, json: async () => payload };
-    });
+    const { sent } = fakeIntegrations(({ url }) =>
+      Response.json({ results: url.searchParams.get('skip') === '0' ? page0 : page1 })
+    );
 
     const service = new OverseerrService('http://overseerr.local', 'test-key');
     const index = await service.fetchAllMediaStatus();
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(sent).toHaveLength(2);
     expect(index.byKey.get('movie:999')).toBeDefined();
   });
 });

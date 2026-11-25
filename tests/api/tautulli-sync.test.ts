@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import mongoose from 'mongoose';
 import { clearDatabase } from '../helpers/mongo';
 import {
@@ -9,20 +9,27 @@ import {
 import { getOrCreateSettings } from '@/lib/models/Settings';
 import { User } from '@/lib/models/User';
 import { WatchedItem } from '@/lib/models/WatchedItem';
-
-const tautulliMock = {
-  testConnection: vi.fn(),
-  getUserIdByPlexUsername: vi.fn(),
-  getWatchHistoryPaged: vi.fn(),
-};
-
-vi.mock('@/lib/services/tautulli', () => ({
-  TautulliService: vi.fn(function TautulliServiceMock() {
-    return tautulliMock;
-  }),
-}));
+import { fakeIntegrations, tautulliResponse, type SentRequest } from '../helpers/fake-integrations';
 
 import { POST as tautulliSyncPost } from '@/app/api/tautulli/sync/route';
+
+/** Tautulli answering its info command and serving `history` by media type, one page each. */
+function fakeTautulli(history: { movie?: unknown[]; episode?: unknown[] } = {}) {
+  return fakeIntegrations(({ url }) => {
+    const cmd = url.searchParams.get('cmd');
+    if (cmd === 'get_tautulli_info') return tautulliResponse({ tautulli_version: '2.13.0' });
+    if (cmd === 'get_history') {
+      const mediaType = url.searchParams.get('media_type') as 'movie' | 'episode';
+      return tautulliResponse({ data: history[mediaType] ?? [] });
+    }
+    return new Response('not found', { status: 404 });
+  });
+}
+
+const historyQueries = (sent: SentRequest[]) =>
+  sent
+    .filter((r) => r.url.searchParams.get('cmd') === 'get_history')
+    .map((r) => [r.url.searchParams.get('user_id'), r.url.searchParams.get('media_type')]);
 
 describe('POST /api/tautulli/sync', () => {
   let userId: mongoose.Types.ObjectId;
@@ -43,9 +50,6 @@ describe('POST /api/tautulli/sync', () => {
     user!.tautulliUserId = 42;
     await user!.save();
 
-    vi.clearAllMocks();
-    tautulliMock.testConnection.mockResolvedValue({ success: true });
-    tautulliMock.getUserIdByPlexUsername.mockResolvedValue(42);
   });
 
   it('returns 400 when Tautulli sync is disabled', async () => {
@@ -53,12 +57,14 @@ describe('POST /api/tautulli/sync', () => {
     settings.tautulliEnabled = false;
     await settings.save();
 
+    const { sent } = fakeTautulli();
+
     const res = await tautulliSyncPost();
     const body = await res.json();
 
     expect(res.status).toBe(400);
     expect(body.error).toMatch(/not enabled/i);
-    expect(tautulliMock.testConnection).not.toHaveBeenCalled();
+    expect(sent).toEqual([]);
     expect(await WatchedItem.countDocuments({ userId })).toBe(0);
   });
 
@@ -104,9 +110,7 @@ describe('POST /api/tautulli/sync', () => {
       },
     ];
 
-    tautulliMock.getWatchHistoryPaged
-      .mockResolvedValueOnce(movies)
-      .mockResolvedValueOnce(episodes);
+    const { sent } = fakeTautulli({ movie: movies, episode: episodes });
 
     const res = await tautulliSyncPost();
     expect(res.status).toBe(200);
@@ -117,8 +121,11 @@ describe('POST /api/tautulli/sync', () => {
     expect(body.shows).toBe(1);
     expect(body.synced).toBe(4);
 
-    expect(tautulliMock.getWatchHistoryPaged).toHaveBeenCalledWith(42, 'movie');
-    expect(tautulliMock.getWatchHistoryPaged).toHaveBeenCalledWith(42, 'episode');
+    expect(historyQueries(sent)).toEqual([
+      ['42', 'movie'],
+      ['42', 'episode'],
+    ]);
+    expect(sent.every((r) => r.url.searchParams.get('apikey') === 'tautulli-test-key-abcdefgh')).toBe(true);
 
     const watched = await WatchedItem.find({ userId });
     expect(watched).toHaveLength(4);
@@ -162,9 +169,7 @@ describe('POST /api/tautulli/sync', () => {
       },
     ];
 
-    tautulliMock.getWatchHistoryPaged
-      .mockResolvedValueOnce(duplicateMovies)
-      .mockResolvedValueOnce([]);
+    fakeTautulli({ movie: duplicateMovies });
 
     const res = await tautulliSyncPost();
     expect(res.status).toBe(200);

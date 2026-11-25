@@ -3,40 +3,7 @@ import { NextRequest } from 'next/server';
 import { clearDatabase } from '../../helpers/mongo';
 import { clearTestCookies } from '../../helpers/auth';
 import { clearRateLimitStore } from '@/lib/security/rate-limit';
-
-const plexOAuthMock = {
-  createAuthPin: vi.fn(),
-  pollAuthPin: vi.fn(),
-  fetchPlexUser: vi.fn(),
-};
-
-const plexMock = {
-  getServers: vi.fn(),
-};
-
-vi.mock('@/lib/services/plex-oauth', () => ({
-  createAuthPin: (...args: unknown[]) => plexOAuthMock.createAuthPin(...args),
-  pollAuthPin: (...args: unknown[]) => plexOAuthMock.pollAuthPin(...args),
-  fetchPlexUser: (...args: unknown[]) => plexOAuthMock.fetchPlexUser(...args),
-  buildPlexAuthUrl: (code: string, options?: { forwardUrl?: string }) => {
-    const params = new URLSearchParams({ code });
-    if (options?.forwardUrl) {
-      params.append('forwardUrl', options.forwardUrl);
-    }
-    return `https://app.plex.tv/auth#?${params.toString()}`;
-  },
-  generateOAuthState: () => 'test-state-123',
-  OAUTH_STATE_COOKIE: 'decidarr_oauth_state',
-  OAUTH_PIN_COOKIE: 'decidarr_oauth_pin',
-  OAUTH_PIN_CODE_COOKIE: 'decidarr_oauth_pin_code',
-  getOAuthCookieOptions: () => ({ httpOnly: true, sameSite: 'lax' as const, maxAge: 600 }),
-}));
-
-vi.mock('@/lib/services/plex', () => ({
-  PlexService: vi.fn(function PlexServiceMock() {
-    return plexMock;
-  }),
-}));
+import { fakeIntegrations, fakePlexTv } from '../../helpers/fake-integrations';
 
 import { POST as plexStartPost } from '@/app/api/auth/plex/start/route';
 import { GET as plexPollGet } from '@/app/api/auth/plex/poll/route';
@@ -47,8 +14,7 @@ describe('Auth hardening', () => {
     await clearDatabase();
     clearTestCookies();
     clearRateLimitStore();
-    vi.clearAllMocks();
-    plexOAuthMock.createAuthPin.mockResolvedValue({ id: 123, code: 'ABC123' });
+    fakeIntegrations(fakePlexTv());
   });
 
   afterEach(() => {
@@ -100,7 +66,6 @@ describe('Auth hardening', () => {
 
     it('allows normal OAuth polling without rate limiting', async () => {
       const { setTestCookie } = await import('../../helpers/cookies');
-      plexOAuthMock.pollAuthPin.mockResolvedValue({ authToken: null });
 
       setTestCookie('decidarr_oauth_pin', '123');
       setTestCookie('decidarr_oauth_pin_code', 'ABC123');
@@ -130,7 +95,6 @@ describe('Auth hardening', () => {
 
     it('returns 429 after excessive polling attempts on a single pin', async () => {
       const { setTestCookie } = await import('../../helpers/cookies');
-      plexOAuthMock.pollAuthPin.mockResolvedValue({ authToken: null });
 
       setTestCookie('decidarr_oauth_pin', '456');
       setTestCookie('decidarr_oauth_pin_code', 'XYZ789');
@@ -222,23 +186,15 @@ describe('Auth hardening', () => {
     it('returns generic error with NO_OWNED_SERVER code when user has no owned server during setup', async () => {
       const { setTestCookie } = await import('../../helpers/cookies');
 
-      plexOAuthMock.fetchPlexUser.mockResolvedValue({
-        id: 'plex-user-1',
-        username: 'newuser',
-        email: 'newuser@example.com',
-        thumb: 'https://plex.tv/users/avatar.png',
-      });
-
-      plexMock.getServers.mockResolvedValue([
-        {
-          name: 'Friend Server',
-          clientIdentifier: 'friend-machine-1',
-          connections: [{ uri: 'http://192.168.1.20:32400', local: true }],
-          owned: false,
-        },
-      ]);
-
-      plexOAuthMock.pollAuthPin.mockResolvedValue({ authToken: 'valid-token-123' });
+      fakeIntegrations(
+        fakePlexTv({
+          authToken: 'valid-token-123',
+          account: { id: 'plex-user-1', username: 'newuser', email: 'newuser@example.com' },
+          servers: [
+            { name: 'Friend Server', clientIdentifier: 'friend-machine-1', owned: false, uri: 'http://192.168.1.20:32400' },
+          ],
+        })
+      );
 
       setTestCookie('decidarr_oauth_pin', '123');
       setTestCookie('decidarr_oauth_pin_code', 'ABC123');
@@ -260,16 +216,13 @@ describe('Auth hardening', () => {
       await seedConfiguredSettings();
       await seedTestUser({ isAdmin: true, plexUserId: 'admin-user-1' });
 
-      plexOAuthMock.fetchPlexUser.mockResolvedValue({
-        id: 'other-user-2',
-        username: 'frienduser',
-        email: 'friend@example.com',
-        thumb: 'https://plex.tv/users/avatar2.png',
-      });
-
-      plexMock.getServers.mockResolvedValue([]);
-
-      plexOAuthMock.pollAuthPin.mockResolvedValue({ authToken: 'friend-token' });
+      fakeIntegrations(
+        fakePlexTv({
+          authToken: 'friend-token',
+          account: { id: 'other-user-2', username: 'frienduser', email: 'friend@example.com' },
+          servers: [],
+        })
+      );
 
       setTestCookie('decidarr_oauth_pin', '456');
       setTestCookie('decidarr_oauth_pin_code', 'XYZ789');

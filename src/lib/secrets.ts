@@ -102,7 +102,10 @@ const CRYPTOJS_SALTED_PREFIX = 'U2FsdGVkX1';
 
 /** The master key of installs from before DECIDARR_SECRET existed. */
 export function getLegacyMasterKey(): string {
-  const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/decidarr';
+  return legacyMasterKeyFor(process.env.MONGODB_URI || 'mongodb://localhost:27017/decidarr');
+}
+
+export function legacyMasterKeyFor(mongoUri: string): string {
   return CryptoJS.SHA256('decidarr-master-' + mongoUri).toString().substring(0, 32);
 }
 

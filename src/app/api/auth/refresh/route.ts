@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { route } from '@/lib/request/route';
 import { User } from '@/lib/models/User';
-import { createPlexService } from '@/lib/services/plex-factory';
+import { PlexService } from '@/lib/services/plex';
 import { issueSessionCookie } from '@/lib/auth-login';
 import { createLogger } from '@/lib/logger';
 
@@ -13,7 +13,7 @@ export const POST = route({ access: 'user' }, async ({ session }) => {
     return NextResponse.json({ error: 'Session expired' }, { status: 401 });
   }
 
-  const plexService = await createPlexService(session.plex.token);
+  const plexService = new PlexService(session.plex.token);
   const validation = await plexService.validateToken();
 
   if (!validation.valid) {

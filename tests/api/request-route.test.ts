@@ -12,6 +12,8 @@ import {
 } from '../helpers/auth';
 import { setTestCookie } from '../helpers/cookies';
 import { route } from '@/lib/request/route';
+import { createIntegrationClient } from '@/lib/integrations/client';
+import { fakeIntegrations, redirectTo } from '../helpers/fake-integrations';
 import type { Session } from '@/lib/request/session';
 import { issueTokenPair } from '@/lib/mobile-auth/tokens';
 import { deriveKey } from '@/lib/secrets';
@@ -146,6 +148,31 @@ describe('request-handling module', () => {
       const res = await broken(request('GET', {}));
       expect(res.status).toBe(500);
       expect(await res.json()).toEqual({ error: 'Internal server error', code: 'INTERNAL' });
+    });
+
+    it('maps integration errors to 503 INTEGRATION_UNAVAILABLE or 502 INTEGRATION_REJECTED without leaking details', async () => {
+      const callsTautulli = route({ access: 'public' }, async () => {
+        const tautulli = createIntegrationClient({
+          integration: 'Tautulli',
+          baseUrl: 'http://tautulli.internal.example:8181',
+          timeoutMs: 1_000,
+        });
+        await tautulli.json('/api/v2');
+        return NextResponse.json({ ok: true });
+      });
+      const answers = [new Response('down', { status: 503 }), redirectTo('http://elsewhere.example/')];
+      fakeIntegrations(() => answers.shift()!);
+
+      const unavailable = await callsTautulli(request('GET', {}));
+      expect(unavailable.status).toBe(503);
+      expect(await unavailable.json()).toEqual({ error: 'Integration unavailable', code: 'INTEGRATION_UNAVAILABLE' });
+
+      const rejected = await callsTautulli(request('GET', {}));
+      expect(rejected.status).toBe(502);
+      expect(await rejected.json()).toEqual({
+        error: 'Integration rejected the request',
+        code: 'INTEGRATION_REJECTED',
+      });
     });
 
     it('answers 429 RATE_LIMITED once a route policy is exhausted', async () => {
