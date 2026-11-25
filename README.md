@@ -99,14 +99,17 @@ All settings are managed through the **Settings** panel (gear icon in the header
 | `PORT` | 3100 | Port to expose the application |
 | `LOG_LEVEL` | info | Logging level: debug, info, warn, error |
 | `SECURE_COOKIES` | `true` in production | Set `false` only for local HTTP development |
-| `DECIDARR_SECRET` | _(none)_ | **Required in production** - High-entropy secret for JWT/encryption, at least 32 characters (generate with `openssl rand -hex 32`). Without it, or with a shorter value, the server exits at boot. |
+| `DECIDARR_SECRET` | _(none)_ | **Required in production** - High-entropy secret that session and encryption keys are derived from, at least 32 characters (generate with `openssl rand -hex 32`). Without it, or with a shorter value, the server exits at boot. |
 | `DECIDARR_ALLOW_PRIVATE_URLS` | false | **LAN opt-in** - Set to `true` if your Plex/Tautulli/Overseerr are on your local network (192.168.x.x, 10.x.x.x). Private addresses are blocked by default for security. |
 | `APP_URL` | _(none)_ | Public origin users open Decidarr at (for example `https://decidarr.example.com`). After Plex sign-in, Plex sends the browser back only to this origin; without it, sign-in still works but the Plex window does not return to Decidarr on its own. |
 | `TRUST_PROXY` | false | Set to `true` only behind a reverse proxy that sets `X-Forwarded-For`, so sign-in rate limits are counted per client. Otherwise they are keyed by `X-Real-IP`, and clients without it share one limit. |
 
-**Important**: If you change `DECIDARR_SECRET` after initial setup, the stored credentials can no longer be decrypted.
-On the next start Decidarr logs this, generates fresh internal keys, clears the stored Plex tokens and integration keys, and signs everyone out; user accounts are kept.
-To recover, sign in again with Plex as the server owner, then re-enter the TMDB, Tautulli and Overseerr settings in the Settings UI.
+**Important**: If you change `DECIDARR_SECRET` after initial setup, or change `MONGODB_URI` on an install that has not yet started with a `DECIDARR_SECRET`, the stored credentials can no longer be decrypted.
+Decidarr never wipes them: every stored value is kept exactly as it was, and everyone is signed out.
+The startup log and Settings > Integrations list the credentials that need re-entering.
+To get them back, restart with the previous values.
+Otherwise sign in again with Plex as the server owner, re-enter the listed TMDB, Tautulli and Overseerr keys in Settings > Integrations, and ask the listed users to sign in again.
+See [docs/stored-secrets.md](docs/stored-secrets.md) for how secrets are stored.
 
 To use a different port or enable LAN access:
 ```bash
@@ -233,8 +236,9 @@ Your settings and watch history are stored in MongoDB and will be preserved.
 
 ## Security
 
-- Encryption keys are auto-generated on first run
-- Plex tokens, TMDB keys, and Tautulli keys are encrypted in the database
+- Session and encryption keys are derived from `DECIDARR_SECRET` with HKDF, one key per purpose
+- Plex tokens and integration keys are encrypted in the database with AES-256-GCM, each bound to its record and field ([details](docs/stored-secrets.md))
+- A credential that cannot be decrypted is kept and reported to the Admin, never wiped
 - Session-based authentication with JWT
 - SSRF protection for every outbound request to Plex, plex.tv, Tautulli, Overseerr and TMDb:
   - each request resolves the host and checks every address when it connects, then connects only to the address it checked, so a changed DNS answer cannot redirect it;

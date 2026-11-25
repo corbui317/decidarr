@@ -16,7 +16,7 @@ import { createIntegrationClient } from '@/lib/integrations/client';
 import { fakeIntegrations, redirectTo } from '../helpers/fake-integrations';
 import type { Session } from '@/lib/request/session';
 import { issueTokenPair } from '@/lib/mobile-auth/tokens';
-import { getOrCreateSettings } from '@/lib/models/Settings';
+import { deriveKey } from '@/lib/secrets';
 import { User, IUser } from '@/lib/models/User';
 import { clearRateLimitStore } from '@/lib/security/rate-limit';
 import { GET as spinHistoryGet, POST as spinHistoryPost } from '@/app/api/spin-history/route';
@@ -253,10 +253,9 @@ describe('request-handling module', () => {
 
   describe('pinned JWT algorithm', () => {
     it('rejects a session cookie signed with another algorithm', async () => {
-      const settings = await getOrCreateSettings();
       const token = jwt.sign(
         { sub: friend._id.toString(), plexUserId: friend.plexUserId, isAdmin: false, sessionVersion: 0 },
-        settings.getJwtSecret(),
+        deriveKey('web-session'),
         { algorithm: 'HS384', expiresIn: '1h' }
       );
       setTestCookie('decidarr_session', token);
@@ -264,7 +263,6 @@ describe('request-handling module', () => {
     });
 
     it('rejects a bearer token signed with another algorithm', async () => {
-      const settings = await getOrCreateSettings();
       const token = jwt.sign(
         {
           sub: friend._id.toString(),
@@ -274,7 +272,7 @@ describe('request-handling module', () => {
           deviceId: 'device-1',
           aud: 'decidarr-mobile',
         },
-        settings.getJwtSecret(),
+        deriveKey('mobile-access-token'),
         { algorithm: 'HS384', expiresIn: 900 }
       );
       const res = await spinHistoryGet(request('GET', { Authorization: `Bearer ${token}` }));

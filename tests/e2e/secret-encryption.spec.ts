@@ -8,7 +8,10 @@ import {
   seedLegacyInstall,
   type StoredSettings,
 } from '../helpers/legacy-install-seed';
-import { decryptVersioned, legacyMasterKeyFor, masterKeyFromSecret } from '@/lib/models/Settings';
+import { decryptSecret, isCurrentCiphertext, legacyMasterKeyFor } from '@/lib/secrets';
+
+// Lets this process derive the keys the E2E server uses, to check what it stored.
+process.env.DECIDARR_SECRET = E2E_DECIDARR_SECRET;
 
 async function withE2eDb(fn: (db: mongoose.mongo.Db) => Promise<void>): Promise<void> {
   const client = await new mongoose.mongo.MongoClient(E2E_MONGO_URI).connect();
@@ -77,6 +80,33 @@ test.describe('DECIDARR_SECRET encryption', () => {
     await expect(spinButton).toBeVisible({ timeout: 5000 });
   });
 
+  test('shows the Admin a stored credential that cannot be decrypted, and keeps it', async ({ page }) => {
+    test.setTimeout(60000);
+    await page.goto('/');
+    await completeSetupWizard(page);
+
+    // A ciphertext copied onto another record and field fails its AAD check.
+    let copied = '';
+    await withE2eDb(async (db) => {
+      const admin = await db.collection('users').findOne({ plexUserId: LEGACY_ADMIN_PLEX_USER_ID });
+      copied = admin!.plexToken;
+      await db
+        .collection<StoredSettings>('settings')
+        .updateOne({ _id: 'app-settings' }, { $set: { tautulliApiKey: copied } });
+    });
+
+    await page.getByRole('button', { name: /settings/i }).click();
+    await page.getByRole('tab', { name: 'Integrations' }).click();
+    const alert = page.getByRole('alert').filter({ hasText: 'need re-entering' });
+    await expect(alert).toBeVisible({ timeout: 10000 });
+    await expect(alert.getByRole('listitem')).toHaveText(['Tautulli API key']);
+
+    await withE2eDb(async (db) => {
+      const settings = await db.collection<StoredSettings>('settings').findOne({ _id: 'app-settings' });
+      expect(settings?.tautulliApiKey).toBe(copied);
+    });
+  });
+
   test('legacy-encrypted install migrates and allows login and spin', async ({ page, request }) => {
     test.setTimeout(90000);
 
@@ -93,17 +123,16 @@ test.describe('DECIDARR_SECRET encryption', () => {
     // admin's Plex token with the fresh OAuth token.
     await withE2eDb(async (db) => {
       const settings = await db.collection<StoredSettings>('settings').findOne({ _id: 'app-settings' });
-      expect(settings?.secretsMigrationVersion).toBe(2);
-      expect(settings?.jwtSecret).toMatch(/^v2:/);
-      expect(settings?.encryptionKey).toMatch(/^v2:/);
-      expect(settings?.tmdbApiKey).toMatch(/^v2:/);
-
-      const encryptionKey = decryptVersioned(settings!.encryptionKey, masterKeyFromSecret(E2E_DECIDARR_SECRET));
-      expect(decryptVersioned(settings!.tmdbApiKey!, encryptionKey)).toBe(LEGACY_PLAINTEXT.tmdbApiKey);
+      expect(isCurrentCiphertext(settings!.tmdbApiKey!)).toBe(true);
+      expect(
+        decryptSecret(settings!.tmdbApiKey!, { recordType: 'settings', recordId: 'app-settings', field: 'tmdbApiKey' })
+      ).toBe(LEGACY_PLAINTEXT.tmdbApiKey);
 
       const admin = await db.collection('users').findOne({ plexUserId: LEGACY_ADMIN_PLEX_USER_ID });
-      expect(admin?.plexToken).toMatch(/^v2:/);
-      expect(decryptVersioned(admin!.plexToken, encryptionKey)).toBe(LEGACY_PLAINTEXT.plexToken);
+      expect(isCurrentCiphertext(admin!.plexToken)).toBe(true);
+      expect(
+        decryptSecret(admin!.plexToken, { recordType: 'user', recordId: String(admin!._id), field: 'plexToken' })
+      ).toBe(LEGACY_PLAINTEXT.plexToken);
     });
 
     // setupComplete is true, so the app offers sign-in, not the setup wizard.

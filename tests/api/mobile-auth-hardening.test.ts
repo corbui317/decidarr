@@ -4,11 +4,12 @@ import jwt from 'jsonwebtoken';
 import { clearDatabase } from '../helpers/mongo';
 import { seedConfiguredSettings, seedTestUser } from '../helpers/auth';
 import { clearRateLimitStore } from '@/lib/security/rate-limit';
-import { getOrCreateSettings, recoverFromSecretChange } from '@/lib/models/Settings';
+import { getOrCreateSettings } from '@/lib/models/Settings';
 import { MobileAuthCode } from '@/lib/models/MobileAuthCode';
 import { MobileRefreshToken } from '@/lib/models/MobileRefreshToken';
 import { runMigrations, resetMigrationStateForTests } from '@/lib/migrate';
 import { issueTokenPair } from '@/lib/mobile-auth/tokens';
+import { deriveKey, isCurrentCiphertext } from '@/lib/secrets';
 import {
   fakeIntegrations,
   fakePlexTv,
@@ -146,11 +147,10 @@ describe('Mobile auth hardening (spec #1 rules on the mobile routes)', () => {
       expect((await response.json()).code).toBe('NOT_APPROVED');
 
       const stored = await MobileAuthCode.findOne({ deviceCode });
-      expect(stored?.plexAuthToken).toMatch(/^v2:/);
+      expect(isCurrentCiphertext(stored!.plexAuthToken!)).toBe(true);
       expect(stored?.plexAuthToken).not.toContain(PLEX_TOKEN);
 
-      const settings = await getOrCreateSettings();
-      expect(stored?.getDecryptedPlexAuthToken(settings.getEncryptionKey())).toBe(PLEX_TOKEN);
+      expect(stored?.getDecryptedPlexAuthToken()).toBe(PLEX_TOKEN);
     });
 
     it('reuses the encrypted token on retry and drops it once exchanged', async () => {
@@ -192,7 +192,6 @@ describe('Mobile auth hardening (spec #1 rules on the mobile routes)', () => {
   describe('typed session errors on bearer routes', () => {
     it('answers an expired access token with 401 UNAUTHORIZED, not a server error', async () => {
       const user = await seedTestUser();
-      const settings = await getOrCreateSettings();
       const expired = jwt.sign(
         {
           sub: user._id.toString(),
@@ -202,7 +201,7 @@ describe('Mobile auth hardening (spec #1 rules on the mobile routes)', () => {
           deviceId: DEVICE_ID,
           aud: 'decidarr-mobile',
         },
-        settings.getJwtSecret(),
+        deriveKey('mobile-access-token'),
         { expiresIn: -10 }
       );
 
@@ -260,9 +259,8 @@ describe('Mobile auth hardening (spec #1 rules on the mobile routes)', () => {
       await runMigrations();
 
       const migrated = await MobileAuthCode.findOne({ deviceCode: 'legacy-device-code' });
-      expect(migrated?.plexAuthToken).toMatch(/^v2:/);
-      const settings = await getOrCreateSettings();
-      expect(migrated?.getDecryptedPlexAuthToken(settings.getEncryptionKey())).toBe(PLEX_TOKEN);
+      expect(isCurrentCiphertext(migrated!.plexAuthToken!)).toBe(true);
+      expect(migrated?.getDecryptedPlexAuthToken()).toBe(PLEX_TOKEN);
 
       // A second run leaves already-migrated values untouched.
       const before = migrated?.plexAuthToken;
@@ -272,24 +270,27 @@ describe('Mobile auth hardening (spec #1 rules on the mobile routes)', () => {
       expect(again?.plexAuthToken).toBe(before);
     });
 
-    it('signs mobile devices out when DECIDARR_SECRET changes', async () => {
+    it('refuses refresh after a DECIDARR_SECRET change without revoking anything', async () => {
+      const refresh = (refreshToken: string) =>
+        refreshPost(
+          new NextRequest('http://localhost/api/mobile/auth/refresh', {
+            method: 'POST',
+            body: JSON.stringify({ refreshToken, deviceId: DEVICE_ID }),
+          })
+        );
+      vi.stubEnv('DECIDARR_SECRET', 'secret-a-0123456789abcdef0123456789abcdef');
       const user = await seedTestUser();
       const tokens = await issueTokenPair(user, DEVICE_ID);
-      const deviceCode = await startDeviceCode();
 
-      await recoverFromSecretChange();
+      // The user's Plex token no longer decrypts, so the device has to sign in again.
+      vi.stubEnv('DECIDARR_SECRET', 'secret-b-0123456789abcdef0123456789abcdef');
+      expect((await refresh(tokens.refreshToken)).status).toBe(401);
+      const stored = await MobileRefreshToken.findOne({ userId: user._id });
+      expect(stored?.revokedAt).toBeUndefined();
 
-      expect(await MobileAuthCode.findOne({ deviceCode })).toBeNull();
-      const refresh = await MobileRefreshToken.findOne({ userId: user._id });
-      expect(refresh?.revokedAt).toBeInstanceOf(Date);
-
-      const response = await refreshPost(
-        new NextRequest('http://localhost/api/mobile/auth/refresh', {
-          method: 'POST',
-          body: JSON.stringify({ refreshToken: tokens.refreshToken, deviceId: DEVICE_ID }),
-        })
-      );
-      expect(response.status).toBe(401);
+      // Restoring the secret restores the sign-in.
+      vi.stubEnv('DECIDARR_SECRET', 'secret-a-0123456789abcdef0123456789abcdef');
+      expect((await refresh(tokens.refreshToken)).status).toBe(200);
     });
   });
 });

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { requireAdmin, isAuthError, authErrorStatus, invalidateAccessibleLibraryCache } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
+import { findCredentialsNeedingReentry } from '@/lib/migrate';
 import { assertSafeServiceUrl } from '@/lib/security/service-url';
 import { APP_THEMES, ANIMATION_STYLES, ANIMATION_SPEEDS } from '@/types/shared';
 
@@ -33,6 +34,7 @@ export async function GET() {
     logger.debug('Settings fetched successfully');
     return NextResponse.json({
       setupComplete: settings.setupComplete,
+      credentialsNeedingReentry: await findCredentialsNeedingReentry(),
       plex: {
         serverUrl: settings.plexServerUrl || null,
         username: settings.plexUsername || null,
@@ -246,6 +248,7 @@ export async function PUT(request: NextRequest) {
       success: true,
       settings: {
         setupComplete: settings.setupComplete,
+        credentialsNeedingReentry: await findCredentialsNeedingReentry(),
         plex: {
           serverUrl: settings.plexServerUrl || null,
           username: settings.plexUsername || null,

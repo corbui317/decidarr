@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { getOrCreateSettings } from '@/lib/models/Settings';
-import { loadUserWithToken } from '@/lib/models/User';
+import { User } from '@/lib/models/User';
 import { isSetupSecretRequired, getConfiguredSetupSecret } from '@/lib/security/setup-secret';
 import { createLogger } from '@/lib/logger';
 
@@ -18,7 +18,7 @@ async function hasUsablePlexToken(
 
   if (!settings.adminUserId) return false;
 
-  const adminUser = await loadUserWithToken(settings.adminUserId);
+  const adminUser = await User.findById(settings.adminUserId);
   if (!adminUser) return false;
 
   try {
