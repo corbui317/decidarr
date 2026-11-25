@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { clearDatabase } from '../../helpers/mongo';
 import {
   seedConfiguredSettings,
@@ -8,22 +8,14 @@ import {
   clearTestCookies,
   createJsonRequest,
 } from '../../helpers/auth';
-
-const plexMock = {
-  validateToken: vi.fn(),
-  getServers: vi.fn(),
-  getLibrarySections: vi.fn(),
-  getCollectionItems: vi.fn(),
-  getItemMetadata: vi.fn(),
-  fetchMachineIdFromServer: vi.fn(),
-  buildPlayLinks: vi.fn(),
-};
-
-vi.mock('@/lib/services/plex', () => ({
-  PlexService: vi.fn(function PlexServiceMock() {
-    return plexMock;
-  }),
-}));
+import {
+  fakeIntegrations,
+  plexResources,
+  PLEX_TV,
+  routes,
+  TEST_PLEX_SERVER,
+  type SentRequest,
+} from '../../helpers/fake-integrations';
 
 import { GET as statusGet } from '@/app/api/settings/status/route';
 import { POST as setupPost } from '@/app/api/settings/setup/route';
@@ -33,21 +25,18 @@ import { POST as testPlexPost } from '@/app/api/settings/test-plex/route';
 import { getOrCreateSettings } from '@/lib/models/Settings';
 
 describe('Auth and setup API routes', () => {
+  let sent: SentRequest[];
+
   beforeEach(async () => {
     await clearDatabase();
     clearTestCookies();
-    vi.clearAllMocks();
-    plexMock.validateToken.mockResolvedValue({
-      valid: true,
-      user: { id: '1', username: 'testuser', email: 'test@example.com' },
-    });
-    plexMock.getServers.mockResolvedValue([
-      {
-        name: 'Home',
-        clientIdentifier: 'machine-1',
-        connections: [{ uri: 'http://192.168.1.10:32400', local: true, relay: false }],
-      },
-    ]);
+    ({ sent } = fakeIntegrations(
+      routes({
+        [`${PLEX_TV}/api/v2/user`]: () => Response.json({ id: 1, username: 'testuser', email: 'test@example.com' }),
+        [`${PLEX_TV}/api/v2/resources`]: () =>
+          plexResources([{ name: 'Home', clientIdentifier: 'machine-1', owned: true, uri: TEST_PLEX_SERVER }]),
+      })
+    ));
   });
 
   describe('GET /api/settings/status', () => {
@@ -195,6 +184,11 @@ describe('Auth and setup API routes', () => {
       const body = await res.json();
       expect(body.valid).toBe(true);
       expect(body.user.username).toBe('testuser');
+      expect(body.servers).toEqual([{ name: 'Home', uri: TEST_PLEX_SERVER }]);
+      expect(sent.map((r) => [r.url.pathname, r.headers.get('X-Plex-Token')])).toEqual([
+        ['/api/v2/user', 'valid-token'],
+        ['/api/v2/resources', 'valid-token'],
+      ]);
     });
   });
 });

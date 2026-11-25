@@ -65,36 +65,79 @@ export function redirectTo(location: string, status = 302): Response {
   return new Response(null, { status, headers: { location } });
 }
 
-/** The plex.tv account the fake signs in as. */
-export const FAKE_PLEX_ACCOUNT = { id: 'e2e-user', username: 'e2euser', email: 'e2e@example.com' } as const;
+/**
+ * Answers each request with the handler registered for its origin and path
+ * (`https://plex.tv/api/v2/user`), and anything else with 404.
+ */
+export function routes(handlers: Record<string, FakeHandler>): FakeHandler {
+  return (request) => {
+    const handler = handlers[`${request.url.origin}${request.url.pathname}`];
+    return handler ? handler(request) : new Response('not found', { status: 404 });
+  };
+}
+
+export const PLEX_TV = 'https://plex.tv';
+export const TMDB = 'https://api.themoviedb.org/3';
+/** The Plex server URL seedConfiguredSettings() stores. */
+export const TEST_PLEX_SERVER = 'http://192.168.1.10:32400';
+
+export interface FakePlexAccount {
+  id: string;
+  username: string;
+  email: string;
+  thumb?: string;
+}
+
+/** The plex.tv account the E2E and upgrade fakes sign in as. */
+export const FAKE_PLEX_ACCOUNT: FakePlexAccount = { id: 'e2e-user', username: 'e2euser', email: 'e2e@example.com' };
+
+export interface FakePlexServer {
+  name?: string;
+  clientIdentifier: string;
+  owned: boolean;
+  uri: string;
+}
+
+/** plex.tv's resource list: the servers an account can reach. */
+export function plexResources(servers: FakePlexServer[]): Response {
+  return Response.json(
+    servers.map(({ name, clientIdentifier, owned, uri }) => ({
+      name: name ?? 'Fake Server',
+      provides: 'server',
+      clientIdentifier,
+      owned,
+      connections: [{ uri, local: true, relay: false }],
+    }))
+  );
+}
+
+/** A Plex server's library sections. */
+export function plexSections(sections: { id: string; title: string; type: 'movie' | 'show' }[]): Response {
+  return Response.json({
+    MediaContainer: { Directory: sections.map(({ id, ...rest }) => ({ key: id, uuid: `uuid-${id}`, ...rest })) },
+  });
+}
+
+/** A Plex server's metadata list (library items, a collection's children, one item's details). */
+export function plexMetadata(items: { ratingKey: string; title: string; year?: number; type?: string }[]): Response {
+  return Response.json({ MediaContainer: { Metadata: items } });
+}
 
 /**
- * A plex.tv that signs `account` in and lists one owned server at `serverUri`,
- * plus a Plex server there with one movie library.
+ * plex.tv signing `account` in with any token and listing one owned server at
+ * `serverUri`, plus that server with one movie library.
  */
-export function fakePlex(options: { serverUri: string; machineId: string; account?: typeof FAKE_PLEX_ACCOUNT }): FakeHandler {
-  const account = options.account ?? FAKE_PLEX_ACCOUNT;
-  const serverOrigin = new URL(options.serverUri).origin;
-  return ({ url }) => {
-    if (url.origin === 'https://plex.tv') {
-      if (url.pathname === '/api/v2/user') return Response.json(account);
-      if (url.pathname === '/api/v2/resources') {
-        return Response.json([
-          {
-            name: 'Fake Server',
-            provides: 'server',
-            clientIdentifier: options.machineId,
-            owned: true,
-            connections: [{ uri: options.serverUri, local: true, relay: false }],
-          },
-        ]);
-      }
-    }
-    if (url.origin === serverOrigin && url.pathname === '/library/sections') {
-      return Response.json({
-        MediaContainer: { Directory: [{ key: '1', title: 'Movies', type: 'movie', uuid: 'fake-library' }] },
-      });
-    }
-    return new Response('not found', { status: 404 });
-  };
+export function fakePlex(options: { serverUri: string; machineId: string; account?: FakePlexAccount }): FakeHandler {
+  return routes({
+    [`${PLEX_TV}/api/v2/user`]: () => Response.json(options.account ?? FAKE_PLEX_ACCOUNT),
+    [`${PLEX_TV}/api/v2/resources`]: () =>
+      plexResources([{ clientIdentifier: options.machineId, owned: true, uri: options.serverUri }]),
+    [`${new URL(options.serverUri).origin}/library/sections`]: () =>
+      plexSections([{ id: '1', title: 'Movies', type: 'movie' }]),
+  });
+}
+
+/** Tautulli's envelope around a command's data. */
+export function tautulliResponse(data: unknown): Response {
+  return Response.json({ response: { result: 'success', data } });
 }
