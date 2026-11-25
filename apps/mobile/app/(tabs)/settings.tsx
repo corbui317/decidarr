@@ -40,7 +40,7 @@ export default function SettingsScreen() {
 
     setLoading(true);
     try {
-      const response = await coreApi.getSections(token);
+      const response = await coreApi.getSections();
       setSections(
         response.sections.filter((s) => s.type === 'movie' || s.type === 'show')
       );
@@ -71,7 +71,7 @@ export default function SettingsScreen() {
     const token = await auth.getValidAccessToken();
     if (!token) return;
 
-    await coreApi.updatePreferences(token, { selectedLibraries: selected });
+    await coreApi.updatePreferences({ selectedLibraries: selected });
     await sync.syncNow();
     Alert.alert('Saved', 'Library selection updated.');
   };
