@@ -13,5 +13,5 @@ const externalMongoUri = process.env.CI ? undefined : process.env.E2E_MONGODB_UR
 export const E2E_USES_EXTERNAL_MONGO = Boolean(externalMongoUri);
 export const E2E_MONGO_URI = externalMongoUri || `mongodb://127.0.0.1:${E2E_MONGO_PORT}/decidarr-e2e`;
 
-export const E2E_DECIDARR_SECRET = 'e2e-test-secret-key-12345';
+export const E2E_DECIDARR_SECRET = 'e2e-test-secret-key-0123456789abcdef';
 export const E2E_RESET_SECRET = process.env.E2E_TEST_RESET_SECRET?.trim() || 'decidarr-e2e-reset';
