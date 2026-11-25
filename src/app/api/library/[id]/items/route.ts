@@ -1,6 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { requireUser, getTmdbApiKey, getSyncFrequencyHours, getAccessibleLibraryIds, isAuthError, authErrorStatus } from '@/lib/auth';
-import { connectDB } from '@/lib/db';
+import { NextResponse } from 'next/server';
+import { z } from 'zod';
+import { route } from '@/lib/request/route';
+import { DomainError } from '@/lib/request/errors';
+import { getAccessibleLibraryIds } from '@/lib/auth';
+import { getOrCreateSettings } from '@/lib/models/Settings';
 import { LibraryCache } from '@/lib/models/LibraryCache';
 import { createPlexService } from '@/lib/services/plex-factory';
 import { TMDbService } from '@/lib/services/tmdb';
@@ -10,6 +13,9 @@ import { sanitizeLibraryItemForClient } from '@/lib/plex-image';
 import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('API:LibraryItems');
+
+const itemsParams = z.object({ id: z.string().min(1) });
+const itemsQuery = z.object({ forceRefresh: z.string().optional() });
 
 const ENRICHMENT_FIELDS = [
   'tmdbId',
@@ -72,24 +78,26 @@ function isItemUnenriched(item: ILibraryItem): boolean {
   return true;
 }
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const auth = await requireUser();
-    const { id } = await params;
-    const forceRefresh = request.nextUrl.searchParams.get('forceRefresh') === 'true';
+export const GET = route(
+  { access: 'user', params: itemsParams, query: itemsQuery },
+  async ({ session, params, query }) => {
+    const { id } = params;
+    const forceRefresh = query.forceRefresh === 'true';
 
-    const allowed = await getAccessibleLibraryIds(auth, [id]);
+    const settings = await getOrCreateSettings();
+    const libraryAccess = {
+      userId: session.userId.toString(),
+      plexToken: session.plex.token,
+      plexServerUrl: session.plex.serverUrl,
+      plexMachineId: settings.plexMachineId || null,
+    };
+    const allowed = await getAccessibleLibraryIds(libraryAccess, [id]);
     if (!allowed.includes(id)) {
-      return NextResponse.json({ error: 'Library not found or access denied' }, { status: 403 });
+      throw new DomainError('FORBIDDEN', 'Library not found or access denied');
     }
 
-    const machineId = auth.settings.plexMachineId || 'unknown';
-    await connectDB();
-
-    const syncFrequencyHours = await getSyncFrequencyHours();
+    const machineId = settings.plexMachineId || 'unknown';
+    const syncFrequencyHours = settings.syncFrequencyHours;
 
     if (!forceRefresh) {
       const cache = await LibraryCache.findOne({
@@ -107,15 +115,15 @@ export async function GET(
     }
 
     const plexService = await createPlexService(
-      auth.plexToken,
-      auth.plexServerUrl,
-      auth.settings.plexMachineId
+      session.plex.token,
+      session.plex.serverUrl,
+      settings.plexMachineId
     );
     const sections = await plexService.getLibrarySections();
     const section = sections.find((s) => s.id === id);
 
     if (!section) {
-      return NextResponse.json({ error: 'Library not found' }, { status: 404 });
+      throw new DomainError('NOT_FOUND', 'Library not found');
     }
 
     const items = (await plexService.getLibraryItems(id)) as ILibraryItem[];
@@ -127,7 +135,7 @@ export async function GET(
 
     mergeExistingEnrichment(items, existingCache?.items);
 
-    const tmdbApiKey = await getTmdbApiKey();
+    const tmdbApiKey = settings.getDecryptedTmdbKey();
     if (tmdbApiKey) {
       const tmdbService = new TMDbService(tmdbApiKey);
       const unenrichedItems = items.filter(isItemUnenriched);
@@ -216,7 +224,7 @@ export async function GET(
     await enrichWithOverseerr(
       items,
       section.type as 'movie' | 'show',
-      auth.settings,
+      settings,
       existingCache?.items
     );
 
@@ -239,12 +247,5 @@ export async function GET(
       fromCache: false,
       lastSyncedAt: new Date(),
     });
-  } catch (error) {
-    const msg = (error as Error)?.message;
-    if (isAuthError(error)) {
-      return NextResponse.json({ error: msg }, { status: authErrorStatus(error) });
-    }
-    logger.error('Get library items error', { error: msg });
-    return NextResponse.json({ error: 'Failed to get library items' }, { status: 500 });
   }
-}
+);

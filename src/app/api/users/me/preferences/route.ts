@@ -1,191 +1,175 @@
-import { NextRequest, NextResponse } from 'next/server';
-import mongoose from 'mongoose';
-import { connectDB } from '@/lib/db';
-import { requireUser, isAuthError, authErrorStatus } from '@/lib/auth';
+import { NextResponse } from 'next/server';
+import { z } from 'zod';
+import { route } from '@/lib/request/route';
+import { DomainError } from '@/lib/request/errors';
+import { User } from '@/lib/models/User';
 import {
   normalizeSpinHistoryPreferences,
   mergeSpinHistoryPreferences,
   trimHistoryIfRetentionReduced,
 } from '@/lib/spin-history';
-import { createLogger } from '@/lib/logger';
-import { parsePreferencesPatchBody, parsePreferencesPutBody } from '@/lib/validation/preferences';
 import { emitSyncChange, toPreferenceContract } from '@/lib/sync/service';
+import { APP_THEMES, ANIMATION_STYLES, ANIMATION_SPEEDS } from '@/types/shared';
 
 // Reads the session and database on every request; never prerender at build time.
 export const dynamic = 'force-dynamic';
 
-const logger = createLogger('API:UserPreferences');
+const spinHistoryPatchSchema = z.object({
+  enabled: z.boolean().optional(),
+  retentionLimit: z.number().optional(),
+  storeFilterSnapshot: z.boolean().optional(),
+});
 
+const savedFiltersSchema = z.object({
+  genres: z.array(z.string()).optional(),
+  studios: z.array(z.string()).optional(),
+  contentRatings: z.array(z.string()).optional(),
+  collections: z.array(z.string()).optional(),
+  yearRange: z.object({ start: z.number().optional(), end: z.number().optional() }).optional(),
+  ratingRange: z.object({ min: z.number().optional(), max: z.number().optional() }).optional(),
+  ratingFilter: z.string().nullable().optional(),
+  unwatchedOnly: z.boolean().optional(),
+});
 
-export async function GET() {
-  try {
-    await connectDB();
-    const { user } = await requireUser();
-    const spinHistory = normalizeSpinHistoryPreferences(user.preferences?.spinHistory);
-    return NextResponse.json({
-      preferences: {
-        ...user.preferences,
-        spinHistory,
-      },
+const preferencesPatchBody = z
+  .object({
+    spinHistory: spinHistoryPatchSchema,
+  })
+  .refine((value) => Object.keys(value.spinHistory).length > 0, {
+    message: 'No valid preference fields provided',
+  });
+
+const preferencesPutBody = z
+  .object({
+    theme: z.enum(APP_THEMES).optional(),
+    defaultMediaType: z.enum(['movie', 'show']).optional(),
+    tvSelectionMode: z.enum(['show', 'episode']).optional(),
+    savedFilters: savedFiltersSchema.optional(),
+    selectedLibraries: z.array(z.string()).optional(),
+    animationStyle: z.enum(ANIMATION_STYLES).optional(),
+    animationSpeed: z.enum(ANIMATION_SPEEDS).optional(),
+    spinHistory: spinHistoryPatchSchema.optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: 'No valid preference fields provided',
+  });
+
+async function loadUser(userId: unknown) {
+  const user = await User.findById(userId);
+  if (!user) {
+    throw new DomainError('INTERNAL');
+  }
+  return user;
+}
+
+export const GET = route({ access: 'user' }, async ({ session }) => {
+  const user = await loadUser(session.userId);
+  const spinHistory = normalizeSpinHistoryPreferences(user.preferences?.spinHistory);
+  return NextResponse.json({
+    preferences: {
+      ...user.preferences,
       spinHistory,
-    });
-  } catch (error) {
-    if (isAuthError(error)) {
-      return NextResponse.json(
-        { error: (error as Error).message },
-        { status: authErrorStatus(error) }
-      );
-    }
-    logger.error('Get preferences failed', { error: (error as Error).message });
-    return NextResponse.json({ error: 'Failed to get preferences' }, { status: 500 });
+    },
+    spinHistory,
+  });
+});
+
+export const PUT = route({ access: 'user', body: preferencesPutBody }, async ({ session, body }) => {
+  const user = await loadUser(session.userId);
+
+  if (body.theme !== undefined) {
+    user.preferences.theme = body.theme;
   }
-}
-
-export async function PUT(request: NextRequest) {
-  try {
-    await connectDB();
-    const { user } = await requireUser();
-    const parsed = parsePreferencesPutBody(await request.json());
-    if (!parsed.ok) {
-      return NextResponse.json({ error: parsed.error }, { status: 400 });
-    }
-
-    const body = parsed.data;
-
-    if (body.theme !== undefined) {
-      user.preferences.theme = body.theme;
-    }
-    if (body.defaultMediaType !== undefined) {
-      user.preferences.defaultMediaType = body.defaultMediaType;
-    }
-    if (body.tvSelectionMode !== undefined) {
-      user.preferences.tvSelectionMode = body.tvSelectionMode;
-    }
-    if (body.savedFilters !== undefined) {
-      if (!user.preferences.savedFilters) {
-        user.preferences.savedFilters = {};
-      }
-      if (body.savedFilters.genres !== undefined) {
-        user.preferences.savedFilters.genres = body.savedFilters.genres;
-      }
-      if (body.savedFilters.studios !== undefined) {
-        user.preferences.savedFilters.studios = body.savedFilters.studios;
-      }
-      if (body.savedFilters.contentRatings !== undefined) {
-        user.preferences.savedFilters.contentRatings = body.savedFilters.contentRatings;
-      }
-      if (body.savedFilters.collections !== undefined) {
-        user.preferences.savedFilters.collections = body.savedFilters.collections;
-      }
-      if (body.savedFilters.yearRange !== undefined) {
-        user.preferences.savedFilters.yearRange = body.savedFilters.yearRange;
-      }
-      if (body.savedFilters.ratingRange !== undefined) {
-        user.preferences.savedFilters.ratingRange = body.savedFilters.ratingRange;
-      }
-      if (body.savedFilters.ratingFilter !== undefined) {
-        user.preferences.savedFilters.ratingFilter = body.savedFilters.ratingFilter;
-      }
-      if (body.savedFilters.unwatchedOnly !== undefined) {
-        user.preferences.savedFilters.unwatchedOnly = body.savedFilters.unwatchedOnly;
-      }
-    }
-    if (body.selectedLibraries !== undefined) {
-      user.preferences.selectedLibraries = body.selectedLibraries;
-    }
-    if (body.animationStyle !== undefined) {
-      user.preferences.animationStyle = body.animationStyle;
-    }
-    if (body.animationSpeed !== undefined) {
-      user.preferences.animationSpeed = body.animationSpeed;
-    }
-    let previousRetention: number | undefined;
-    let mergedSpinHistory;
-    if (body.spinHistory) {
-      const { merged, previousRetention: prevRetention } = mergeSpinHistoryPreferences(
-        user.preferences.spinHistory,
-        body.spinHistory
-      );
-      previousRetention = prevRetention;
-      mergedSpinHistory = merged;
-      user.preferences.spinHistory = merged;
-    }
-
-    await user.save();
-
-    await emitSyncChange(
-      user._id,
-      'preference',
-      user._id.toString(),
-      'upsert',
-      toPreferenceContract(user)
-    );
-
-    if (body.spinHistory && previousRetention !== undefined && mergedSpinHistory) {
-      await trimHistoryIfRetentionReduced(
-        user._id as mongoose.Types.ObjectId,
-        previousRetention,
-        mergedSpinHistory.retentionLimit,
-        body.spinHistory.retentionLimit !== undefined
-      );
-    }
-    logger.debug('Preferences updated', { userId: user._id.toString() });
-    return NextResponse.json({ success: true, preferences: user.preferences });
-  } catch (error) {
-    if (isAuthError(error)) {
-      return NextResponse.json(
-        { error: (error as Error).message },
-        { status: authErrorStatus(error) }
-      );
-    }
-    logger.error('Update preferences failed', { error: (error as Error).message });
-    return NextResponse.json({ error: 'Failed to update preferences' }, { status: 500 });
+  if (body.defaultMediaType !== undefined) {
+    user.preferences.defaultMediaType = body.defaultMediaType;
   }
-}
-
-export async function PATCH(request: NextRequest) {
-  try {
-    await connectDB();
-    const { user } = await requireUser();
-    const parsed = parsePreferencesPatchBody(await request.json());
-    if (!parsed.ok) {
-      return NextResponse.json({ error: parsed.error }, { status: 400 });
+  if (body.tvSelectionMode !== undefined) {
+    user.preferences.tvSelectionMode = body.tvSelectionMode;
+  }
+  if (body.savedFilters !== undefined) {
+    if (!user.preferences.savedFilters) {
+      user.preferences.savedFilters = {};
     }
+    if (body.savedFilters.genres !== undefined) {
+      user.preferences.savedFilters.genres = body.savedFilters.genres;
+    }
+    if (body.savedFilters.studios !== undefined) {
+      user.preferences.savedFilters.studios = body.savedFilters.studios;
+    }
+    if (body.savedFilters.contentRatings !== undefined) {
+      user.preferences.savedFilters.contentRatings = body.savedFilters.contentRatings;
+    }
+    if (body.savedFilters.collections !== undefined) {
+      user.preferences.savedFilters.collections = body.savedFilters.collections;
+    }
+    if (body.savedFilters.yearRange !== undefined) {
+      user.preferences.savedFilters.yearRange = body.savedFilters.yearRange;
+    }
+    if (body.savedFilters.ratingRange !== undefined) {
+      user.preferences.savedFilters.ratingRange = body.savedFilters.ratingRange;
+    }
+    if (body.savedFilters.ratingFilter !== undefined) {
+      user.preferences.savedFilters.ratingFilter = body.savedFilters.ratingFilter;
+    }
+    if (body.savedFilters.unwatchedOnly !== undefined) {
+      user.preferences.savedFilters.unwatchedOnly = body.savedFilters.unwatchedOnly;
+    }
+  }
+  if (body.selectedLibraries !== undefined) {
+    user.preferences.selectedLibraries = body.selectedLibraries;
+  }
+  if (body.animationStyle !== undefined) {
+    user.preferences.animationStyle = body.animationStyle;
+  }
+  if (body.animationSpeed !== undefined) {
+    user.preferences.animationSpeed = body.animationSpeed;
+  }
 
-    const { spinHistory: body } = parsed.data;
-
-    const { merged, previousRetention } = mergeSpinHistoryPreferences(
+  let previousRetention: number | undefined;
+  let mergedSpinHistory;
+  if (body.spinHistory) {
+    const { merged, previousRetention: prevRetention } = mergeSpinHistoryPreferences(
       user.preferences.spinHistory,
-      body
+      body.spinHistory
     );
+    previousRetention = prevRetention;
+    mergedSpinHistory = merged;
     user.preferences.spinHistory = merged;
-
-    await user.save();
-
-    await emitSyncChange(
-      user._id,
-      'preference',
-      user._id.toString(),
-      'upsert',
-      toPreferenceContract(user)
-    );
-
-    await trimHistoryIfRetentionReduced(
-      user._id as mongoose.Types.ObjectId,
-      previousRetention,
-      merged.retentionLimit,
-      body.retentionLimit !== undefined
-    );
-
-    return NextResponse.json({ spinHistory: merged });
-  } catch (error) {
-    if (isAuthError(error)) {
-      return NextResponse.json(
-        { error: (error as Error).message },
-        { status: authErrorStatus(error) }
-      );
-    }
-    logger.error('Update preferences failed', { error: (error as Error).message });
-    return NextResponse.json({ error: 'Failed to update preferences' }, { status: 500 });
   }
-}
+
+  await user.save();
+
+  await emitSyncChange(user._id, 'preference', user._id.toString(), 'upsert', toPreferenceContract(user));
+
+  if (body.spinHistory && previousRetention !== undefined && mergedSpinHistory) {
+    await trimHistoryIfRetentionReduced(
+      user._id,
+      previousRetention,
+      mergedSpinHistory.retentionLimit,
+      body.spinHistory.retentionLimit !== undefined
+    );
+  }
+
+  return NextResponse.json({ success: true, preferences: user.preferences });
+});
+
+export const PATCH = route({ access: 'user', body: preferencesPatchBody }, async ({ session, body }) => {
+  const user = await loadUser(session.userId);
+  const { spinHistory: patch } = body;
+
+  const { merged, previousRetention } = mergeSpinHistoryPreferences(user.preferences.spinHistory, patch);
+  user.preferences.spinHistory = merged;
+
+  await user.save();
+
+  await emitSyncChange(user._id, 'preference', user._id.toString(), 'upsert', toPreferenceContract(user));
+
+  await trimHistoryIfRetentionReduced(
+    user._id,
+    previousRetention,
+    merged.retentionLimit,
+    patch.retentionLimit !== undefined
+  );
+
+  return NextResponse.json({ spinHistory: merged });
+});

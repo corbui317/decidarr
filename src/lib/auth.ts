@@ -218,20 +218,27 @@ export function invalidateAccessibleLibraryCache(userId?: string): void {
   }
 }
 
+export interface LibraryAccess {
+  userId: string;
+  plexToken: string;
+  plexServerUrl: string;
+  plexMachineId: string | null;
+}
+
 export async function getAccessibleLibraryIds(
-  auth: AuthContext,
+  access: LibraryAccess,
   requestedIds?: string[]
 ): Promise<string[]> {
-  const cacheKey = `${auth.user._id}:${auth.settings.plexMachineId ?? ''}`;
+  const cacheKey = `${access.userId}:${access.plexMachineId ?? ''}`;
   const cached = sectionsCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     return filterRequestedLibraryIds(cached.ids, requestedIds);
   }
 
   const plexService = await createPlexService(
-    auth.plexToken,
-    auth.plexServerUrl,
-    auth.settings.plexMachineId || null
+    access.plexToken,
+    access.plexServerUrl,
+    access.plexMachineId
   );
   const sections = await plexService.getLibrarySections();
   const allowedIds = sections
