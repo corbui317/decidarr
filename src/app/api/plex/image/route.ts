@@ -9,6 +9,20 @@ export const dynamic = 'force-dynamic';
 
 const logger = createLogger('API:PlexImage');
 
+const ALLOWED_IMAGE_CONTENT_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'image/avif',
+  'image/svg+xml',
+]);
+
+function isAllowedImageContentType(contentType: string): boolean {
+  const mimeType = contentType.split(';')[0]?.trim().toLowerCase();
+  return mimeType !== undefined && ALLOWED_IMAGE_CONTENT_TYPES.has(mimeType);
+}
+
 export async function GET(request: NextRequest) {
   try {
     const auth = await requireUser();
@@ -41,6 +55,10 @@ export async function GET(request: NextRequest) {
     }
 
     const contentType = response.headers.get('content-type') || 'image/jpeg';
+    if (!isAllowedImageContentType(contentType)) {
+      logger.warn('Plex image fetch refused: disallowed content type', { contentType });
+      return NextResponse.json({ error: 'Upstream response was not an allowed image content type' }, { status: 415 });
+    }
     const body = await response.arrayBuffer();
 
     return new NextResponse(body, {
