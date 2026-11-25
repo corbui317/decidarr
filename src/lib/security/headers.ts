@@ -1,19 +1,30 @@
 import type { NextRequest } from 'next/server';
 
-const CONTENT_SECURITY_POLICY = [
-  "default-src 'self'",
-  "base-uri 'self'",
-  "form-action 'self'",
-  "frame-ancestors 'none'",
-  "object-src 'none'",
-  "img-src 'self' data: https://image.tmdb.org",
-  "font-src 'self'",
-  "style-src 'self' 'unsafe-inline'",
-  "script-src 'self'",
-  "connect-src 'self'",
-  "worker-src 'self'",
-  "manifest-src 'self'",
-].join('; ');
+/**
+ * Next's App Router inlines the hydration payload as <script> tags on every
+ * response (static or dynamic), so script-src needs 'unsafe-inline' without a
+ * nonce; a nonce would require every page to opt out of static rendering,
+ * which is a larger change than this header policy. next dev (Turbopack) also
+ * hydrates with eval'd chunks and keeps a dev-time websocket open for Fast
+ * Refresh; neither exists in a production build.
+ */
+function buildContentSecurityPolicy(): string {
+  const isDev = process.env.NODE_ENV !== 'production';
+  return [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    "object-src 'none'",
+    "img-src 'self' data: https://image.tmdb.org",
+    "font-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ''}`,
+    `connect-src 'self'${isDev ? ' ws:' : ''}`,
+    "worker-src 'self'",
+    "manifest-src 'self'",
+  ].join('; ');
+}
 
 /**
  * Whether this request reached us over HTTPS.
@@ -31,7 +42,7 @@ export function isHttpsRequest(request: NextRequest): boolean {
 /** Security headers applied to every page and API response. */
 export function buildSecurityHeaders(request: NextRequest): Record<string, string> {
   const headers: Record<string, string> = {
-    'Content-Security-Policy': CONTENT_SECURITY_POLICY,
+    'Content-Security-Policy': buildContentSecurityPolicy(),
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
