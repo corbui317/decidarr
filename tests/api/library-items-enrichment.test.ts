@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { clearDatabase } from '../helpers/mongo';
 import {
@@ -8,33 +8,49 @@ import {
 } from '../helpers/auth';
 import { LibraryCache } from '@/lib/models/LibraryCache';
 import type { ILibraryItem } from '@/lib/models/LibraryCache';
-
-const plexMock = {
-  getLibrarySections: vi.fn(),
-  getLibraryItems: vi.fn(),
-};
-
-const tmdbMock = {
-  enrichBatch: vi.fn(),
-};
-
-vi.mock('@/lib/services/plex', () => ({
-  PlexService: vi.fn(function PlexServiceMock() {
-    return plexMock;
-  }),
-}));
-
-vi.mock('@/lib/services/tmdb', () => ({
-  TMDbService: vi.fn(function TMDbServiceMock() {
-    return tmdbMock;
-  }),
-}));
-
-vi.mock('@/lib/services/overseerr-sync', () => ({
-  enrichWithOverseerr: vi.fn().mockResolvedValue(undefined),
-}));
+import {
+  fakeIntegrations,
+  plexMetadata,
+  plexSections,
+  TMDB,
+  type FakeHandler,
+  type SentRequest,
+} from '../helpers/fake-integrations';
 
 import { GET as getLibraryItems } from '@/app/api/library/[id]/items/route';
+
+/** TMDb matching "Movie <n>" to id 1900 + n, rated PG and 8.0, made by New Studio. */
+const fakeTmdb: FakeHandler = ({ url }) => {
+  const path = url.pathname.slice(new URL(TMDB).pathname.length);
+  if (path === '/search/movie') {
+    const title = url.searchParams.get('query')!;
+    const n = Number(title.replace('Movie ', ''));
+    return Response.json({ results: [{ id: 1900 + n, title, release_date: `${2000 + n}-01-01` }] });
+  }
+  if (/^\/movie\/\d+\/release_dates$/.test(path)) {
+    return Response.json({ results: [{ iso_3166_1: 'US', release_dates: [{ certification: 'PG' }] }] });
+  }
+  if (/^\/movie\/\d+$/.test(path)) {
+    return Response.json({ vote_average: 8.0, production_companies: [{ name: 'New Studio' }] });
+  }
+  return new Response('not found', { status: 404 });
+};
+
+/** The seeded Plex server with one movie library holding `items`, plus TMDb. */
+function fakePlexAndTmdb(items: ILibraryItem[]) {
+  return fakeIntegrations((request) => {
+    const { url } = request;
+    if (url.origin === new URL(TMDB).origin) return fakeTmdb(request);
+    if (url.pathname === '/library/sections') return plexSections([{ id: 'lib-1', title: 'Movies', type: 'movie' }]);
+    if (url.pathname === '/library/sections/lib-1/all') {
+      return plexMetadata(items.map(({ plexId, title, year }) => ({ ratingKey: plexId, title, year, type: 'movie' })));
+    }
+    return new Response('not found', { status: 404 });
+  });
+}
+
+const tmdbSearches = (sent: SentRequest[]) =>
+  sent.filter((r) => r.url.pathname.endsWith('/search/movie')).map((r) => r.url.searchParams.get('query'));
 
 function makePlexItem(index: number): ILibraryItem {
   return {
@@ -62,19 +78,7 @@ describe('GET /api/library/[id]/items enrichment preservation', () => {
     clearTestCookies();
     await seedConfiguredSettings({ tmdbApiKey: 'tmdb-test-key-abcdefgh' });
     await authenticateTestSession();
-    vi.clearAllMocks();
-
-    plexMock.getLibrarySections.mockResolvedValue([
-      {
-        id: 'lib-1',
-        title: 'Movies',
-        type: 'movie',
-        agent: 'com.plexapp.agents.themoviedb',
-        scanner: 'Plex Movie Scanner',
-        language: 'en',
-        uuid: 'lib-uuid-1',
-      },
-    ]);
+    fakePlexAndTmdb([]);
   });
 
   it('preserves prior enrichment for items beyond the batch limit on refresh', async () => {
@@ -91,7 +95,7 @@ describe('GET /api/library/[id]/items enrichment preservation', () => {
     });
 
     const freshPlexItems = Array.from({ length: 110 }, (_, i) => makePlexItem(i + 1));
-    plexMock.getLibraryItems.mockResolvedValue(freshPlexItems);
+    const { sent } = fakePlexAndTmdb(freshPlexItems);
 
     const req = new NextRequest(
       'http://localhost/api/library/lib-1/items?forceRefresh=true'
@@ -109,7 +113,7 @@ describe('GET /api/library/[id]/items enrichment preservation', () => {
     expect(body.items[109].tmdbId).toBe('1110');
     expect(body.items[109].contentRating).toBe('PG-13');
 
-    expect(tmdbMock.enrichBatch).not.toHaveBeenCalled();
+    expect(tmdbSearches(sent)).toEqual([]);
 
     const cache = await LibraryCache.findOne({ libraryId: 'lib-1' });
     expect(cache?.items[109].tmdbId).toBe('1110');
@@ -136,16 +140,7 @@ describe('GET /api/library/[id]/items enrichment preservation', () => {
       expiresAt: new Date(Date.now() + 86400000),
     });
 
-    plexMock.getLibraryItems.mockResolvedValue(allItems);
-
-    tmdbMock.enrichBatch.mockResolvedValue(
-      Array.from({ length: 10 }, (_, i) => ({
-        tmdbId: 2000 + i,
-        certification: 'PG',
-        rating: 8.0,
-        studios: ['New Studio'],
-      }))
-    );
+    const { sent } = fakePlexAndTmdb(allItems);
 
     const req = new NextRequest(
       'http://localhost/api/library/lib-1/items?forceRefresh=true'
@@ -156,18 +151,12 @@ describe('GET /api/library/[id]/items enrichment preservation', () => {
 
     expect(res.status).toBe(200);
 
-    expect(tmdbMock.enrichBatch).toHaveBeenCalledTimes(1);
-    expect(tmdbMock.enrichBatch).toHaveBeenCalledWith(
-      expect.arrayContaining([
-        expect.objectContaining({ title: 'Movie 100' }),
-        expect.objectContaining({ title: 'Movie 109' }),
-      ]),
-      'movie'
-    );
+    expect(tmdbSearches(sent)).toEqual(newItems.map((item) => item.title));
+    expect(sent.filter((r) => r.url.pathname.endsWith('/search/movie')).every((r) => r.url.searchParams.get('api_key') === 'tmdb-test-key-abcdefgh')).toBe(true);
 
     const body = await res.json();
     const enrichedNewItem = body.items.find((item: ILibraryItem) => item.plexId === '100');
-    expect(enrichedNewItem.tmdbId).toBe('2000');
+    expect(enrichedNewItem).toMatchObject({ tmdbId: '2000', contentRating: 'PG', studio: 'New Studio' });
   });
 
   it('serves cached items as plain, tokenless items', async () => {

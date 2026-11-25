@@ -112,7 +112,7 @@ export function plexResources(servers: FakePlexServer[]): Response {
 }
 
 /** A Plex server's library sections. */
-export function plexSections(sections: { id: string; title: string; type: 'movie' | 'show' }[]): Response {
+export function plexSections(sections: { id: string; title: string; type: string }[]): Response {
   return Response.json({
     MediaContainer: { Directory: sections.map(({ id, ...rest }) => ({ key: id, uuid: `uuid-${id}`, ...rest })) },
   });
@@ -123,18 +123,49 @@ export function plexMetadata(items: { ratingKey: string; title: string; year?: n
   return Response.json({ MediaContainer: { Metadata: items } });
 }
 
+export interface FakePlexTvOptions {
+  /** The PIN that POST /api/v2/pins creates. */
+  pin?: { id: number; code: string };
+  /** The token a PIN poll returns once the user approved it; null while waiting. */
+  authToken?: string | null;
+  /** The account behind any token. */
+  account?: FakePlexAccount;
+  servers?: FakePlexServer[];
+  friends?: { id: string; username: string; thumb?: string }[];
+}
+
+/** plex.tv: PIN sign-in, the signed-in account, its servers and its friends. */
+export function fakePlexTv(options: FakePlexTvOptions = {}): FakeHandler {
+  return ({ url, method }) => {
+    if (url.origin !== PLEX_TV) return new Response('not found', { status: 404 });
+    if (method === 'POST' && url.pathname === '/api/v2/pins') {
+      return Response.json(options.pin ?? { id: 123, code: 'ABC123' });
+    }
+    const pinId = url.pathname.match(/^\/api\/v2\/pins\/(\d+)$/)?.[1];
+    if (pinId) {
+      return Response.json({ id: Number(pinId), code: url.searchParams.get('code'), authToken: options.authToken ?? null });
+    }
+    if (url.pathname === '/api/v2/user') return Response.json(options.account ?? FAKE_PLEX_ACCOUNT);
+    if (url.pathname === '/api/v2/resources') return plexResources(options.servers ?? []);
+    if (url.pathname === '/api/v2/friends') return Response.json(options.friends ?? []);
+    return new Response('not found', { status: 404 });
+  };
+}
+
 /**
  * plex.tv signing `account` in with any token and listing one owned server at
  * `serverUri`, plus that server with one movie library.
  */
 export function fakePlex(options: { serverUri: string; machineId: string; account?: FakePlexAccount }): FakeHandler {
-  return routes({
-    [`${PLEX_TV}/api/v2/user`]: () => Response.json(options.account ?? FAKE_PLEX_ACCOUNT),
-    [`${PLEX_TV}/api/v2/resources`]: () =>
-      plexResources([{ clientIdentifier: options.machineId, owned: true, uri: options.serverUri }]),
+  const plexTv = fakePlexTv({
+    account: options.account,
+    servers: [{ clientIdentifier: options.machineId, owned: true, uri: options.serverUri }],
+  });
+  const server = routes({
     [`${new URL(options.serverUri).origin}/library/sections`]: () =>
       plexSections([{ id: '1', title: 'Movies', type: 'movie' }]),
   });
+  return (request) => (request.url.origin === PLEX_TV ? plexTv(request) : server(request));
 }
 
 /** Tautulli's envelope around a command's data. */

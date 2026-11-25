@@ -1,16 +1,7 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import type { Types } from 'mongoose';
 import type { AuthContext } from '@/lib/auth';
-
-const plexMock = {
-  getLibrarySections: vi.fn(),
-};
-
-vi.mock('@/lib/services/plex', () => ({
-  PlexService: vi.fn(function PlexServiceMock() {
-    return plexMock;
-  }),
-}));
+import { fakeIntegrations, plexSections, type SentRequest } from '../../helpers/fake-integrations';
 
 import {
   getAccessibleLibraryIds,
@@ -30,14 +21,18 @@ function createAuthContext(overrides?: Partial<AuthContext>): AuthContext {
 }
 
 describe('getAccessibleLibraryIds sections cache', () => {
+  let sent: SentRequest[];
+  const sectionRequests = () => sent.filter((r) => r.url.pathname === '/library/sections').length;
+
   beforeEach(() => {
-    vi.clearAllMocks();
     invalidateAccessibleLibraryCache();
-    plexMock.getLibrarySections.mockResolvedValue([
-      { id: 'lib-1', title: 'Movies', type: 'movie' },
-      { id: 'lib-2', title: 'TV', type: 'show' },
-      { id: 'lib-3', title: 'Music', type: 'artist' },
-    ]);
+    ({ sent } = fakeIntegrations(() =>
+      plexSections([
+        { id: 'lib-1', title: 'Movies', type: 'movie' },
+        { id: 'lib-2', title: 'TV', type: 'show' },
+        { id: 'lib-3', title: 'Music', type: 'artist' },
+      ])
+    ));
   });
 
   it('calls Plex only once per user during rapid repeated requests', async () => {
@@ -47,7 +42,7 @@ describe('getAccessibleLibraryIds sections cache', () => {
     await getAccessibleLibraryIds(auth);
     await getAccessibleLibraryIds(auth);
 
-    expect(plexMock.getLibrarySections).toHaveBeenCalledTimes(1);
+    expect(sectionRequests()).toBe(1);
   });
 
   it('filters requested library ids from cached section list', async () => {
@@ -57,7 +52,7 @@ describe('getAccessibleLibraryIds sections cache', () => {
 
     expect(result).toEqual(['lib-1']);
     await getAccessibleLibraryIds(auth, ['lib-2']);
-    expect(plexMock.getLibrarySections).toHaveBeenCalledTimes(1);
+    expect(sectionRequests()).toBe(1);
   });
 
   it('invalidates cached sections for a user', async () => {
@@ -67,7 +62,7 @@ describe('getAccessibleLibraryIds sections cache', () => {
     invalidateAccessibleLibraryCache(String(auth.user._id));
     await getAccessibleLibraryIds(auth);
 
-    expect(plexMock.getLibrarySections).toHaveBeenCalledTimes(2);
+    expect(sectionRequests()).toBe(2);
   });
 
   it('uses separate cache entries per machine id', async () => {
@@ -80,6 +75,6 @@ describe('getAccessibleLibraryIds sections cache', () => {
       })
     );
 
-    expect(plexMock.getLibrarySections).toHaveBeenCalledTimes(2);
+    expect(sectionRequests()).toBe(2);
   });
 });
