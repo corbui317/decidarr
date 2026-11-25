@@ -30,6 +30,9 @@ import { GET as libraryItemsGet } from '@/app/api/library/[id]/items/route';
 import { POST as poolCountPost } from '@/app/api/selection/pool-count/route';
 import { GET as preferencesGet } from '@/app/api/users/me/preferences/route';
 import { GET as watchedItemGet, DELETE as watchedItemDelete } from '@/app/api/watched/[plexId]/route';
+import { GET as overseerrStatusGet } from '@/app/api/overseerr/status/route';
+import { POST as tautulliSyncPost } from '@/app/api/tautulli/sync/route';
+import { getOrCreateSettings } from '@/lib/models/Settings';
 
 /**
  * Covers the 401/403/invalid-input acceptance criterion for the batch #21 routes
@@ -100,6 +103,45 @@ describe('Batch #21 route auth and validation', () => {
         params: Promise.resolve({ plexId: 'plex-1' }),
       });
       expect(res.status).toBe(401);
+    });
+
+    it('GET /api/overseerr/status', async () => {
+      await seedConfiguredSettings();
+      const res = await overseerrStatusGet(new NextRequest('http://localhost/api/overseerr/status'));
+      expect(res.status).toBe(401);
+    });
+
+    it('POST /api/tautulli/sync', async () => {
+      await seedConfiguredSettings();
+      const res = await tautulliSyncPost(
+        createJsonRequest('http://localhost/api/tautulli/sync', 'POST') as never
+      );
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe('Overseerr and Tautulli business validation', () => {
+    it('GET /api/overseerr/status reports not configured without Overseerr credentials', async () => {
+      await seedConfiguredSettings();
+      await authenticateTestSession();
+      const res = await overseerrStatusGet(new NextRequest('http://localhost/api/overseerr/status'));
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.configured).toBe(false);
+    });
+
+    it('POST /api/tautulli/sync rejects when Tautulli is not enabled', async () => {
+      await seedConfiguredSettings();
+      await authenticateTestSession();
+      const settings = await getOrCreateSettings();
+      settings.tautulliEnabled = false;
+      await settings.save();
+
+      const res = await tautulliSyncPost(
+        createJsonRequest('http://localhost/api/tautulli/sync', 'POST') as never
+      );
+      expect(res.status).toBe(400);
+      expect((await res.json()).code).toBe('VALIDATION_FAILED');
     });
   });
 

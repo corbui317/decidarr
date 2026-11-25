@@ -5,6 +5,7 @@ import {
   seedConfiguredSettings,
   authenticateTestSession,
   clearTestCookies,
+  createJsonRequest,
 } from '../helpers/auth';
 import { getOrCreateSettings } from '@/lib/models/Settings';
 import { User } from '@/lib/models/User';
@@ -53,7 +54,7 @@ describe('POST /api/tautulli/sync', () => {
     settings.tautulliEnabled = false;
     await settings.save();
 
-    const res = await tautulliSyncPost();
+    const res = await tautulliSyncPost(createJsonRequest('http://localhost/api/tautulli/sync', 'POST') as never);
     const body = await res.json();
 
     expect(res.status).toBe(400);
@@ -108,7 +109,7 @@ describe('POST /api/tautulli/sync', () => {
       .mockResolvedValueOnce(movies)
       .mockResolvedValueOnce(episodes);
 
-    const res = await tautulliSyncPost();
+    const res = await tautulliSyncPost(createJsonRequest('http://localhost/api/tautulli/sync', 'POST') as never);
     expect(res.status).toBe(200);
 
     const body = await res.json();
@@ -166,7 +167,7 @@ describe('POST /api/tautulli/sync', () => {
       .mockResolvedValueOnce(duplicateMovies)
       .mockResolvedValueOnce([]);
 
-    const res = await tautulliSyncPost();
+    const res = await tautulliSyncPost(createJsonRequest('http://localhost/api/tautulli/sync', 'POST') as never);
     expect(res.status).toBe(200);
 
     const body = await res.json();
