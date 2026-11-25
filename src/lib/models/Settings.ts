@@ -96,10 +96,11 @@ const CURRENT_MIGRATION_VERSION = 2;
 const CRYPTOJS_SALTED_PREFIX = 'U2FsdGVkX1';
 
 // Master key for encrypting the auto-generated secrets
-export const getLegacyMasterKey = (): string => {
-  const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/decidarr';
-  return CryptoJS.SHA256('decidarr-master-' + mongoUri).toString().substring(0, 32);
-};
+export const legacyMasterKeyFor = (mongoUri: string): string =>
+  CryptoJS.SHA256('decidarr-master-' + mongoUri).toString().substring(0, 32);
+
+export const getLegacyMasterKey = (): string =>
+  legacyMasterKeyFor(process.env.MONGODB_URI || 'mongodb://localhost:27017/decidarr');
 
 /** Derives the master key that protects jwtSecret and encryptionKey from a DECIDARR_SECRET value. */
 export const masterKeyFromSecret = (secret: string): string =>

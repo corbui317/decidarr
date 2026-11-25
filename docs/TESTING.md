@@ -51,13 +51,14 @@ When the run ends, Playwright sends `SIGTERM` to the Mongo process group, which 
 |----------|---------|
 | `E2E_MOCK_PLEX` | When `true` outside production, Plex OAuth and API calls use mock responses (set automatically in `playwright.config.ts`). |
 | `E2E_MONGODB_URI` | Optional, local runs only: use this MongoDB instead of the in-memory server. |
-| `E2E_TEST_RESET_SECRET` | The value the test-only routes (`POST /api/test/reset`, `POST /api/test/seed-legacy`) require in the `X-E2E-Reset-Secret` header. Playwright defaults it to `decidarr-e2e-reset`. When it is unset on the server, both routes answer 403. |
+| `E2E_TEST_RESET_SECRET` | The value the test-only routes (`POST /api/test/reset`, `POST /api/test/restart`) require in the `X-E2E-Reset-Secret` header. Playwright defaults it to `decidarr-e2e-reset`. When it is unset on the server, both routes answer 403. |
 
 ### Legacy upgrade seed
 
-`POST /api/test/seed-legacy` writes a pre-`DECIDARR_SECRET` install (CryptoJS ciphertext, master key derived from `MONGODB_URI`) and then boots it the way a restart after the upgrade would, so the secret migration runs before the next request.
+The upgrade spec writes a pre-`DECIDARR_SECRET` install (CryptoJS ciphertext, master key derived from `MONGODB_URI`) straight into the E2E MongoDB.
+It then calls `POST /api/test/restart`, which boots that data the way a restart after the upgrade would, so the secret migration runs before the next request.
 The seed data comes from `tests/helpers/legacy-install-seed.ts`, which the Vitest upgrade test (`tests/api/legacy-upgrade.test.ts`) shares.
-Production builds stub that module out, and the route answers 404 in production.
+No application code imports it, and the restart route answers 404 in production.
 
 ## Lint, typecheck, and build
 

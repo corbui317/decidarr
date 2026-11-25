@@ -3,9 +3,8 @@
  * secret migration: CryptoJS ciphertext with no version prefix, the master key
  * derived from MONGODB_URI, and no `secretsMigrationVersion`.
  *
- * Shared by the Vitest upgrade test and the guarded E2E seed route, so both
- * exercise the same legacy data. Production builds stub this module out
- * (see next.config.js).
+ * Shared by the Vitest upgrade test and the E2E upgrade spec, so both
+ * exercise the same legacy data.
  */
 import CryptoJS from 'crypto-js';
 import type mongoose from 'mongoose';

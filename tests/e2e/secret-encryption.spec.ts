@@ -5,9 +5,10 @@ import { E2E_DECIDARR_SECRET, E2E_MONGO_URI, E2E_RESET_SECRET } from './e2e-env'
 import {
   LEGACY_ADMIN_PLEX_USER_ID,
   LEGACY_PLAINTEXT,
+  seedLegacyInstall,
   type StoredSettings,
 } from '../helpers/legacy-install-seed';
-import { decryptVersioned, masterKeyFromSecret } from '@/lib/models/Settings';
+import { decryptVersioned, legacyMasterKeyFor, masterKeyFromSecret } from '@/lib/models/Settings';
 
 async function withE2eDb(fn: (db: mongoose.mongo.Db) => Promise<void>): Promise<void> {
   const client = await new mongoose.mongo.MongoClient(E2E_MONGO_URI).connect();
@@ -80,12 +81,13 @@ test.describe('DECIDARR_SECRET encryption', () => {
     test.setTimeout(90000);
 
     // An install from before DECIDARR_SECRET (CryptoJS, master key from MONGODB_URI)
-    // is restarted with DECIDARR_SECRET set. The seed route writes that legacy data
-    // and then boots it the way the restart would, which runs the migration.
-    const seed = await request.post('/api/test/seed-legacy', {
+    // is restarted with DECIDARR_SECRET set: write that legacy data, then boot it
+    // the way the restart would, which runs the migration.
+    await withE2eDb((db) => seedLegacyInstall(db, legacyMasterKeyFor(E2E_MONGO_URI)).then(() => undefined));
+    const restart = await request.post('/api/test/restart', {
       headers: { 'X-E2E-Reset-Secret': E2E_RESET_SECRET },
     });
-    expect(seed.ok(), await seed.text()).toBeTruthy();
+    expect(restart.ok(), await restart.text()).toBeTruthy();
 
     // Assert the migration on disk before signing in: login re-encrypts the
     // admin's Plex token with the fresh OAuth token.
