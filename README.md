@@ -239,6 +239,9 @@ Your settings and watch history are stored in MongoDB and will be preserved.
 - SSRF protection for server URLs
 - Production refuses to start without a `DECIDARR_SECRET` of at least 32 characters
 - `DECIDARR_SECRET` is the only secret kept outside the database
+- Every response carries a Content-Security-Policy, `X-Content-Type-Options: nosniff`, a `frame-ancestors 'none'` policy, and a `Referrer-Policy`; HTTPS deployments also get `Strict-Transport-Security`
+- The Plex image proxy only forwards responses whose content type is an allowed image type
+- Docker Compose publishes on `BIND_ADDRESS` (default `0.0.0.0`, all interfaces); set `BIND_ADDRESS=127.0.0.1` in `.env` to keep Decidarr off the network, for example behind a reverse proxy on the same host
 
 ## License
 

@@ -49,9 +49,6 @@ next-env.d.ts
 Thumbs.db
 .DS_Store
 
-# Docker
-.dockerignore
-
 # Logs
 logs/
 *.log
