@@ -6,8 +6,8 @@ import {
   AUTH_CODE_TTL_SECONDS,
   REFRESH_TOKEN_TTL_SECONDS,
 } from '@decidarr/api-contracts';
-import { getOrCreateSettings } from '@/lib/models/Settings';
-import { IUser, loadUserWithToken } from '@/lib/models/User';
+import { IUser, User } from '@/lib/models/User';
+import { deriveKey } from '@/lib/secrets';
 import { MobileRefreshToken } from '@/lib/models/MobileRefreshToken';
 import { createLogger } from '@/lib/logger';
 import { SessionError } from '@/lib/auth-errors';
@@ -50,7 +50,6 @@ export async function signAccessToken(
   user: IUser,
   deviceId: string
 ): Promise<string> {
-  const settings = await getOrCreateSettings();
   const payload: MobileAccessClaims = {
     sub: user._id.toString(),
     plexUserId: user.plexUserId,
@@ -59,17 +58,16 @@ export async function signAccessToken(
     deviceId,
     aud: MOBILE_AUDIENCE,
   };
-  return jwt.sign(payload, settings.getJwtSecret(), {
+  return jwt.sign(payload, deriveKey('mobile-access-token'), {
     expiresIn: ACCESS_TOKEN_TTL_SECONDS,
   });
 }
 
 /** Verifies a mobile access token; throws SessionError('UNAUTHORIZED') for any invalid token. */
 export async function verifyAccessToken(token: string): Promise<MobileAccessPayload> {
-  const settings = await getOrCreateSettings();
   let payload: MobileAccessPayload;
   try {
-    payload = jwt.verify(token, settings.getJwtSecret(), {
+    payload = jwt.verify(token, deriveKey('mobile-access-token'), {
       audience: MOBILE_AUDIENCE,
     }) as MobileAccessPayload;
   } catch {
@@ -140,8 +138,14 @@ export async function rotateRefreshToken(
     throw new SessionError('UNAUTHORIZED');
   }
 
-  const user = await loadUserWithToken(existing.userId);
+  const user = await User.findById(existing.userId);
   if (!user || (!user.isApproved && !user.isAdmin)) {
+    throw new SessionError('UNAUTHORIZED');
+  }
+  try {
+    // After a DECIDARR_SECRET change the device must sign in again; the token itself is kept.
+    user.getDecryptedToken();
+  } catch {
     throw new SessionError('UNAUTHORIZED');
   }
 

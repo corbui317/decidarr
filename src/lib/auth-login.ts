@@ -10,6 +10,7 @@ import { assertSafeServiceUrl, allowPrivateServiceUrls } from './security/servic
 import { createLogger } from './logger';
 import { isSecureCookieEnabled } from './security/cookie-options';
 import { AuthErrorCode, createAuthError } from './auth-errors';
+import { deriveKey } from './secrets';
 
 const logger = createLogger('AuthLogin');
 
@@ -61,7 +62,6 @@ export async function completePlexLogin(
   }
 
   const settings = await getOrCreateSettings();
-  const encryptionKey = settings.getEncryptionKey();
   const plexService = await createPlexService(authToken);
 
   let servers: PlexServer[] = [];
@@ -207,7 +207,7 @@ export async function completePlexLogin(
     user.tokenValidatedAt = new Date();
   }
 
-  user.setEncryptedToken(authToken, encryptionKey);
+  user.setEncryptedToken(authToken);
   await user.save();
 
   if (!settings.setupComplete && isAdmin && candidateServer) {
@@ -238,7 +238,7 @@ export async function completePlexLogin(
     await settings.save();
   }
 
-  await issueSessionCookie(user, settings.getJwtSecret());
+  await issueSessionCookie(user);
 
   return {
     success: true,
@@ -253,7 +253,7 @@ export async function completePlexLogin(
   };
 }
 
-export async function issueSessionCookie(user: IUser, jwtSecret: string): Promise<void> {
+export async function issueSessionCookie(user: IUser): Promise<void> {
   const token = jwt.sign(
     {
       sub: user._id.toString(),
@@ -261,7 +261,7 @@ export async function issueSessionCookie(user: IUser, jwtSecret: string): Promis
       isAdmin: user.isAdmin,
       sessionVersion: user.sessionVersion,
     },
-    jwtSecret,
+    deriveKey('web-session'),
     { expiresIn: '7d' }
   );
 

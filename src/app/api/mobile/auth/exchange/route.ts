@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { AUTH_CODE_TTL_SECONDS } from '@decidarr/api-contracts';
 import { connectDB } from '@/lib/db';
 import { MobileAuthCode } from '@/lib/models/MobileAuthCode';
-import { getOrCreateSettings } from '@/lib/models/Settings';
 import { User } from '@/lib/models/User';
 import { completePlexLogin } from '@/lib/auth-login';
 import { hashToken, issueTokenPair, redactToken } from '@/lib/mobile-auth/tokens';
@@ -63,10 +62,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Device mismatch' }, { status: 401 });
     }
 
-    const settings = await getOrCreateSettings();
-    const encryptionKey = settings.getEncryptionKey();
-
-    let plexToken = authCode.getDecryptedPlexAuthToken(encryptionKey);
+    let plexToken = authCode.getDecryptedPlexAuthToken();
     if (!plexToken) {
       const pin = await pollAuthPin(authCode.pinId, authCode.pinCode);
       if (!pin.authToken) {
@@ -76,7 +72,7 @@ export async function POST(request: NextRequest) {
         );
       }
       plexToken = pin.authToken;
-      authCode.setEncryptedPlexAuthToken(plexToken, encryptionKey);
+      authCode.setEncryptedPlexAuthToken(plexToken);
       await authCode.save();
     }
 

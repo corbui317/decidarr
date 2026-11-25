@@ -338,6 +338,8 @@ export interface UserPreferences {
 
 export interface SettingsResponse {
   setupComplete: boolean;
+  /** Stored credentials that cannot be decrypted with the current keys; kept until re-entered. */
+  credentialsNeedingReentry: string[];
   plex: {
     serverUrl: string | null;
     username: string | null;

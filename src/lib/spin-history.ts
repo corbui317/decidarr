@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import { connectDB } from './db';
 import { getOrCreateSettings, ISpinHistoryPreferences, ISettings } from './models/Settings';
 import { User } from './models/User';
+import { deriveKey } from './secrets';
 import { SpinHistoryEntry } from './models/SpinHistoryEntry';
 
 export const SINGLE_USER_ID = new mongoose.Types.ObjectId('000000000000000000000001');
@@ -106,7 +107,6 @@ type SessionPayload = {
 
 export async function getCurrentUserId(): Promise<mongoose.Types.ObjectId> {
   await connectDB();
-  const settings = await getOrCreateSettings();
 
   try {
     const cookieStore = await cookies();
@@ -115,7 +115,7 @@ export async function getCurrentUserId(): Promise<mongoose.Types.ObjectId> {
       return SINGLE_USER_ID;
     }
 
-    const payload = jwt.verify(token, settings.getJwtSecret()) as SessionPayload;
+    const payload = jwt.verify(token, deriveKey('web-session')) as SessionPayload;
 
     if (payload.sub && payload.sessionVersion !== undefined) {
       if (mongoose.Types.ObjectId.isValid(payload.sub)) {

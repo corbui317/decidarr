@@ -10,8 +10,9 @@ import {
 } from '../helpers/legacy-install-seed';
 import { connectDB, forgetConnectionForTests } from '@/lib/db';
 import { resetMigrationStateForTests } from '@/lib/migrate';
-import { getLegacyMasterKey, getOrCreateSettings } from '@/lib/models/Settings';
-import { User, loadUserWithToken } from '@/lib/models/User';
+import { getOrCreateSettings } from '@/lib/models/Settings';
+import { User } from '@/lib/models/User';
+import { getLegacyMasterKey, isCurrentCiphertext } from '@/lib/secrets';
 import { completePlexLogin } from '@/lib/auth-login';
 import { GET as statusGet } from '@/app/api/settings/status/route';
 import { GET as settingsGet } from '@/app/api/settings/route';
@@ -58,17 +59,15 @@ describe('Upgrading a legacy install to DECIDARR_SECRET', () => {
     });
 
     const raw = await db.collection<StoredSettings>('settings').findOne({ _id: 'app-settings' });
-    expect(raw?.secretsMigrationVersion).toBe(2);
-    for (const field of ['jwtSecret', 'encryptionKey', 'plexToken', 'tmdbApiKey']) {
-      expect(raw?.[field]).toMatch(/^v2:/);
-    }
+    expect(isCurrentCiphertext(raw!.plexToken!)).toBe(true);
+    expect(isCurrentCiphertext(raw!.tmdbApiKey!)).toBe(true);
 
     const settings = await getOrCreateSettings();
     expect(settings.getDecryptedTmdbKey()).toBe(LEGACY_PLAINTEXT.tmdbApiKey);
     expect(settings.getDecryptedPlexToken()).toBe(LEGACY_PLAINTEXT.plexToken);
 
-    const admin = await loadUserWithToken(settings.adminUserId!);
-    expect(admin?.plexToken).toMatch(/^v2:/);
+    const admin = await User.findById(settings.adminUserId!);
+    expect(isCurrentCiphertext(admin!.plexToken)).toBe(true);
     expect(admin?.getDecryptedToken()).toBe(LEGACY_PLAINTEXT.plexToken);
 
     // The legacy admin signs in through the (mock) Plex OAuth flow and keeps admin rights.
@@ -123,8 +122,7 @@ describe('POST /api/test/seed-legacy', () => {
     const raw = await mongoose.connection.db!
       .collection<StoredSettings>('settings')
       .findOne({ _id: 'app-settings' });
-    expect(raw?.secretsMigrationVersion).toBe(2);
-    expect(raw?.tmdbApiKey).toMatch(/^v2:/);
+    expect(isCurrentCiphertext(raw!.tmdbApiKey!)).toBe(true);
     expect((await getOrCreateSettings()).getDecryptedTmdbKey()).toBe(LEGACY_PLAINTEXT.tmdbApiKey);
   });
 });
@@ -148,7 +146,7 @@ describe('Restarting with a different DECIDARR_SECRET', () => {
     await connectDB();
     const settings = await getOrCreateSettings();
     const admin = new User({ plexUserId: LEGACY_ADMIN_PLEX_USER_ID, plexUsername: 'admin', isAdmin: true, isApproved: true });
-    admin.setEncryptedToken('admin-plex-token', settings.getEncryptionKey());
+    admin.setEncryptedToken('admin-plex-token');
     await admin.save();
     settings.plexServerUrl = 'http://192.168.1.10:32400';
     settings.plexMachineId = 'machine-a';
@@ -278,8 +276,7 @@ describe('Restarting a legacy install with a changed MONGODB_URI', () => {
 });
 
 async function readUserToken(plexUserId: string): Promise<string> {
-  const user = await User.findOne({ plexUserId });
-  return (await loadUserWithToken(user!._id))!.getDecryptedToken();
+  return (await User.findOne({ plexUserId }))!.getDecryptedToken();
 }
 
 /** Raw stored ciphertext, read past the models so nothing decrypts or re-saves it. */
