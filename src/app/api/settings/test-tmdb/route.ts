@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createLogger } from '@/lib/logger';
+import { TMDbService } from '@/lib/services/tmdb';
 
 const logger = createLogger('API:TestTmdb');
 
@@ -19,26 +20,21 @@ export async function POST(request: NextRequest) {
     }
 
     logger.debug('Testing TMDB API key');
-    const encodedKey = encodeURIComponent(apiKey.trim());
-    const response = await fetch(
-      `https://api.themoviedb.org/3/configuration?api_key=${encodedKey}`,
-      { signal: AbortSignal.timeout(10_000) }
-    );
+    const result = await new TMDbService(apiKey.trim()).testApiKey();
 
-    if (!response.ok) {
-      logger.warn('TMDB API key invalid', { status: response.status });
+    if (!result.valid) {
+      logger.warn('TMDB API key invalid');
       return NextResponse.json({
         valid: false,
         error: 'Invalid TMDB API key',
       });
     }
 
-    const data = await response.json();
     logger.info('TMDB API key valid');
     return NextResponse.json({
       valid: true,
       message: 'TMDB API key is valid',
-      imageBaseUrl: data.images?.secure_base_url || null,
+      imageBaseUrl: result.imageBaseUrl,
     });
   } catch (error) {
     logger.error('Test TMDB error', { error: (error as Error).message });

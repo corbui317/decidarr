@@ -1,109 +1,159 @@
-import http from 'node:http';
-import type { AddressInfo } from 'node:net';
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { clearDatabase } from '../helpers/mongo';
 import { authenticateTestSession, clearTestCookies, seedConfiguredSettings } from '../helpers/auth';
-
-const dnsAnswers: string[][] = [];
-vi.mock('dns/promises', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('dns/promises')>();
-  const lookup = async () => (dnsAnswers.shift() ?? []).map((address) => ({ address, family: 4 }));
-  return { ...actual, default: { ...actual, lookup }, lookup };
-});
-
+import { fakeIntegrations, redirectTo, sequenceLookup } from '../helpers/fake-integrations';
 import { POST as overseerrTestPost } from '@/app/api/overseerr/test/route';
+import { GET as plexImageGet } from '@/app/api/plex/image/route';
+import { IntegrationError } from '@/lib/integrations/client';
 import { OverseerrService } from '@/lib/services/overseerr';
 import { PlexService } from '@/lib/services/plex';
+import { fetchPlexUser } from '@/lib/services/plex-oauth';
+import { TautulliService } from '@/lib/services/tautulli';
+import { TMDbService } from '@/lib/services/tmdb';
 
-interface Seen {
-  host: string;
-  headers: http.IncomingHttpHeaders;
+const PUBLIC = '93.184.216.34';
+
+function overseerrTestRequest(url: string): NextRequest {
+  return new NextRequest('http://localhost/api/overseerr/test', {
+    method: 'POST',
+    body: JSON.stringify({ url, apiKey: 'overseerr-secret-key' }),
+  });
 }
 
-/** A server that redirects every request to `target`, and one that records what reaches it. */
-async function startServer(handler: http.RequestListener): Promise<{ url: string; close: () => Promise<void> }> {
-  const server = http.createServer(handler);
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const { port } = server.address() as AddressInfo;
-  return {
-    url: `http://127.0.0.1:${port}`,
-    close: () => new Promise((resolve) => server.close(() => resolve())),
-  };
+function imageRequest(): NextRequest {
+  return new NextRequest('http://localhost/api/plex/image?path=%2Flibrary%2Fmetadata%2F1%2Fthumb%2F2');
 }
 
 describe('Integration URL policy at request time', () => {
   beforeEach(async () => {
     await clearDatabase();
     clearTestCookies();
-    dnsAnswers.length = 0;
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
   });
 
   it('refuses a hostname that resolves to a blocked address at request time, after passing the save-time check', async () => {
     await seedConfiguredSettings();
     await authenticateTestSession();
-    const fetchMock = vi.fn(async () => Response.json({ version: '1.0.0' }));
-    vi.stubGlobal('fetch', fetchMock);
+    // The save-time check sees a public address; at connect time the same host answers loopback.
+    const lookup = sequenceLookup([PUBLIC], ['127.0.0.1']);
+    const { sent } = fakeIntegrations(() => Response.json({ version: '1.0.0' }), lookup);
 
-    // The save-time check sees a public address; the connection would go to loopback.
-    dnsAnswers.push(['93.184.216.34'], ['127.0.0.1'], ['127.0.0.1']);
-
-    const res = await overseerrTestPost(
-      new NextRequest('http://localhost/api/overseerr/test', {
-        method: 'POST',
-        body: JSON.stringify({ url: 'http://overseerr.rebind.example', apiKey: 'overseerr-key' }),
-      })
-    );
+    const res = await overseerrTestPost(overseerrTestRequest('http://overseerr.rebind.example'));
     const body = await res.json();
 
+    expect(lookup.calls).toEqual(['overseerr.rebind.example', 'overseerr.rebind.example']);
     expect(body.success).toBe(false);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(sent).toEqual([]);
+  });
+
+  it('refuses a Plex server hostname that now resolves to cloud metadata, without sending the Plex token', async () => {
+    await seedConfiguredSettings({ plexServerUrl: 'http://plex.rebind.example:32400' });
+    await authenticateTestSession();
+    const { sent } = fakeIntegrations(() => new Response('image'), sequenceLookup(['169.254.169.254']));
+
+    const res = await plexImageGet(imageRequest());
+
+    expect(res.status).toBe(502);
+    expect(sent).toEqual([]);
+  });
+
+  it('connects to the address it checked', async () => {
+    await seedConfiguredSettings({ plexServerUrl: 'http://plex.example:32400' });
+    await authenticateTestSession();
+    const lookup = sequenceLookup([PUBLIC], ['10.0.0.5']);
+    const { sent } = fakeIntegrations(
+      () => new Response(new Uint8Array([1]), { headers: { 'content-type': 'image/png' } }),
+      lookup
+    );
+
+    const res = await plexImageGet(imageRequest());
+
+    expect(res.status).toBe(200);
+    expect(lookup.calls).toHaveLength(1);
+    expect(sent.map((r) => [r.url.host, r.address])).toEqual([['plex.example:32400', PUBLIC]]);
   });
 });
 
 describe('Integration redirects', () => {
-  let seen: Seen[];
-  let target: Awaited<ReturnType<typeof startServer>>;
-  let redirector: Awaited<ReturnType<typeof startServer>>;
+  const EVIL = 'http://collector.evil.example';
 
   beforeEach(async () => {
-    seen = [];
-    target = await startServer((req, res) => {
-      seen.push({ host: String(req.headers.host), headers: req.headers });
-      res.setHeader('content-type', 'application/json');
-      res.end(JSON.stringify({ version: '1.0.0', MediaContainer: { Directory: [] } }));
+    await clearDatabase();
+    clearTestCookies();
+  });
+
+  /** Every integration answers with a redirect to another host. */
+  function redirectEverything() {
+    return fakeIntegrations(({ url }) => redirectTo(`${EVIL}${url.pathname}${url.search}`));
+  }
+
+  function expectNothingSentTo(sent: { url: URL }[], host: string) {
+    expect(sent).toHaveLength(1);
+    expect(sent.filter((r) => r.url.host === host)).toEqual([]);
+  }
+
+  it('reports a Plex server redirect as an integration error without following it', async () => {
+    const { sent } = redirectEverything();
+
+    const error = await new PlexService('plex-secret-token', 'http://plex.example:32400')
+      .getLibrarySections()
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(IntegrationError);
+    expect(error).toMatchObject({ integration: 'Plex', reason: 'redirect', status: 302 });
+    expectNothingSentTo(sent, 'collector.evil.example');
+  });
+
+  it('reports a plex.tv redirect as an integration error without following it', async () => {
+    const { sent } = redirectEverything();
+
+    await expect(fetchPlexUser('plex-account-token')).rejects.toMatchObject({
+      integration: 'plex.tv',
+      reason: 'redirect',
     });
-    const targetUrl = target.url.replace('127.0.0.1', 'localhost');
-    redirector = await startServer((req, res) => {
-      res.statusCode = 302;
-      res.setHeader('location', `${targetUrl}${req.url}`);
-      res.end();
+    expectNothingSentTo(sent, 'collector.evil.example');
+  });
+
+  it('reports a Tautulli redirect as a failed connection without following it', async () => {
+    const { sent } = redirectEverything();
+
+    const result = await new TautulliService('http://tautulli.example', 'tautulli-secret-key').testConnection();
+
+    expect(result).toEqual({ success: false, error: expect.stringMatching(/redirect/) });
+    expectNothingSentTo(sent, 'collector.evil.example');
+  });
+
+  it('reports an Overseerr redirect as a failed connection without following it', async () => {
+    const { sent } = redirectEverything();
+
+    const result = await new OverseerrService('http://overseerr.example', 'overseerr-secret-key').testConnection();
+
+    expect(result).toEqual({ success: false, error: expect.stringMatching(/redirect/) });
+    expectNothingSentTo(sent, 'collector.evil.example');
+  });
+
+  it('reports a TMDb redirect as an integration error without following it', async () => {
+    const { sent } = redirectEverything();
+
+    await expect(new TMDbService('tmdb-secret-key').testApiKey()).rejects.toMatchObject({
+      integration: 'TMDb',
+      reason: 'redirect',
     });
+    expectNothingSentTo(sent, 'collector.evil.example');
   });
 
-  afterEach(async () => {
-    await redirector.close();
-    await target.close();
-  });
+  it('never sends X-Plex-Token or X-Api-Key to a redirect target through a route', async () => {
+    await seedConfiguredSettings({ plexServerUrl: 'http://plex.example:32400' });
+    await authenticateTestSession();
+    const { sent } = redirectEverything();
 
-  it('never sends X-Api-Key to an Overseerr redirect target', async () => {
-    const result = await new OverseerrService(redirector.url, 'overseerr-secret-key').testConnection();
+    const image = await plexImageGet(imageRequest());
+    const overseerr = await (await overseerrTestPost(overseerrTestRequest('http://overseerr.example'))).json();
 
-    expect(seen.filter((r) => r.headers['x-api-key'])).toEqual([]);
-    expect(result.success).toBe(false);
-  });
-
-  it('never sends X-Plex-Token to a Plex server redirect target', async () => {
-    const service = new PlexService('plex-secret-token', redirector.url);
-
-    const sections = service.getLibrarySections().catch((error: unknown) => error);
-
-    await sections;
-    expect(seen.filter((r) => r.headers['x-plex-token'])).toEqual([]);
-    expect(await sections).toBeInstanceOf(Error);
+    expect(image.status).toBe(502);
+    expect(overseerr.success).toBe(false);
+    expect(sent.map((r) => r.url.host)).toEqual(['plex.example:32400', 'overseerr.example']);
+    expect(sent[0].headers.get('X-Plex-Token')).toBe('test-plex-token-abcdefghijklmnop');
+    expect(sent[1].headers.get('X-Api-Key')).toBe('overseerr-secret-key');
   });
 });

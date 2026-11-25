@@ -6,8 +6,9 @@ import { User, IUser } from './models/User';
 import { PlexServer } from './services/plex';
 import { createPlexService } from './services/plex-factory';
 import { fetchPlexUser } from './services/plex-oauth-factory';
-import { assertSafeServiceUrl, allowPrivateServiceUrls } from './security/service-url';
+import { assertSafeServiceUrl } from './security/service-url';
 import { createLogger } from './logger';
+import { IntegrationError } from './integrations/client';
 import { isSecureCookieEnabled } from './security/cookie-options';
 import { AuthErrorCode, createAuthError } from './auth-errors';
 
@@ -40,7 +41,7 @@ export async function completePlexLogin(
     plexUser = await fetchPlexUser(authToken);
   } catch (err) {
     const msg = (err as Error).message;
-    if (msg === 'PLEX_UNAVAILABLE') {
+    if (msg === 'PLEX_UNAVAILABLE' || (err instanceof IntegrationError && err.unavailable)) {
       const authError = createAuthError('PLEX_UNAVAILABLE', 'Plex.tv service unavailable');
       logger.warn('Login failed', { reason: authError.detailedReason });
       return {
@@ -68,14 +69,8 @@ export async function completePlexLogin(
   try {
     servers = await plexService.getServers();
   } catch (err) {
-    const msg = (err as Error).message;
-    logger.error('Server discovery failed', { error: msg });
-    if (
-      msg.includes('fetch') ||
-      msg.includes('timeout') ||
-      msg.includes('network') ||
-      msg.includes('aborted')
-    ) {
+    logger.error('Server discovery failed', { error: (err as Error).message });
+    if (err instanceof IntegrationError && err.unavailable) {
       const authError = createAuthError('PLEX_UNAVAILABLE', 'Plex.tv service unavailable during server discovery');
       return {
         success: false,
@@ -214,9 +209,7 @@ export async function completePlexLogin(
     const localConnection = candidateServer.connections.find((c: { local: boolean }) => c.local);
     const connection = localConnection || candidateServer.connections[0];
     if (connection) {
-      const urlCheck = await assertSafeServiceUrl(connection.uri, {
-        allowPrivateNetworks: allowPrivateServiceUrls(),
-      });
+      const urlCheck = await assertSafeServiceUrl(connection.uri);
       if (urlCheck.valid) {
         settings.plexServerUrl = urlCheck.normalized || connection.uri;
         settings.plexMachineId = candidateServer.clientIdentifier;

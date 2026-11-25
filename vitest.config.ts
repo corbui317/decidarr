@@ -39,7 +39,7 @@ export default defineConfig({
           name: 'unit-api',
           include: ['tests/unit/**/*.test.ts', 'tests/api/**/*.test.ts'],
           environment: 'node',
-          setupFiles: ['./vitest.setup.ts', './tests/setup-db.ts'],
+          setupFiles: ['./vitest.setup.ts', './tests/setup-db.ts', './tests/setup-integrations.ts'],
         },
       },
       {

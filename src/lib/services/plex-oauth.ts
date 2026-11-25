@@ -1,9 +1,11 @@
 import crypto from 'crypto';
 import { createLogger } from '../logger';
+import { createIntegrationClient, type IntegrationClient } from '../integrations/client';
+import { isSecureCookieEnabled } from '@/lib/security/cookie-options';
 
 const logger = createLogger('PlexOAuth');
 const PLEX_TV_BASE = 'https://plex.tv';
-const FETCH_TIMEOUT_MS = 15_000;
+const PLEX_TV_TIMEOUT_MS = 15_000;
 
 export const PLEX_PRODUCT = 'Decidarr';
 export const PLEX_VERSION = process.env.PLEX_APP_VERSION || '2.0.0';
@@ -32,13 +34,6 @@ export interface PlexOAuthUser {
   thumb?: string;
 }
 
-function fetchWithTimeout(url: string, options?: RequestInit): Promise<Response> {
-  return fetch(url, {
-    ...options,
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
-}
-
 export function getPlexClientHeaders(extra?: Record<string, string>): Record<string, string> {
   return {
     Accept: 'application/json',
@@ -50,6 +45,17 @@ export function getPlexClientHeaders(extra?: Record<string, string>): Record<str
     'X-Plex-Client-Identifier': PLEX_CLIENT_ID,
     ...extra,
   };
+}
+
+/** The plex.tv client, signed in with an account token when one is given. */
+export function plexTvClient(authToken?: string): IntegrationClient {
+  return createIntegrationClient({
+    integration: 'plex.tv',
+    baseUrl: PLEX_TV_BASE,
+    auth: authToken ? { header: 'X-Plex-Token', value: authToken } : undefined,
+    headers: getPlexClientHeaders(),
+    timeoutMs: PLEX_TV_TIMEOUT_MS,
+  });
 }
 
 export function generateOAuthState(): string {
@@ -66,12 +72,9 @@ async function readErrorSnippet(response: Response): Promise<string> {
 }
 
 export async function createAuthPin(): Promise<PlexPin> {
-  const response = await fetchWithTimeout(`${PLEX_TV_BASE}/api/v2/pins?strong=true`, {
+  const response = await plexTvClient().request('/api/v2/pins?strong=true', {
     method: 'POST',
-    headers: {
-      ...getPlexClientHeaders(),
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       strong: 'true',
       'X-Plex-Product': PLEX_PRODUCT,
@@ -98,14 +101,7 @@ export async function createAuthPin(): Promise<PlexPin> {
 }
 
 export async function pollAuthPin(pinId: number, code: string): Promise<PlexPin> {
-  const query = new URLSearchParams({ code });
-  const response = await fetchWithTimeout(
-    `${PLEX_TV_BASE}/api/v2/pins/${pinId}?${query.toString()}`,
-    {
-      method: 'GET',
-      headers: getPlexClientHeaders(),
-    }
-  );
+  const response = await plexTvClient().request(`/api/v2/pins/${pinId}`, { query: { code } });
 
   if (!response.ok) {
     const snippet = await readErrorSnippet(response);
@@ -150,12 +146,7 @@ export function buildPlexAuthUrl(code: string, options?: { forwardUrl?: string }
 }
 
 export async function fetchPlexUser(authToken: string): Promise<PlexOAuthUser> {
-  const response = await fetchWithTimeout(`${PLEX_TV_BASE}/api/v2/user`, {
-    headers: {
-      ...getPlexClientHeaders(),
-      'X-Plex-Token': authToken,
-    },
-  });
+  const response = await plexTvClient(authToken).request('/api/v2/user');
 
   if (!response.ok) {
     if (response.status >= 500) {
@@ -185,12 +176,7 @@ export async function fetchPlexFriends(authToken: string): Promise<
   Array<{ id: string; username: string; thumb?: string }>
 > {
   try {
-    const response = await fetchWithTimeout(`${PLEX_TV_BASE}/api/v2/friends`, {
-      headers: {
-        ...getPlexClientHeaders(),
-        'X-Plex-Token': authToken,
-      },
-    });
+    const response = await plexTvClient(authToken).request('/api/v2/friends');
 
     if (!response.ok) {
       return [];
@@ -208,8 +194,6 @@ export async function fetchPlexFriends(authToken: string): Promise<
     return [];
   }
 }
-
-import { isSecureCookieEnabled } from '@/lib/security/cookie-options';
 
 export function getOAuthCookieOptions() {
   return {

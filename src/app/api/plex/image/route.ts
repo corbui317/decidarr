@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireUser, isAuthError, authErrorStatus } from '@/lib/auth';
 import { normalizeAndValidatePlexImagePath } from '@/lib/plex-image';
 import { createLogger } from '@/lib/logger';
+import { PlexService } from '@/lib/services/plex';
 
 // Reads the session and database on every request; never prerender at build time.
 export const dynamic = 'force-dynamic';
@@ -24,22 +25,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid image path' }, { status: 400 });
     }
 
-    let upstreamUrl = `${auth.plexServerUrl}${normalizedPath}`;
-    if (widthParam) {
-      const width = Math.max(40, Math.min(1000, parseInt(widthParam, 10)));
-      if (!Number.isNaN(width)) {
-        const separator = normalizedPath.includes('?') ? '&' : '?';
-        upstreamUrl = `${auth.plexServerUrl}${normalizedPath}${separator}width=${width}`;
-      }
-    }
-
-    const response = await fetch(upstreamUrl, {
-      headers: {
-        'X-Plex-Token': auth.plexToken,
-        Accept: 'image/*,*/*',
-      },
-      signal: AbortSignal.timeout(15_000),
-    });
+    const width = widthParam ? Math.max(40, Math.min(1000, parseInt(widthParam, 10))) : NaN;
+    const response = await new PlexService(auth.plexToken, auth.plexServerUrl).getImage(
+      normalizedPath,
+      Number.isNaN(width) ? undefined : width
+    );
 
     if (response.status === 404) {
       return NextResponse.json({ error: 'Image not found' }, { status: 404 });
