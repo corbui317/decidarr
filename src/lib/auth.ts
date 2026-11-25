@@ -3,7 +3,7 @@ import { connectDB } from './db';
 import { getOrCreateSettings, ISettings } from './models/Settings';
 import { IUser, User } from './models/User';
 import { deriveKey } from './secrets';
-import { PlexLibrary, PlexService } from './services/plex';
+import { PlexService } from './services/plex';
 import { createLogger } from './logger';
 import { runMigrations } from './migrate';
 import { verifyAccessToken } from './mobile-auth/tokens';
@@ -252,24 +252,6 @@ export async function getAccessibleLibraryIds(
   return filterRequestedLibraryIds(allowedIds, requestedIds);
 }
 
-export function filterLibrariesForUser(
-  sections: PlexLibrary[],
-  allowedIds: string[]
-): PlexLibrary[] {
-  const allowed = new Set(allowedIds);
-  return sections.filter((s) => allowed.has(s.id));
-}
-
-export async function getTmdbApiKey(): Promise<string | null> {
-  try {
-    await connectDB();
-    const settings = await getOrCreateSettings();
-    return settings.getDecryptedTmdbKey();
-  } catch {
-    return null;
-  }
-}
-
 export async function getOverseerrConfig(): Promise<{
   url: string | null;
   apiKey: string | null;
@@ -297,16 +279,6 @@ export async function getOverseerrConfig(): Promise<{
       configured: false,
       lastSyncOk: true,
     };
-  }
-}
-
-export async function getSyncFrequencyHours(): Promise<number> {
-  try {
-    await connectDB();
-    const settings = await getOrCreateSettings();
-    return settings.syncFrequencyHours;
-  } catch {
-    return 24;
   }
 }
 
