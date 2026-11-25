@@ -18,6 +18,13 @@ API route tests call the handlers in-process against the test MongoDB.
 `createJsonRequest` in `tests/helpers/auth.ts` sends the same-origin `Origin` header a browser sends, because cookie-authenticated writes on routes declared with `route()` (`src/lib/request/route.ts`) reject any other origin.
 For a bearer client, mint a token with `issueTokenPair` from `src/lib/mobile-auth/tokens.ts` and send it as `Authorization: Bearer <token>`.
 
+### Faking integrations
+
+Every outbound request to Plex, plex.tv, Tautulli, Overseerr and TMDb goes through the integration client in `src/lib/integrations/client.ts`, which takes an injectable fetch and DNS lookup.
+Tests fake integrations there with `fakeIntegrations()` from `tests/helpers/fake-integrations.ts`, never by mocking the service modules.
+It routes each request to a handler you write, records what was sent (URL, headers, the address the connection was pinned to), and can script DNS answers with `sequenceLookup()`.
+By default (`tests/setup-integrations.ts`) every hostname resolves to a public test address and any request a test did not fake fails, so no test reaches the network.
+
 ## End-to-end tests (Playwright)
 
 ```bash

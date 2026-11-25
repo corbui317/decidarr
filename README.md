@@ -236,7 +236,11 @@ Your settings and watch history are stored in MongoDB and will be preserved.
 - Encryption keys are auto-generated on first run
 - Plex tokens, TMDB keys, and Tautulli keys are encrypted in the database
 - Session-based authentication with JWT
-- SSRF protection for server URLs
+- SSRF protection for every outbound request to Plex, plex.tv, Tautulli, Overseerr and TMDb:
+  - each request resolves the host and checks every address when it connects, then connects only to the address it checked, so a changed DNS answer cannot redirect it;
+  - loopback, link-local and cloud metadata, carrier-grade NAT (100.64.0.0/10), benchmarking (198.18.0.0/15), multicast and reserved addresses are always refused;
+  - private LAN addresses are refused unless `DECIDARR_ALLOW_PRIVATE_URLS=true`;
+  - redirects are never followed, so tokens and API keys are only ever sent to the configured host.
 - Production refuses to start without a `DECIDARR_SECRET` of at least 32 characters
 - `DECIDARR_SECRET` is the only secret kept outside the database
 
