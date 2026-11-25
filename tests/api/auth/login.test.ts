@@ -170,7 +170,7 @@ describe('Auth and setup API routes', () => {
     it('rejects invalid server URL', async () => {
       const req = createJsonRequest('http://localhost/api/settings/test-plex', 'POST', {
         plexToken: 'token',
-        plexServerUrl: 'http://localhost:32400',
+        plexServerUrl: 'http://169.254.169.254:32400',
       });
       const res = await testPlexPost(req as never);
       expect(res.status).toBe(400);

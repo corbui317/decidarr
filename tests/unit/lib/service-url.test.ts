@@ -6,11 +6,10 @@ import { fakeIntegrations, sequenceLookup } from '../../helpers/fake-integration
 const closed = { allowPrivateNetworks: false };
 
 describe('assertSafeServiceUrl', () => {
-  it('blocks loopback addresses even when private URLs are allowed', async () => {
-    const result = await assertSafeServiceUrl('http://127.0.0.1:32400', {
-      allowPrivateNetworks: true,
-    });
-    expect(result.valid).toBe(false);
+  it('allows loopback addresses only when private URLs are allowed', async () => {
+    expect((await assertSafeServiceUrl('http://127.0.0.1:32400', closed)).valid).toBe(false);
+    expect((await assertSafeServiceUrl('http://127.0.0.1:32400', { allowPrivateNetworks: true })).valid).toBe(true);
+    expect((await assertSafeServiceUrl('http://[::1]:32400', { allowPrivateNetworks: true })).valid).toBe(true);
   });
 
   it('allows RFC1918 addresses when private URLs are allowed', async () => {
@@ -76,11 +75,11 @@ describe('assertSafeServiceUrl', () => {
     expect(feb0.valid).toBe(false);
   });
 
-  it('blocks IPv6 ULA addresses (fc00::/7 range) by default', async () => {
+  it('blocks IPv6 ULA addresses (fc00::/7 range), which the opt-in does not cover', async () => {
     const fc00 = await assertSafeServiceUrl('http://[fc00::1]/', closed);
     expect(fc00.valid).toBe(false);
 
-    const fd00 = await assertSafeServiceUrl('http://[fd00::1]/', closed);
+    const fd00 = await assertSafeServiceUrl('http://[fd00::1]/', { allowPrivateNetworks: true });
     expect(fd00.valid).toBe(false);
   });
 
@@ -96,17 +95,5 @@ describe('assertSafeServiceUrl', () => {
     fakeIntegrations(() => new Response(), sequenceLookup(['93.184.216.34', '169.254.169.254']));
     const result = await assertSafeServiceUrl('http://plex.example:32400', { allowPrivateNetworks: true });
     expect(result).toEqual({ valid: false, error: 'Invalid or disallowed service URL' });
-  });
-
-  it('allows IPv6 ULA addresses when private URLs are allowed', async () => {
-    const fc00 = await assertSafeServiceUrl('http://[fc00::1]/', {
-      allowPrivateNetworks: true,
-    });
-    expect(fc00.valid).toBe(true);
-
-    const fd00 = await assertSafeServiceUrl('http://[fd00::1]/', {
-      allowPrivateNetworks: true,
-    });
-    expect(fd00.valid).toBe(true);
   });
 });

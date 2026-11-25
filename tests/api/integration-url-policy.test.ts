@@ -34,8 +34,8 @@ describe('Integration URL policy at request time', () => {
   it('refuses a hostname that resolves to a blocked address at request time, after passing the save-time check', async () => {
     await seedConfiguredSettings();
     await authenticateTestSession();
-    // The save-time check sees a public address; at connect time the same host answers loopback.
-    const lookup = sequenceLookup([PUBLIC], ['127.0.0.1']);
+    // The save-time check sees a public address; at connect time the same host answers cloud metadata.
+    const lookup = sequenceLookup([PUBLIC], ['169.254.169.254']);
     const { sent } = fakeIntegrations(() => Response.json({ version: '1.0.0' }), lookup);
 
     const res = await overseerrTestPost(overseerrTestRequest('http://overseerr.rebind.example'));

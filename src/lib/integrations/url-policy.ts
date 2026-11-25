@@ -31,7 +31,6 @@ function blockList(v4: string[], v6: string[]): BlockList {
 const ALWAYS_BLOCKED = blockList(
   [
     '0.0.0.0/8', // "this network"
-    '127.0.0.0/8', // loopback
     '169.254.0.0/16', // link-local, including cloud metadata
     '100.64.0.0/10', // carrier-grade NAT
     '198.18.0.0/15', // benchmarking
@@ -40,7 +39,7 @@ const ALWAYS_BLOCKED = blockList(
   ],
   [
     '::/128', // unspecified
-    '::1/128', // loopback
+    'fc00::/7', // unique local: outside the opt-in, which covers only RFC 1918 and loopback
     'fe80::/10', // link-local
     'ff00::/8', // multicast
   ]
@@ -48,8 +47,8 @@ const ALWAYS_BLOCKED = blockList(
 
 /** Reachable only with the private-address opt-in. */
 const PRIVATE = blockList(
-  ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'], // RFC 1918
-  ['fc00::/7'] // unique local
+  ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '127.0.0.0/8'], // RFC 1918, loopback
+  ['::1/128'] // loopback
 );
 
 const IPV4_MAPPED = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/;

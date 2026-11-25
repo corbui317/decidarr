@@ -15,10 +15,10 @@ describe('isAddressAllowed', () => {
     ['240.0.0.1', 'reserved'],
     ['255.255.255.255', 'broadcast'],
     ['0.0.0.0', 'this network'],
-    ['127.0.0.1', 'loopback'],
     ['169.254.169.254', 'cloud metadata'],
-    ['::1', 'IPv6 loopback'],
     ['::', 'IPv6 unspecified'],
+    ['fc00::1', 'IPv6 unique local'],
+    ['fd00::1', 'IPv6 unique local'],
     ['fe80::1', 'IPv6 link-local'],
     ['ff02::1', 'IPv6 multicast'],
   ])('always blocks %s (%s), even with the private-address opt-in', (address) => {
@@ -26,8 +26,8 @@ describe('isAddressAllowed', () => {
     expect(isAddressAllowed(address, lan)).toBe(false);
   });
 
-  it.each(['10.0.0.1', '172.16.0.1', '172.31.255.254', '192.168.1.10', 'fd00::1'])(
-    'allows private address %s only with the opt-in',
+  it.each(['10.0.0.1', '172.16.0.1', '172.31.255.254', '192.168.1.10', '127.0.0.1', '127.255.255.254', '::1'])(
+    'allows RFC 1918 or loopback address %s only with the opt-in',
     (address) => {
       expect(isAddressAllowed(address, closed)).toBe(false);
       expect(isAddressAllowed(address, lan)).toBe(true);
@@ -41,17 +41,20 @@ describe('isAddressAllowed', () => {
     }
   );
 
-  it.each(['::ffff:127.0.0.1', '::ffff:7f00:1', '0:0:0:0:0:ffff:7f00:1', '[::FFFF:127.0.0.1]', '::ffff:100.64.0.1'])(
+  it.each(['::ffff:169.254.169.254', '::ffff:a9fe:a9fe', '0:0:0:0:0:ffff:a9fe:a9fe', '[::FFFF:169.254.169.254]', '::ffff:100.64.0.1'])(
     'normalizes IPv4-mapped IPv6 %s before checking',
     (address) => {
       expect(isAddressAllowed(address, lan)).toBe(false);
     }
   );
 
-  it('applies the opt-in to IPv4-mapped private addresses', () => {
-    expect(isAddressAllowed('::ffff:192.168.1.10', closed)).toBe(false);
-    expect(isAddressAllowed('::ffff:c0a8:10a', lan)).toBe(true);
-  });
+  it.each(['::ffff:192.168.1.10', '::ffff:c0a8:10a', '::ffff:127.0.0.1', '0:0:0:0:0:ffff:7f00:1'])(
+    'applies the opt-in to IPv4-mapped private or loopback address %s',
+    (address) => {
+      expect(isAddressAllowed(address, closed)).toBe(false);
+      expect(isAddressAllowed(address, lan)).toBe(true);
+    }
+  );
 
   it('refuses anything that is not an IP address', () => {
     expect(isAddressAllowed('plex.example', lan)).toBe(false);

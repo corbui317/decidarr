@@ -100,7 +100,7 @@ All settings are managed through the **Settings** panel (gear icon in the header
 | `LOG_LEVEL` | info | Logging level: debug, info, warn, error |
 | `SECURE_COOKIES` | `true` in production | Set `false` only for local HTTP development |
 | `DECIDARR_SECRET` | _(none)_ | **Required in production** - High-entropy secret that session and encryption keys are derived from, at least 32 characters (generate with `openssl rand -hex 32`). Without it, or with a shorter value, the server exits at boot. |
-| `DECIDARR_ALLOW_PRIVATE_URLS` | false | **LAN opt-in** - Set to `true` if your Plex/Tautulli/Overseerr are on your local network (192.168.x.x, 10.x.x.x). Private addresses are blocked by default for security. |
+| `DECIDARR_ALLOW_PRIVATE_URLS` | false | **LAN opt-in** - Set to `true` if your Plex/Tautulli/Overseerr are on your local network (192.168.x.x, 10.x.x.x, 172.16-31.x.x) or on the same host (127.0.0.1). Private addresses are blocked by default for security. |
 | `APP_URL` | _(none)_ | Public origin users open Decidarr at (for example `https://decidarr.example.com`). After Plex sign-in, Plex sends the browser back only to this origin; without it, sign-in still works but the Plex window does not return to Decidarr on its own. |
 | `TRUST_PROXY` | false | Set to `true` only behind a reverse proxy that sets `X-Forwarded-For`, so sign-in rate limits are counted per client. Otherwise they are keyed by `X-Real-IP`, and clients without it share one limit. |
 
@@ -242,8 +242,8 @@ Your settings and watch history are stored in MongoDB and will be preserved.
 - Session-based authentication with JWT
 - SSRF protection for every outbound request to Plex, plex.tv, Tautulli, Overseerr and TMDb:
   - each request resolves the host and checks every address when it connects, then connects only to the address it checked, so a changed DNS answer cannot redirect it;
-  - loopback, link-local and cloud metadata, carrier-grade NAT (100.64.0.0/10), benchmarking (198.18.0.0/15), multicast and reserved addresses are always refused;
-  - private LAN addresses are refused unless `DECIDARR_ALLOW_PRIVATE_URLS=true`;
+  - link-local and cloud metadata, carrier-grade NAT (100.64.0.0/10), benchmarking (198.18.0.0/15), IPv6 unique local (fc00::/7), multicast and reserved addresses are always refused;
+  - private LAN addresses (RFC 1918) and loopback are refused unless `DECIDARR_ALLOW_PRIVATE_URLS=true`;
   - redirects are never followed, so tokens and API keys are only ever sent to the configured host.
 - Production refuses to start without a `DECIDARR_SECRET` of at least 32 characters
 - `DECIDARR_SECRET` is the only secret kept outside the database
