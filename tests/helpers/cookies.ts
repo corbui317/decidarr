@@ -1,4 +1,12 @@
-import { testCookieStore } from '../../vitest.setup';
+import { testCookieStore, testHeaderStore } from '../../vitest.setup';
+
+export function setTestHeader(name: string, value: string) {
+  testHeaderStore.set(name.toLowerCase(), value);
+}
+
+export function clearTestHeaders() {
+  testHeaderStore.clear();
+}
 
 export function setTestCookie(name: string, value: string) {
   testCookieStore.set(name, value);
