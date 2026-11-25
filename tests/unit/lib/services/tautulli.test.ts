@@ -1,28 +1,10 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { TautulliService } from '@/lib/services/tautulli';
+import { fakeIntegrations } from '../../../helpers/fake-integrations';
 
 describe('TautulliService.getWatchHistoryPaged', () => {
-  const fetchMock = vi.fn();
-
-  beforeEach(() => {
-    fetchMock.mockReset();
-    vi.stubGlobal('fetch', fetchMock);
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
   function historyResponse(items: Record<string, unknown>[]) {
-    return {
-      ok: true,
-      json: async () => ({
-        response: {
-          result: 'success',
-          data: { data: items },
-        },
-      }),
-    };
+    return Response.json({ response: { result: 'success', data: { data: items } } });
   }
 
   it('pages until a short page is returned', async () => {
@@ -65,20 +47,17 @@ describe('TautulliService.getWatchHistoryPaged', () => {
       },
     ];
 
-    let call = 0;
-    fetchMock.mockImplementation(async (url: string) => {
-      const start = Number(new URL(url).searchParams.get('start') || '0');
-      const payload = start === 0 ? page1 : page2;
-      call += 1;
-      return historyResponse(payload);
-    });
+    const { sent } = fakeIntegrations(({ url }) =>
+      historyResponse(url.searchParams.get('start') === '0' ? page1 : page2)
+    );
 
     const service = new TautulliService('http://tautulli.local', 'key');
     const history = await service.getWatchHistoryPaged(1, 'movie', pageSize);
 
-    expect(call).toBe(2);
     expect(history).toHaveLength(3);
-    expect(fetchMock.mock.calls[0][0]).toContain('start=0');
-    expect(fetchMock.mock.calls[1][0]).toContain('start=2');
+    expect(sent.map(({ url }) => [url.searchParams.get('cmd'), url.searchParams.get('start'), url.searchParams.get('apikey')])).toEqual([
+      ['get_history', '0', 'key'],
+      ['get_history', '2', 'key'],
+    ]);
   });
 });

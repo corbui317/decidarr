@@ -6,6 +6,7 @@ import {
   E2E_USES_EXTERNAL_MONGO,
   E2E_DECIDARR_SECRET,
   E2E_RESET_SECRET,
+  E2E_PLEX_TV_URL,
 } from './tests/e2e/e2e-env';
 
 // Specs read the reset secret from the environment they inherit.
@@ -33,7 +34,9 @@ const appServer = {
     MONGODB_URI: E2E_MONGO_URI,
     SECURE_COOKIES: 'false',
     E2E_MOCK_PLEX: 'true',
+    // The fake Plex servers listen on loopback, which only the opt-in allows.
     DECIDARR_ALLOW_PRIVATE_URLS: 'true',
+    PLEX_TV_URL: E2E_PLEX_TV_URL,
     E2E_TEST_RESET_SECRET: E2E_RESET_SECRET,
     DECIDARR_SECRET: E2E_DECIDARR_SECRET,
   },
@@ -41,6 +44,7 @@ const appServer = {
 
 export default defineConfig({
   testDir: './tests/e2e',
+  globalSetup: './tests/e2e/global-setup.ts',
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,

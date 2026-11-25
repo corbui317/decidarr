@@ -5,7 +5,7 @@ import { DomainError } from '@/lib/request/errors';
 import { getAccessibleLibraryIds } from '@/lib/auth';
 import { getOrCreateSettings } from '@/lib/models/Settings';
 import { LibraryCache } from '@/lib/models/LibraryCache';
-import { createPlexService } from '@/lib/services/plex-factory';
+import { PlexService } from '@/lib/services/plex';
 import { TMDbService } from '@/lib/services/tmdb';
 import { enrichWithOverseerr } from '@/lib/services/overseerr-sync';
 import type { ILibraryItem } from '@/lib/models/LibraryCache';
@@ -114,7 +114,7 @@ export const GET = route(
       }
     }
 
-    const plexService = await createPlexService(
+    const plexService = new PlexService(
       session.plex.token,
       session.plex.serverUrl,
       settings.plexMachineId

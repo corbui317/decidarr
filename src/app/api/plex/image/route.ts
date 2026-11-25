@@ -4,6 +4,7 @@ import { route } from '@/lib/request/route';
 import { DomainError } from '@/lib/request/errors';
 import { normalizeAndValidatePlexImagePath } from '@/lib/plex-image';
 import { createLogger } from '@/lib/logger';
+import { PlexService } from '@/lib/services/plex';
 
 // Reads the session and database on every request; never prerender at build time.
 export const dynamic = 'force-dynamic';
@@ -35,28 +36,9 @@ export const GET = route({ access: 'user', query: imageQuery }, async ({ session
     throw new DomainError('VALIDATION_FAILED', 'Invalid image path');
   }
 
-  let upstreamUrl = `${session.plex.serverUrl}${normalizedPath}`;
-  if (query.width) {
-    const width = Math.max(40, Math.min(1000, parseInt(query.width, 10)));
-    if (!Number.isNaN(width)) {
-      const separator = normalizedPath.includes('?') ? '&' : '?';
-      upstreamUrl = `${session.plex.serverUrl}${normalizedPath}${separator}width=${width}`;
-    }
-  }
-
-  let response: Response;
-  try {
-    response = await fetch(upstreamUrl, {
-      headers: {
-        'X-Plex-Token': session.plex.token,
-        Accept: 'image/*,*/*',
-      },
-      signal: AbortSignal.timeout(15_000),
-    });
-  } catch (err) {
-    logger.warn('Plex image proxy error', { error: (err as Error).message });
-    throw new DomainError('INTEGRATION_UNAVAILABLE', 'Failed to fetch image');
-  }
+  const width = query.width ? Math.max(40, Math.min(1000, parseInt(query.width, 10))) : NaN;
+  const plexService = new PlexService(session.plex.token, session.plex.serverUrl);
+  const response = await plexService.getImage(normalizedPath, Number.isNaN(width) ? undefined : width);
 
   if (response.status === 404) {
     throw new DomainError('NOT_FOUND', 'Image not found');

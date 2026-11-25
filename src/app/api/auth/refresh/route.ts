@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { requireUser, isAuthError } from '@/lib/auth';
-import { createPlexService } from '@/lib/services/plex-factory';
+import { PlexService } from '@/lib/services/plex';
 import { issueSessionCookie } from '@/lib/auth-login';
 import { createLogger } from '@/lib/logger';
 
@@ -12,7 +12,7 @@ export async function POST() {
     await connectDB();
     const { user, plexToken } = await requireUser();
 
-    const plexService = await createPlexService(plexToken);
+    const plexService = new PlexService(plexToken);
     const validation = await plexService.validateToken();
 
     if (!validation.valid) {

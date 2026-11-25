@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { route } from '@/lib/request/route';
-import { createPlexService } from '@/lib/services/plex-factory';
+import { PlexService } from '@/lib/services/plex';
 import { getOrCreateSettings } from '@/lib/models/Settings';
 import { createLogger } from '@/lib/logger';
 
@@ -11,7 +11,7 @@ const logger = createLogger('API:Sections');
 
 export const GET = route({ access: 'user' }, async ({ session }) => {
   const settings = await getOrCreateSettings();
-  const plexService = await createPlexService(
+  const plexService = new PlexService(
     session.plex.token,
     session.plex.serverUrl,
     settings.plexMachineId || null

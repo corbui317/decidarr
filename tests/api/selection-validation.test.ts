@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { clearDatabase } from '../helpers/mongo';
 import {
   seedConfiguredSettings,
@@ -8,25 +8,38 @@ import {
 } from '../helpers/auth';
 import { SAMPLE_LIBRARY_ITEMS } from '../fixtures/library-items';
 import { LibraryCache } from '@/lib/models/LibraryCache';
-
-const plexMock = {
-  validateToken: vi.fn(),
-  getServers: vi.fn(),
-  getLibrarySections: vi.fn(),
-  getCollectionItems: vi.fn(),
-  getItemMetadata: vi.fn(),
-  fetchMachineIdFromServer: vi.fn(),
-  buildPlayLinks: vi.fn(),
-};
-
-vi.mock('@/lib/services/plex', () => ({
-  PlexService: vi.fn(function PlexServiceMock() {
-    return plexMock;
-  }),
-}));
+import {
+  fakeIntegrations,
+  plexMetadata,
+  plexSections,
+  routes,
+  TEST_PLEX_SERVER,
+} from '../helpers/fake-integrations';
 
 import { POST as randomPost } from '@/app/api/selection/random/route';
 import { POST as poolCountPost } from '@/app/api/selection/pool-count/route';
+
+const SAMPLE_TITLES = SAMPLE_LIBRARY_ITEMS.map((item) => item.title);
+
+/** The seeded Plex server: one movie library holding the sample items, and a two-item collection. */
+function fakePlexServer() {
+  return fakeIntegrations(
+    routes({
+      [`${TEST_PLEX_SERVER}/library/sections`]: () => plexSections([{ id: 'lib-1', title: 'Movies', type: 'movie' }]),
+      ...Object.fromEntries(
+        SAMPLE_LIBRARY_ITEMS.map(({ plexId, title, year }) => [
+          `${TEST_PLEX_SERVER}/library/metadata/${plexId}`,
+          () => plexMetadata([{ ratingKey: plexId, title, year, type: 'movie' }]),
+        ])
+      ),
+      [`${TEST_PLEX_SERVER}/library/collections/col-1/children`]: () =>
+        plexMetadata([
+          { ratingKey: '1', title: 'Inception' },
+          { ratingKey: '2', title: 'The Matrix' },
+        ]),
+    })
+  );
+}
 
 async function seedLibraryCache() {
   await LibraryCache.create({
@@ -46,26 +59,7 @@ describe('Selection API validation', () => {
     clearTestCookies();
     await seedConfiguredSettings();
     await authenticateTestSession();
-    vi.clearAllMocks();
-    plexMock.getLibrarySections.mockResolvedValue([
-      {
-        id: 'lib-1',
-        title: 'Movies',
-        type: 'movie',
-        agent: 'com.plexapp.agents.themoviedb',
-        scanner: 'Plex Movie Scanner',
-        language: 'en',
-        uuid: 'lib-uuid-1',
-      },
-    ]);
-    plexMock.getItemMetadata.mockResolvedValue({
-      plexId: '1',
-      title: 'Inception',
-      year: 2010,
-      type: 'movie',
-    });
-    plexMock.buildPlayLinks.mockReturnValue({ web: 'https://app.plex.tv', app: 'plex://' });
-    plexMock.fetchMachineIdFromServer.mockResolvedValue('machine-1');
+    fakePlexServer();
   });
 
   describe('POST /api/selection/pool-count', () => {
@@ -160,7 +154,7 @@ describe('Selection API validation', () => {
       const res = await randomPost(req as never);
       expect(res.status).toBe(200);
       const body = await res.json();
-      expect(body.selection.title).toBe('Inception');
+      expect(SAMPLE_TITLES).toContain(body.selection.title);
     });
   });
 });

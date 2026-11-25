@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createPlexService } from '@/lib/services/plex-factory';
+import { PlexService } from '@/lib/services/plex';
 import { requireAdmin, isAuthError, authErrorStatus } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
 import { assertSetupSecretAllowed } from '@/lib/security/setup-secret';
-import { assertSafeServiceUrl, allowPrivateServiceUrls } from '@/lib/security/service-url';
+import { assertSafeServiceUrl } from '@/lib/security/service-url';
 import { getOrCreateSettings } from '@/lib/models/Settings';
 import { connectDB } from '@/lib/db';
 
@@ -39,9 +39,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (plexServerUrl) {
-      const urlCheck = await assertSafeServiceUrl(plexServerUrl, {
-        allowPrivateNetworks: allowPrivateServiceUrls(),
-      });
+      const urlCheck = await assertSafeServiceUrl(plexServerUrl);
       if (!urlCheck.valid) {
         return NextResponse.json(
           { valid: false, error: urlCheck.error || 'Invalid or disallowed service URL' },
@@ -51,7 +49,7 @@ export async function POST(request: NextRequest) {
     }
 
     logger.debug('Validating Plex token');
-    const plexService = await createPlexService(plexToken);
+    const plexService = new PlexService(plexToken);
     const validation = await plexService.validateToken();
 
     if (!validation.valid || !validation.user) {
@@ -84,12 +82,10 @@ export async function POST(request: NextRequest) {
     let libraryCount = 0;
     if (plexServerUrl) {
       try {
-        const safeUrl = await assertSafeServiceUrl(plexServerUrl, {
-          allowPrivateNetworks: allowPrivateServiceUrls(),
-        });
+        const safeUrl = await assertSafeServiceUrl(plexServerUrl);
         const normalizedUrl = safeUrl.normalized || plexServerUrl;
         logger.debug('Testing server connection', { plexServerUrl: normalizedUrl });
-        const serverPlexService = await createPlexService(plexToken, normalizedUrl);
+        const serverPlexService = new PlexService(plexToken, normalizedUrl);
         const sections = await serverPlexService.getLibrarySections();
         serverValid = true;
         libraryCount = sections.length;

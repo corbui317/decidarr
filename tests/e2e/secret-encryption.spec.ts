@@ -1,13 +1,14 @@
 import { test, expect } from '@playwright/test';
 import mongoose from 'mongoose';
 import { resetE2eDatabase, completeSetupWizard } from './helpers/e2e-test-helpers';
-import { E2E_DECIDARR_SECRET, E2E_MONGO_URI, E2E_RESET_SECRET } from './e2e-env';
+import { E2E_DECIDARR_SECRET, E2E_MONGO_URI, E2E_PLEX_SERVER_URL, E2E_RESET_SECRET } from './e2e-env';
 import {
   LEGACY_ADMIN_PLEX_USER_ID,
   LEGACY_PLAINTEXT,
+  seedLegacyInstall,
   type StoredSettings,
 } from '../helpers/legacy-install-seed';
-import { decryptSecret, isCurrentCiphertext } from '@/lib/secrets';
+import { decryptSecret, isCurrentCiphertext, legacyMasterKeyFor } from '@/lib/secrets';
 
 // Lets this process derive the keys the E2E server uses, to check what it stored.
 process.env.DECIDARR_SECRET = E2E_DECIDARR_SECRET;
@@ -110,12 +111,19 @@ test.describe('DECIDARR_SECRET encryption', () => {
     test.setTimeout(90000);
 
     // An install from before DECIDARR_SECRET (CryptoJS, master key from MONGODB_URI)
-    // is restarted with DECIDARR_SECRET set. The seed route writes that legacy data
-    // and then boots it the way the restart would, which runs the migration.
-    const seed = await request.post('/api/test/seed-legacy', {
+    // is restarted with DECIDARR_SECRET set: write that legacy data, then boot it
+    // the way the restart would, which runs the migration.
+    // Its Plex server is the fake one on loopback, so the dashboard can list libraries.
+    await withE2eDb(async (db) => {
+      await seedLegacyInstall(db, legacyMasterKeyFor(E2E_MONGO_URI));
+      await db
+        .collection<StoredSettings>('settings')
+        .updateOne({ _id: 'app-settings' }, { $set: { plexServerUrl: E2E_PLEX_SERVER_URL } });
+    });
+    const restart = await request.post('/api/test/restart', {
       headers: { 'X-E2E-Reset-Secret': E2E_RESET_SECRET },
     });
-    expect(seed.ok(), await seed.text()).toBeTruthy();
+    expect(restart.ok(), await restart.text()).toBeTruthy();
 
     // Assert the migration on disk before signing in: login re-encrypts the
     // admin's Plex token with the fresh OAuth token.
@@ -139,7 +147,7 @@ test.describe('DECIDARR_SECRET encryption', () => {
     await expect(signIn).toBeVisible({ timeout: 15000 });
     await expect(page.getByText('Welcome to Decidarr')).toHaveCount(0);
 
-    // Sign in through the mock OAuth flow as the seeded legacy admin and spin once.
+    // Sign in through the fake plex.tv as the seeded legacy admin and spin once.
     await signIn.click();
     await page
       .getByRole('group', { name: 'Movies' })

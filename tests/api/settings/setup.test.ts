@@ -55,7 +55,7 @@ describe('Settings API routes', () => {
 
     it('rejects invalid Plex server URL', async () => {
       const putReq = createJsonRequest('http://localhost/api/settings', 'PUT', {
-        plex: { serverUrl: 'http://127.0.0.1:32400' },
+        plex: { serverUrl: 'http://169.254.169.254:32400' },
       });
       const putRes = await settingsPut(putReq as never);
       expect(putRes.status).toBe(400);

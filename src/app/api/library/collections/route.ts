@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { route } from '@/lib/request/route';
 import { getAccessibleLibraryIds } from '@/lib/auth';
 import { getOrCreateSettings } from '@/lib/models/Settings';
-import { createPlexService } from '@/lib/services/plex-factory';
+import { PlexService } from '@/lib/services/plex';
 import { createLogger } from '@/lib/logger';
 
 // Reads the session and database on every request; never prerender at build time.
@@ -31,11 +31,7 @@ export const GET = route({ access: 'user', query: collectionsQuery }, async ({ s
     },
     ids
   );
-  const plexService = await createPlexService(
-    session.plex.token,
-    session.plex.serverUrl,
-    settings.plexMachineId
-  );
+  const plexService = new PlexService(session.plex.token, session.plex.serverUrl, settings.plexMachineId);
 
   const allCollections: { ratingKey: string; title: string; childCount: number; libraryId: string }[] = [];
 

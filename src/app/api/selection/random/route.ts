@@ -4,7 +4,7 @@ import { getAccessibleLibraryIds } from '@/lib/auth';
 import { getOrCreateSettings } from '@/lib/models/Settings';
 import { LibraryCache } from '@/lib/models/LibraryCache';
 import { WatchedItem } from '@/lib/models/WatchedItem';
-import { createPlexService } from '@/lib/services/plex-factory';
+import { PlexService } from '@/lib/services/plex';
 import { TMDbService } from '@/lib/services/tmdb';
 import { createLogger } from '@/lib/logger';
 import { applyFullFilters, fetchCollectionItemIds } from '@/lib/selection/filters';
@@ -67,7 +67,7 @@ export const POST = route({ access: 'user', body: selectionRequestBody }, async 
     return NextResponse.json(errorResponse, { status: 404 });
   }
 
-  const plexService = await createPlexService(session.plex.token, session.plex.serverUrl, settings.plexMachineId);
+  const plexService = new PlexService(session.plex.token, session.plex.serverUrl, settings.plexMachineId);
 
   let collectionItemIds: Set<string> | null = null;
   if (filters.collections && filters.collections.length > 0) {

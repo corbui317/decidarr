@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin, isAuthError, authErrorStatus } from '@/lib/auth';
-import { assertSafeServiceUrl, allowPrivateServiceUrls } from '@/lib/security/service-url';
+import { assertSafeServiceUrl } from '@/lib/security/service-url';
 import type { Logger } from '@/lib/logger';
 
 export type ConnectionTestResult = { success: boolean; error?: string; [key: string]: unknown };
@@ -24,9 +24,7 @@ export async function handleConnectionTest(
       );
     }
 
-    const urlCheck = await assertSafeServiceUrl(url, {
-      allowPrivateNetworks: allowPrivateServiceUrls(),
-    });
+    const urlCheck = await assertSafeServiceUrl(url);
     if (!urlCheck.valid) {
       // Log internal reason but return generic error to client (security spec 01 §2.3 step 7)
       logger.warn(`${serviceName} URL validation failed`, { url, reason: urlCheck.error });

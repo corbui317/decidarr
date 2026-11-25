@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { isAuthError } from '@/lib/auth-errors';
+import { IntegrationError } from '@/lib/integrations/client';
 
 /**
  * The one table from domain errors to HTTP status and a stable `code` in the body.
@@ -47,6 +48,9 @@ export function errorResponse(error: unknown): NextResponse {
       error.code === 'FORBIDDEN' ? 'FORBIDDEN' : 'UNAUTHENTICATED',
       error.message
     );
+  } else if (error instanceof IntegrationError) {
+    // The table's message only: the integration's error can name internal hosts.
+    domainError = new DomainError(error.unavailable ? 'INTEGRATION_UNAVAILABLE' : 'INTEGRATION_REJECTED');
   } else {
     domainError = new DomainError('INTERNAL');
   }

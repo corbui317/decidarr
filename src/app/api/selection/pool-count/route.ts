@@ -4,7 +4,7 @@ import { getAccessibleLibraryIds, getOverseerrConfig } from '@/lib/auth';
 import { getOrCreateSettings } from '@/lib/models/Settings';
 import { LibraryCache } from '@/lib/models/LibraryCache';
 import { WatchedItem } from '@/lib/models/WatchedItem';
-import { createPlexService } from '@/lib/services/plex-factory';
+import { PlexService } from '@/lib/services/plex';
 import { createLogger } from '@/lib/logger';
 import { computeDataStats, getPoolCountWithBreakdown, fetchCollectionItemIds } from '@/lib/selection/filters';
 import { selectionRequestBody } from '@/lib/validation/selection-contract';
@@ -77,7 +77,7 @@ export const POST = route({ access: 'user', body: selectionRequestBody }, async 
 
   let collectionItemIds: Set<string> | null = null;
   if (filters.collections && filters.collections.length > 0) {
-    const plexService = await createPlexService(session.plex.token, session.plex.serverUrl, settings.plexMachineId);
+    const plexService = new PlexService(session.plex.token, session.plex.serverUrl, settings.plexMachineId);
     collectionItemIds = await fetchCollectionItemIds(filters.collections, plexService, logger);
     logger.debug('Collection filter active', {
       collectionCount: filters.collections.length,

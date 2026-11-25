@@ -1,4 +1,5 @@
 import { createLogger } from '../logger';
+import { createIntegrationClient, type IntegrationClient } from '../integrations/client';
 import {
   buildOverseerrLookupKey,
   mapOverseerrMediaStatus,
@@ -6,7 +7,7 @@ import {
 } from '@/types/overseerr';
 
 const logger = createLogger('OverseerrService');
-const FETCH_TIMEOUT_MS = 15_000;
+const OVERSEERR_TIMEOUT_MS = 15_000;
 const PAGE_SIZE = 100;
 
 export interface OverseerrMediaRecord {
@@ -21,28 +22,21 @@ export interface OverseerrStatusIndex {
 }
 
 export class OverseerrService {
-  private baseUrl: string;
-  private apiKey: string;
+  private client: IntegrationClient;
 
   constructor(baseUrl: string, apiKey: string) {
-    this.baseUrl = baseUrl.replace(/\/$/, '');
-    this.apiKey = apiKey;
-  }
-
-  private async fetchWithTimeout(path: string): Promise<Response> {
-    const url = `${this.baseUrl}/api/v1${path}`;
-    return fetch(url, {
-      headers: {
-        'X-Api-Key': this.apiKey,
-        Accept: 'application/json',
-      },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    this.client = createIntegrationClient({
+      integration: 'Overseerr',
+      baseUrl: `${baseUrl.replace(/\/+$/, '')}/api/v1`,
+      auth: { header: 'X-Api-Key', value: apiKey },
+      headers: { Accept: 'application/json' },
+      timeoutMs: OVERSEERR_TIMEOUT_MS,
     });
   }
 
   async testConnection(): Promise<{ success: boolean; error?: string; version?: string }> {
     try {
-      const response = await this.fetchWithTimeout('/status');
+      const response = await this.client.request('/status');
       if (!response.ok) {
         return { success: false, error: `HTTP ${response.status}` };
       }
@@ -62,7 +56,7 @@ export class OverseerrService {
     let totalPages = 1;
 
     while (page < totalPages) {
-      const response = await this.fetchWithTimeout(
+      const response = await this.client.request(
         `/media?take=${PAGE_SIZE}&skip=${page * PAGE_SIZE}&filter=all&sort=added`
       );
 

@@ -1,53 +1,30 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { clearDatabase } from '../../helpers/mongo';
 import { clearTestCookies, getTestCookie } from '../../helpers/cookies';
 import { seedConfiguredSettings, seedTestUser } from '../../helpers/auth';
 import { getOrCreateSettings } from '@/lib/models/Settings';
 import { User } from '@/lib/models/User';
-
-const plexOAuthMocks = vi.hoisted(() => ({
-  fetchPlexUser: vi.fn(),
-}));
-
-const plexServiceMock = vi.hoisted(() => ({
-  getServers: vi.fn(),
-}));
-
-vi.mock('@/lib/services/plex-oauth', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/services/plex-oauth')>();
-  return {
-    ...actual,
-    fetchPlexUser: plexOAuthMocks.fetchPlexUser,
-  };
-});
-
-vi.mock('@/lib/services/plex', () => ({
-  PlexService: vi.fn(function PlexServiceMock() {
-    return plexServiceMock;
-  }),
-}));
+import {
+  fakeIntegrations,
+  fakePlexTv,
+  TEST_PLEX_SERVER,
+  type FakeHandler,
+  type FakePlexServer,
+} from '../../helpers/fake-integrations';
 
 import { completePlexLogin } from '@/lib/auth-login';
+
+const ACCOUNT = { id: 'plex-user-1', username: 'plexuser', email: 'plex@example.com', thumb: 'thumb.jpg' };
+
+function fakePlexTvWith(servers: FakePlexServer[]) {
+  return fakeIntegrations(fakePlexTv({ account: ACCOUNT, servers }));
+}
 
 describe('completePlexLogin', () => {
   beforeEach(async () => {
     await clearDatabase();
     clearTestCookies();
-    vi.clearAllMocks();
-    plexOAuthMocks.fetchPlexUser.mockResolvedValue({
-      id: 'plex-user-1',
-      username: 'plexuser',
-      email: 'plex@example.com',
-      thumb: 'thumb.jpg',
-    });
-    plexServiceMock.getServers.mockResolvedValue([
-      {
-        name: 'Home',
-        clientIdentifier: 'machine-1',
-        owned: true,
-        connections: [{ uri: 'http://192.168.1.10:32400', local: true, relay: false }],
-      },
-    ]);
+    fakePlexTvWith([{ name: 'Home', clientIdentifier: 'machine-1', owned: true, uri: TEST_PLEX_SERVER }]);
   });
 
   it('completes first-run setup with an owned Plex server and issues a session', async () => {
@@ -83,14 +60,7 @@ describe('completePlexLogin', () => {
     settings.adminUserId = admin._id;
     settings.approvedPlexUserIds = ['plex-user-1'];
     await settings.save();
-    plexServiceMock.getServers.mockResolvedValue([
-      {
-        name: 'Shared Server',
-        clientIdentifier: 'machine-1',
-        owned: false,
-        connections: [{ uri: 'http://192.168.1.10:32400', local: true, relay: false }],
-      },
-    ]);
+    fakePlexTvWith([{ name: 'Shared Server', clientIdentifier: 'machine-1', owned: false, uri: TEST_PLEX_SERVER }]);
 
     const result = await completePlexLogin('approved-user-token');
 
@@ -105,14 +75,7 @@ describe('completePlexLogin', () => {
 
   it('blocks configured users who have Plex access but are not approved', async () => {
     await seedConfiguredSettings();
-    plexServiceMock.getServers.mockResolvedValue([
-      {
-        name: 'Shared Server',
-        clientIdentifier: 'machine-1',
-        owned: false,
-        connections: [{ uri: 'http://192.168.1.10:32400', local: true, relay: false }],
-      },
-    ]);
+    fakePlexTvWith([{ name: 'Shared Server', clientIdentifier: 'machine-1', owned: false, uri: TEST_PLEX_SERVER }]);
 
     const result = await completePlexLogin('unapproved-token');
 
@@ -125,14 +88,39 @@ describe('completePlexLogin', () => {
     expect(getTestCookie('decidarr_session')).toBeUndefined();
   });
 
-  it('returns a service unavailable result when Plex user lookup is unavailable', async () => {
-    plexOAuthMocks.fetchPlexUser.mockRejectedValue(new Error('PLEX_UNAVAILABLE'));
+  it.each([
+    ['answers 5xx', () => new Response('down', { status: 502 })],
+    [
+      'cannot be reached',
+      () => {
+        throw new Error('connect ECONNREFUSED');
+      },
+    ],
+  ])('returns a service unavailable result when plex.tv %s during sign-in', async (_case, answer) => {
+    fakeIntegrations(answer as FakeHandler);
 
     const result = await completePlexLogin('token');
 
-    expect(result).toMatchObject({
-      success: false,
-      status: 503,
-    });
+    expect(result).toMatchObject({ success: false, status: 503, code: 'PLEX_UNAVAILABLE' });
+  });
+
+  it('returns a service unavailable result when plex.tv fails during server discovery', async () => {
+    const plexTv = fakePlexTv({ account: ACCOUNT });
+    fakeIntegrations((request) =>
+      request.url.pathname === '/api/v2/resources' ? new Response('down', { status: 503 }) : plexTv(request)
+    );
+
+    const result = await completePlexLogin('token');
+
+    expect(result).toMatchObject({ success: false, status: 503, code: 'PLEX_UNAVAILABLE' });
+    expect(getTestCookie('decidarr_session')).toBeUndefined();
+  });
+
+  it('rejects sign-in when plex.tv answers with a redirect', async () => {
+    fakeIntegrations(() => new Response(null, { status: 302, headers: { location: 'https://evil.example/' } }));
+
+    const result = await completePlexLogin('token');
+
+    expect(result).toMatchObject({ success: false, status: 401, code: 'AUTH_FAILED' });
   });
 });

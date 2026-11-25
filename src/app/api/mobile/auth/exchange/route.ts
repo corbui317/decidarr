@@ -5,7 +5,7 @@ import { MobileAuthCode } from '@/lib/models/MobileAuthCode';
 import { User } from '@/lib/models/User';
 import { completePlexLogin } from '@/lib/auth-login';
 import { hashToken, issueTokenPair, redactToken } from '@/lib/mobile-auth/tokens';
-import { pollAuthPin } from '@/lib/services/plex-oauth-factory';
+import { pollAuthPin } from '@/lib/services/plex-oauth';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 import { backfillSyncRevisions } from '@/lib/sync/service';
 import { createLogger } from '@/lib/logger';
