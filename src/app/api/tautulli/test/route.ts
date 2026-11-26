@@ -1,7 +1,6 @@
-import { NextRequest } from 'next/server';
 import { TautulliService } from '@/lib/services/tautulli';
 import { createLogger } from '@/lib/logger';
-import { handleConnectionTest } from '@/lib/routes/connection-test';
+import { connectionTestRoute } from '@/lib/routes/connection-test';
 
 const logger = createLogger('API:TautulliTest');
 
@@ -13,7 +12,7 @@ async function testTautulliConnection(url: string, apiKey: string) {
     const users = await service.getUsers();
     return {
       success: true,
-      users: users.map(u => ({
+      users: users.map((u) => ({
         id: u.user_id,
         username: u.username,
         friendlyName: u.friendly_name,
@@ -24,6 +23,4 @@ async function testTautulliConnection(url: string, apiKey: string) {
   return result;
 }
 
-export async function POST(request: NextRequest) {
-  return handleConnectionTest(request, testTautulliConnection, 'Tautulli', logger);
-}
+export const POST = connectionTestRoute(testTautulliConnection, 'Tautulli', logger);
