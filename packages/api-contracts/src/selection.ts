@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { mediaTypeSchema, tvSelectionModeSchema } from './shared';
-import { filtersSchema } from './filters';
+import { filtersSchema, type Filters } from './filters';
 
 export const tmdbMatchSchema = z.object({
   voteAverage: z.number().optional(),
@@ -59,3 +59,39 @@ export const selectionParametersSchema = z.object({
   tvSelectionMode: tvSelectionModeSchema.optional(),
 });
 export type SelectionParameters = z.infer<typeof selectionParametersSchema>;
+
+/**
+ * The request-handling module's body contract for `/selection/random` and
+ * `/selection/pool-count`. Unlike `selectionParametersSchema` above (the fully
+ * resolved shape clients send), this stays lenient: a field a caller leaves out
+ * stays undefined rather than being defaulted, matching the legacy hand-written
+ * parser's behavior so older or partial requests keep working.
+ */
+export const selectionRequestFiltersSchema = z
+  .object({
+    genres: z.array(z.string()).optional(),
+    contentRatings: z.array(z.string()).optional(),
+    studios: z.array(z.string()).optional(),
+    collections: z.array(z.string()).optional(),
+    unwatchedOnly: z.boolean().optional(),
+    ratingFilter: z.string().nullable().optional(),
+    yearRange: z
+      .object({ start: z.number().optional(), end: z.number().optional() })
+      .nullable()
+      .optional(),
+    ratingRange: z
+      .object({ min: z.number().optional(), max: z.number().optional() })
+      .nullable()
+      .optional(),
+  })
+  .nullable()
+  .optional()
+  .transform((value): Filters => (value ?? {}) as Filters);
+
+export const selectionRequestBodySchema = z.object({
+  libraryIds: z.array(z.string().min(1)),
+  mediaType: z.enum(['movie', 'show']).default('movie'),
+  filters: selectionRequestFiltersSchema,
+  tvSelectionMode: z.enum(['show', 'episode']).optional(),
+});
+export type SelectionRequestBody = z.infer<typeof selectionRequestBodySchema>;

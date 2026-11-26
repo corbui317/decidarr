@@ -92,7 +92,7 @@ describe('Watched and spin-history API routes', () => {
       expect(postRes.status).toBe(403);
 
       const body = await postRes.json();
-      expect(body.error).toMatch(/admin/i);
+      expect(body.code).toBe('FORBIDDEN');
 
       const count = await WatchedItem.countDocuments({
         userId: nonAdmin._id,

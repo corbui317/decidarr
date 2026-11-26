@@ -1,5 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { requireUser, isAuthError, authErrorStatus } from '@/lib/auth';
+import { NextResponse } from 'next/server';
+import { z } from 'zod';
+import { route } from '@/lib/request/route';
+import { DomainError } from '@/lib/request/errors';
 import { normalizeAndValidatePlexImagePath } from '@/lib/plex-image';
 import { createLogger } from '@/lib/logger';
 import { PlexService } from '@/lib/services/plex';
@@ -23,59 +25,45 @@ function isAllowedImageContentType(contentType: string): boolean {
   return mimeType !== undefined && ALLOWED_IMAGE_CONTENT_TYPES.has(mimeType);
 }
 
-export async function GET(request: NextRequest) {
-  try {
-    const auth = await requireUser();
-    const rawPath = request.nextUrl.searchParams.get('path');
-    const widthParam = request.nextUrl.searchParams.get('width');
+const imageQuery = z.object({
+  path: z.string().min(1),
+  width: z.string().optional(),
+});
 
-    if (!rawPath) {
-      return NextResponse.json({ error: 'Invalid image path' }, { status: 400 });
-    }
-
-    // Decode and normalize the path (handles encoded traversal attempts)
-    const normalizedPath = normalizeAndValidatePlexImagePath(rawPath);
-    if (!normalizedPath) {
-      return NextResponse.json({ error: 'Invalid image path' }, { status: 400 });
-    }
-
-    const width = widthParam ? Math.max(40, Math.min(1000, parseInt(widthParam, 10))) : NaN;
-    const response = await new PlexService(auth.plexToken, auth.plexServerUrl).getImage(
-      normalizedPath,
-      Number.isNaN(width) ? undefined : width
-    );
-
-    if (response.status === 404) {
-      return NextResponse.json({ error: 'Image not found' }, { status: 404 });
-    }
-
-    if (!response.ok) {
-      logger.warn('Plex image fetch failed', { status: response.status });
-      return NextResponse.json({ error: 'Failed to fetch image' }, { status: 502 });
-    }
-
-    const contentType = response.headers.get('content-type') || 'image/jpeg';
-    if (!isAllowedImageContentType(contentType)) {
-      logger.warn('Plex image fetch refused: disallowed content type', { contentType });
-      return NextResponse.json({ error: 'Upstream response was not an allowed image content type' }, { status: 415 });
-    }
-    const body = await response.arrayBuffer();
-
-    return new NextResponse(body, {
-      status: 200,
-      headers: {
-        'Content-Type': contentType,
-        'Cache-Control': 'private, max-age=3600',
-      },
-    });
-  } catch (error) {
-    if (isAuthError(error)) {
-      return NextResponse.json(
-        { error: (error as Error).message },
-        { status: authErrorStatus(error) }
-      );
-    }
-    logger.error('Plex image proxy error', { error: (error as Error).message });
-    return NextResponse.json({ error: 'Failed to fetch image' }, { status: 502 });
+export const GET = route({ access: 'user', query: imageQuery }, async ({ session, query }) => {
+  const normalizedPath = normalizeAndValidatePlexImagePath(query.path);
+  if (!normalizedPath) {
+    throw new DomainError('VALIDATION_FAILED', 'Invalid image path');
   }
-}
+
+  const width = query.width ? Math.max(40, Math.min(1000, parseInt(query.width, 10))) : NaN;
+  const plexService = new PlexService(session.plex.token, session.plex.serverUrl);
+  const response = await plexService.getImage(normalizedPath, Number.isNaN(width) ? undefined : width);
+
+  if (response.status === 404) {
+    throw new DomainError('NOT_FOUND', 'Image not found');
+  }
+
+  if (!response.ok) {
+    logger.warn('Plex image fetch failed', { status: response.status });
+    throw new DomainError('INTEGRATION_REJECTED', 'Failed to fetch image');
+  }
+
+  const contentType = response.headers.get('content-type') || 'image/jpeg';
+  if (!isAllowedImageContentType(contentType)) {
+    logger.warn('Plex image fetch refused: disallowed content type', { contentType });
+    return NextResponse.json(
+      { error: 'Upstream response was not an allowed image content type' },
+      { status: 415 }
+    );
+  }
+  const body = await response.arrayBuffer();
+
+  return new NextResponse(body, {
+    status: 200,
+    headers: {
+      'Content-Type': contentType,
+      'Cache-Control': 'private, max-age=3600',
+    },
+  });
+});

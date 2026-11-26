@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { NextRequest } from 'next/server';
 import {
   authenticateTestSession,
   clearTestCookies,
@@ -114,11 +115,11 @@ describe('Auth session API routes', () => {
       expect(await res.json()).toEqual({ error: 'Session expired' });
     });
 
-    it('a protected route answers 401 Session expired for an expired session', async () => {
+    it('a protected route answers 401 for an expired session', async () => {
       await setForeignSessionCookie({ expiresIn: -10 });
-      const res = await sectionsGet();
+      const res = await sectionsGet(new NextRequest('http://localhost/api/library/sections'));
       expect(res.status).toBe(401);
-      expect(await res.json()).toEqual({ error: 'Session expired' });
+      expect(await res.json()).toEqual({ error: 'Unauthorized', code: 'UNAUTHENTICATED' });
     });
   });
 });

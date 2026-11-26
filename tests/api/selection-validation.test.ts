@@ -71,7 +71,10 @@ describe('Selection API validation', () => {
       const res = await poolCountPost(req as never);
       expect(res.status).toBe(400);
       const body = await res.json();
-      expect(body.error).toBe("mediaType must be 'movie' or 'show'");
+      expect(body.code).toBe('VALIDATION_FAILED');
+      expect(body.issues).toEqual(
+        expect.arrayContaining([expect.objectContaining({ path: 'mediaType' })])
+      );
     });
 
     it('returns 400 when filters.collections is not an array', async () => {
@@ -83,7 +86,10 @@ describe('Selection API validation', () => {
       const res = await poolCountPost(req as never);
       expect(res.status).toBe(400);
       const body = await res.json();
-      expect(body.error).toBe('filters.collections must be an array of strings');
+      expect(body.code).toBe('VALIDATION_FAILED');
+      expect(body.issues).toEqual(
+        expect.arrayContaining([expect.objectContaining({ path: 'filters.collections' })])
+      );
     });
 
     it('still returns zero pool for empty libraryIds', async () => {
@@ -132,7 +138,10 @@ describe('Selection API validation', () => {
       const res = await randomPost(req as never);
       expect(res.status).toBe(400);
       const body = await res.json();
-      expect(body.error).toBe("mediaType must be 'movie' or 'show'");
+      expect(body.code).toBe('VALIDATION_FAILED');
+      expect(body.issues).toEqual(
+        expect.arrayContaining([expect.objectContaining({ path: 'mediaType' })])
+      );
     });
 
     it('returns selection for valid payload after validation', async () => {

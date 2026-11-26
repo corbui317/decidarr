@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { connectDB } from '@/lib/db';
+import { route } from '@/lib/request/route';
 import { getOrCreateSettings } from '@/lib/models/Settings';
-import { getOverseerrConfig, requireUser, isAuthError, authErrorStatus } from '@/lib/auth';
+import { getOverseerrConfig } from '@/lib/auth';
 import { OverseerrService } from '@/lib/services/overseerr';
 import { createLogger } from '@/lib/logger';
 
@@ -10,58 +10,46 @@ export const dynamic = 'force-dynamic';
 
 const logger = createLogger('API:OverseerrStatus');
 
-export async function GET() {
-  try {
-    await requireUser();
-    await connectDB();
-    const config = await getOverseerrConfig();
-    const settings = await getOrCreateSettings();
+export const GET = route({ access: 'user' }, async () => {
+  const config = await getOverseerrConfig();
+  const settings = await getOrCreateSettings();
 
-    if (!config.configured) {
-      return NextResponse.json({
-        configured: false,
-        reachable: null,
-        filterEnabled: false,
-        lastSyncAt: null,
-        lastSyncOk: true,
-        warning: null,
-      });
-    }
-
-    let reachable = config.lastSyncOk;
-    if (config.url && config.apiKey) {
-      try {
-        const service = new OverseerrService(config.url, config.apiKey);
-        const test = await service.testConnection();
-        reachable = test.success;
-      } catch {
-        reachable = false;
-      }
-    }
-
-    const warning =
-      config.filterEnabled && !reachable
-        ? 'Overseerr is unavailable. Using the last cached availability data.'
-        : !config.lastSyncOk
-          ? 'The last Overseerr sync failed. Using the last cached availability data.'
-          : null;
-
+  if (!config.configured) {
     return NextResponse.json({
-      configured: true,
-      reachable,
-      filterEnabled: config.filterEnabled,
-      lastSyncAt: settings.overseerrLastSyncAt || null,
-      lastSyncOk: settings.overseerrLastSyncOk ?? true,
-      warning,
+      configured: false,
+      reachable: null,
+      filterEnabled: false,
+      lastSyncAt: null,
+      lastSyncOk: true,
+      warning: null,
     });
-  } catch (error) {
-    if (isAuthError(error)) {
-      return NextResponse.json(
-        { error: (error as Error).message },
-        { status: authErrorStatus(error) }
-      );
-    }
-    logger.error('Overseerr status error:', { error: (error as Error).message });
-    return NextResponse.json({ error: 'Failed to get Overseerr status' }, { status: 500 });
   }
-}
+
+  let reachable = config.lastSyncOk;
+  if (config.url && config.apiKey) {
+    try {
+      const service = new OverseerrService(config.url, config.apiKey);
+      const test = await service.testConnection();
+      reachable = test.success;
+    } catch (err) {
+      logger.warn('Overseerr connection test failed', { error: (err as Error).message });
+      reachable = false;
+    }
+  }
+
+  const warning =
+    config.filterEnabled && !reachable
+      ? 'Overseerr is unavailable. Using the last cached availability data.'
+      : !config.lastSyncOk
+        ? 'The last Overseerr sync failed. Using the last cached availability data.'
+        : null;
+
+  return NextResponse.json({
+    configured: true,
+    reachable,
+    filterEnabled: config.filterEnabled,
+    lastSyncAt: settings.overseerrLastSyncAt || null,
+    lastSyncOk: settings.overseerrLastSyncOk ?? true,
+    warning,
+  });
+});

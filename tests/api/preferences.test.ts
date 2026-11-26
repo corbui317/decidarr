@@ -45,7 +45,10 @@ describe('Preferences API validation and spin history merging', () => {
       const res = await preferencesPut(req as never);
       expect(res.status).toBe(400);
       const body = await res.json();
-      expect(body.error).toContain('theme');
+      expect(body.code).toBe('VALIDATION_FAILED');
+      expect(body.issues).toEqual(
+        expect.arrayContaining([expect.objectContaining({ path: 'theme' })])
+      );
     });
 
     it('rejects invalid savedFilters (not an object)', async () => {
@@ -55,7 +58,10 @@ describe('Preferences API validation and spin history merging', () => {
       const res = await preferencesPut(req as never);
       expect(res.status).toBe(400);
       const body = await res.json();
-      expect(body.error).toContain('savedFilters');
+      expect(body.code).toBe('VALIDATION_FAILED');
+      expect(body.issues).toEqual(
+        expect.arrayContaining([expect.objectContaining({ path: 'savedFilters' })])
+      );
     });
 
     it('rejects invalid savedFilters with non-array values', async () => {
