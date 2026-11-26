@@ -7,6 +7,7 @@ const logger = createLogger('API:Login');
 const RATE_LIMIT_CONFIG = {
   windowMs: 15 * 60 * 1000,
   maxAttempts: 5,
+  globalMaxAttempts: 50,
 };
 
 /** @deprecated Use POST /api/auth/plex/start instead */

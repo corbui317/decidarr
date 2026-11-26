@@ -4,9 +4,9 @@ import { connectDB } from '@/lib/db';
 import { MobileAuthCode } from '@/lib/models/MobileAuthCode';
 import { User } from '@/lib/models/User';
 import { completePlexLogin } from '@/lib/auth-login';
-import { hashToken, issueTokenPair, redactToken } from '@/lib/mobile-auth/tokens';
+import { issueTokenPair, redactToken } from '@/lib/mobile-auth/tokens';
 import { pollAuthPin } from '@/lib/services/plex-oauth';
-import { checkRateLimit } from '@/lib/security/rate-limit';
+import { enforceRateLimit } from '@/lib/security/rate-limit';
 import { backfillSyncRevisions } from '@/lib/sync/service';
 import { createLogger } from '@/lib/logger';
 
@@ -19,6 +19,7 @@ const logger = createLogger('API:MobileAuthExchange');
 const EXCHANGE_RATE_LIMIT_CONFIG = {
   windowMs: AUTH_CODE_TTL_SECONDS * 1000,
   maxAttempts: 60,
+  globalMaxAttempts: 5_000,
 };
 
 export async function POST(request: NextRequest) {
@@ -40,18 +41,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const rateLimit = checkRateLimit(
-      `mobile-auth:exchange:${hashToken(deviceCode)}`,
-      EXCHANGE_RATE_LIMIT_CONFIG
+    const rateLimitResponse = enforceRateLimit(
+      request,
+      'mobile-auth:exchange',
+      EXCHANGE_RATE_LIMIT_CONFIG,
+      deviceCode
     );
-    if (!rateLimit.allowed) {
+    if (rateLimitResponse) {
       logger.warn('Rate limit exceeded for mobile auth exchange', {
         deviceCode: redactToken(deviceCode),
       });
-      return NextResponse.json(
-        { error: 'Too many requests. Please try again later.', code: 'RATE_LIMITED' },
-        { status: 429 }
-      );
+      return rateLimitResponse;
     }
 
     if (authCode.exchangedAt) {

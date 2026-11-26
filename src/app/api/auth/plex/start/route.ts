@@ -10,7 +10,7 @@ import {
   getOAuthCookieOptions,
 } from '@/lib/services/plex-oauth';
 import { createLogger } from '@/lib/logger';
-import { assertSetupSecretAllowed } from '@/lib/security/setup-secret';
+import { assertSetupSecretAllowed, extractSetupSecret } from '@/lib/security/setup-secret';
 import { enforceRateLimit } from '@/lib/security/rate-limit';
 import { resolveOAuthForwardUrl } from '@/lib/security/oauth-redirect';
 
@@ -19,11 +19,19 @@ const logger = createLogger('API:PlexAuthStart');
 const RATE_LIMIT_CONFIG = {
   windowMs: 15 * 60 * 1000,
   maxAttempts: 5,
+  globalMaxAttempts: 50,
 };
 
 export async function POST(request: Request) {
   try {
-    const rateLimitResponse = enforceRateLimit(request, 'auth:start', RATE_LIMIT_CONFIG);
+    // Before setup completes, a guessed setup secret is the target being attacked; keying on
+    // it keeps a legitimate admin's retries of the real secret in their own bucket.
+    const rateLimitResponse = enforceRateLimit(
+      request,
+      'auth:start',
+      RATE_LIMIT_CONFIG,
+      extractSetupSecret(request) ?? undefined
+    );
     if (rateLimitResponse) {
       logger.warn('Rate limit exceeded for auth start');
       return rateLimitResponse;

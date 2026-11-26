@@ -22,46 +22,63 @@ describe('Auth hardening', () => {
   });
 
   describe('Rate limiting', () => {
-    it('returns 429 after multiple rapid attempts on /api/auth/login', async () => {
+    it('returns 429 after exhausting the global ceiling on /api/auth/login', async () => {
+      // No TRUST_PROXY and no client-supplied identity: these requests are indistinguishable,
+      // so only the per-endpoint global ceiling (not a shared per-client bucket) applies.
       const makeRequest = () => loginPost(new Request('http://localhost/api/auth/login', { method: 'POST' }));
 
       const responses = [];
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < 51; i++) {
         responses.push(await makeRequest());
       }
 
       const statuses = responses.map((r) => r.status);
-      const rateLimitedCount = statuses.filter((s) => s === 429).length;
+      expect(statuses.slice(0, 50)).toEqual(Array(50).fill(410));
+      expect(statuses[50]).toBe(429);
 
-      expect(rateLimitedCount).toBeGreaterThan(0);
-
-      const rateLimitedResponse = responses.find((r) => r.status === 429);
-      if (rateLimitedResponse) {
-        const body = await rateLimitedResponse.json();
-        expect(body.error).toMatch(/try again later/i);
-        expect(body.code).toBe('RATE_LIMITED');
-      }
+      const rateLimitedResponse = responses[50];
+      const body = await rateLimitedResponse.json();
+      expect(body.error).toMatch(/try again later/i);
+      expect(body.code).toBe('RATE_LIMITED');
     });
 
-    it('returns 429 after multiple rapid login attempts on /api/auth/plex/start', async () => {
+    it('returns 429 after exhausting the global ceiling on /api/auth/plex/start', async () => {
       const makeRequest = () => plexStartPost(new Request('http://localhost/api/auth/plex/start', { method: 'POST' }));
 
       const responses = [];
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < 51; i++) {
         responses.push(await makeRequest());
       }
 
       const statuses = responses.map((r) => r.status);
       const rateLimitedCount = statuses.filter((s) => s === 429).length;
-
       expect(rateLimitedCount).toBeGreaterThan(0);
 
-      const rateLimitedResponse = responses.find((r) => r.status === 429);
-      if (rateLimitedResponse) {
-        const body = await rateLimitedResponse.json();
-        expect(body.error).toMatch(/try again later/i);
-        expect(body.code).toBe('RATE_LIMITED');
+      const rateLimitedResponse = responses.find((r) => r.status === 429)!;
+      const body = await rateLimitedResponse.json();
+      expect(body.error).toMatch(/try again later/i);
+      expect(body.code).toBe('RATE_LIMITED');
+    });
+
+    it('with TRUST_PROXY=true, uses the forwarded client IP to rate limit /api/auth/plex/start per client', async () => {
+      vi.stubEnv('TRUST_PROXY', 'true');
+      const makeRequest = (ip: string) =>
+        plexStartPost(
+          new Request('http://localhost/api/auth/plex/start', {
+            method: 'POST',
+            headers: { 'x-forwarded-for': ip },
+          })
+        );
+
+      const statuses: number[] = [];
+      for (let i = 0; i < 6; i++) {
+        statuses.push((await makeRequest('203.0.113.9')).status);
       }
+      expect(statuses.slice(0, 5)).toEqual([200, 200, 200, 200, 200]);
+      expect(statuses[5]).toBe(429);
+
+      // A different forwarded client IP gets its own bucket.
+      expect((await makeRequest('203.0.113.42')).status).toBe(200);
     });
 
     it('allows normal OAuth polling without rate limiting', async () => {

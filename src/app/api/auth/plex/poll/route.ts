@@ -11,7 +11,7 @@ import { completePlexLogin } from '@/lib/auth-login';
 import { connectDB } from '@/lib/db';
 import { createLogger } from '@/lib/logger';
 import { assertSetupSecretAllowed } from '@/lib/security/setup-secret';
-import { checkRateLimit } from '@/lib/security/rate-limit';
+import { isRateLimited } from '@/lib/security/rate-limit';
 
 // Reads the session and database on every request; never prerender at build time.
 export const dynamic = 'force-dynamic';
@@ -20,14 +20,12 @@ const logger = createLogger('API:PlexAuthPoll');
 
 // Per-pin rate limit: allow ~300 polls over 10 minutes (polling every 2s)
 // This prevents infinite polling but doesn't block users who take time on plex.tv
+// globalMaxAttempts bounds total polling across every pin, well above household use.
 const POLL_RATE_LIMIT_CONFIG = {
   windowMs: 10 * 60 * 1000, // 10 minutes
   maxAttempts: 300, // ~one poll every 2 seconds
+  globalMaxAttempts: 5_000,
 };
-
-function getPerPinRateLimitKey(pinId: number): string {
-  return `auth:poll:pin:${pinId}`;
-}
 
 function clearOAuthCookies(cookieStore: Awaited<ReturnType<typeof cookies>>) {
   cookieStore.delete(OAUTH_PIN_COOKIE);
@@ -76,10 +74,9 @@ export async function GET(request: NextRequest) {
 
     // Rate limit by pin to prevent excessive polling for a single login session
     // This allows users to take their time on plex.tv without getting locked out
-    const rateLimitKey = getPerPinRateLimitKey(pinId);
-    const rateLimit = checkRateLimit(rateLimitKey, POLL_RATE_LIMIT_CONFIG);
+    const limited = isRateLimited(request, 'auth:poll', POLL_RATE_LIMIT_CONFIG, `pin:${pinId}`);
 
-    if (!rateLimit.allowed) {
+    if (limited) {
       logger.warn('Rate limit exceeded for OAuth pin polling', { pinId });
       clearOAuthCookies(cookieStore);
       return NextResponse.json(

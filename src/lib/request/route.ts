@@ -2,7 +2,7 @@ import type { z } from 'zod';
 import { connectDB } from '@/lib/db';
 import { runMigrations } from '@/lib/migrate';
 import { createLogger } from '@/lib/logger';
-import { checkRateLimit, getClientIp, RateLimitConfig } from '@/lib/security/rate-limit';
+import { isRateLimited, RateLimitPolicy as CoreRateLimitPolicy } from '@/lib/security/rate-limit';
 import { configuredAppOrigin } from '@/lib/security/oauth-redirect';
 import { DomainError, errorResponse, ValidationIssue } from './errors';
 import { resolveSession, Session } from './session';
@@ -12,7 +12,7 @@ const logger = createLogger('API');
 /** Who may call a route: anyone, any Admin or Friend, or the Admin only. */
 export type Access = 'public' | 'user' | 'admin';
 
-export interface RateLimitPolicy extends RateLimitConfig {
+export interface RateLimitPolicy extends CoreRateLimitPolicy {
   /** Names the bucket, so two routes never share counts. */
   scope: string;
 }
@@ -108,8 +108,8 @@ export function route<
       await runMigrations();
 
       if (spec.rateLimit) {
-        const { scope, ...config } = spec.rateLimit;
-        if (!checkRateLimit(`${scope}:${getClientIp(request)}`, config).allowed) {
+        const { scope, ...policy } = spec.rateLimit;
+        if (isRateLimited(request, scope, policy)) {
           throw new DomainError('RATE_LIMITED');
         }
       }

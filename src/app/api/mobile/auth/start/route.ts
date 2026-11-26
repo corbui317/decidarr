@@ -9,7 +9,7 @@ import {
 } from '@/lib/mobile-auth/tokens';
 import { enforceRateLimit } from '@/lib/security/rate-limit';
 import { resolveOAuthForwardUrl } from '@/lib/security/oauth-redirect';
-import { assertSetupSecretAllowed } from '@/lib/security/setup-secret';
+import { assertSetupSecretAllowed, extractSetupSecret } from '@/lib/security/setup-secret';
 import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('API:MobileAuthStart');
@@ -18,11 +18,19 @@ const logger = createLogger('API:MobileAuthStart');
 const RATE_LIMIT_CONFIG = {
   windowMs: 15 * 60 * 1000,
   maxAttempts: 5,
+  globalMaxAttempts: 50,
 };
 
 export async function POST(request: NextRequest) {
   try {
-    const rateLimitResponse = enforceRateLimit(request, 'mobile-auth:start', RATE_LIMIT_CONFIG);
+    const body = await request.json().catch(() => null);
+    const deviceId = typeof body?.deviceId === 'string' ? body.deviceId.trim() : '';
+    const deviceName = typeof body?.deviceName === 'string' ? body.deviceName.trim() : undefined;
+
+    // Before setup completes, a guessed setup secret is the target being attacked. Otherwise
+    // the device making the request is, so one device's failed attempts cannot lock out another.
+    const target = extractSetupSecret(request) ?? (deviceId || undefined);
+    const rateLimitResponse = enforceRateLimit(request, 'mobile-auth:start', RATE_LIMIT_CONFIG, target);
     if (rateLimitResponse) {
       logger.warn('Rate limit exceeded for mobile auth start');
       return rateLimitResponse;
@@ -39,10 +47,6 @@ export async function POST(request: NextRequest) {
         { status: setupCheck.status }
       );
     }
-
-    const body = await request.json().catch(() => null);
-    const deviceId = typeof body?.deviceId === 'string' ? body.deviceId.trim() : '';
-    const deviceName = typeof body?.deviceName === 'string' ? body.deviceName.trim() : undefined;
 
     if (!deviceId || deviceId.length < 8) {
       return NextResponse.json({ error: 'deviceId is required' }, { status: 400 });
