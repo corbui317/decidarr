@@ -90,6 +90,22 @@ describe('Mobile auth hardening (spec #1 rules on the mobile routes)', () => {
       expect(statuses[5]).toBe(429);
     });
 
+    it('rate limits one device and a spoofed X-Real-IP does not reset it without TRUST_PROXY (H4)', async () => {
+      const statuses: number[] = [];
+      for (let i = 0; i < 6; i++) {
+        const response = await startPost(
+          startRequest(undefined, { 'x-real-ip': `203.0.113.${i}` })
+        );
+        statuses.push(response.status);
+        if (response.status === 429) {
+          expect((await response.json()).code).toBe('RATE_LIMITED');
+        }
+      }
+
+      expect(statuses.slice(0, 5)).toEqual([200, 200, 200, 200, 200]);
+      expect(statuses[5]).toBe(429);
+    });
+
     it('omits forwardUrl when the request origin does not match APP_URL', async () => {
       vi.stubEnv('APP_URL', 'https://decidarr.example.com');
 
