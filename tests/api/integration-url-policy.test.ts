@@ -17,6 +17,7 @@ const PUBLIC = '93.184.216.34';
 function overseerrTestRequest(url: string): NextRequest {
   return new NextRequest('http://localhost/api/overseerr/test', {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: 'http://localhost' },
     body: JSON.stringify({ url, apiKey: 'overseerr-secret-key' }),
   });
 }

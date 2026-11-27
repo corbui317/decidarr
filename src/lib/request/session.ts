@@ -17,6 +17,8 @@ export interface Session {
   credential: CredentialOrigin;
   /** How this user reaches the configured Plex server. Never send it to a client. */
   plex: { serverUrl: string; token: string };
+  /** Unix timestamp (ms) when this session's underlying token expires. */
+  expiresAt: number;
 }
 
 function toSession(ctx: AuthContext, credential: CredentialOrigin): Session {
@@ -26,6 +28,7 @@ function toSession(ctx: AuthContext, credential: CredentialOrigin): Session {
     isAdmin: ctx.isAdmin,
     credential,
     plex: { serverUrl: ctx.plexServerUrl, token: ctx.plexToken },
+    expiresAt: ctx.expiresAt,
   };
 }
 
