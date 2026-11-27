@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { settingsTestPlexBodySchema } from '@decidarr/api-contracts';
+import { settingsTestPlexBodySchema, type PlexTestResponse } from '@decidarr/api-contracts';
 import { route, requireAdminSession } from '@/lib/request/route';
 import { DomainError } from '@/lib/request/errors';
 import { PlexService } from '@/lib/services/plex';
@@ -42,10 +42,8 @@ export const POST = route({ access: 'public', body: settingsTestPlexBodySchema }
 
   if (!validation.valid || !validation.user) {
     logger.warn('Plex token invalid', { error: validation.error });
-    return NextResponse.json({
-      valid: false,
-      error: 'Invalid Plex token',
-    });
+    const invalidResponse: PlexTestResponse = { valid: false, error: 'Invalid Plex token' };
+    return NextResponse.json(invalidResponse);
   }
 
   logger.info('Plex token valid', { username: validation.user.username });
@@ -86,7 +84,7 @@ export const POST = route({ access: 'public', body: settingsTestPlexBodySchema }
     }
   }
 
-  return NextResponse.json({
+  const response: PlexTestResponse = {
     valid: true,
     user: {
       username: validation.user.username,
@@ -100,5 +98,6 @@ export const POST = route({ access: 'public', body: settingsTestPlexBodySchema }
           libraryCount,
         }
       : null,
-  });
+  };
+  return NextResponse.json(response);
 });

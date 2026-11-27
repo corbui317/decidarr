@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { settingsSetupBodySchema } from '@decidarr/api-contracts';
+import { settingsSetupBodySchema, type SettingsSetupResponse } from '@decidarr/api-contracts';
 import { route, requireAdminSession } from '@/lib/request/route';
 import { getOrCreateSettings } from '@/lib/models/Settings';
 
@@ -14,7 +14,8 @@ export const POST = route({ access: 'public', body: settingsSetupBodySchema }, a
       settings.tmdbApiKey = tmdbApiKey;
       await settings.save();
     }
-    return NextResponse.json({ success: true, message: 'Settings updated' });
+    const response: SettingsSetupResponse = { success: true, message: 'Settings updated' };
+    return NextResponse.json(response);
   }
 
   return NextResponse.json(

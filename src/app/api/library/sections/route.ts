@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import type { LibrarySectionsResponse } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { PlexService } from '@/lib/services/plex';
 import { getOrCreateSettings } from '@/lib/models/Settings';
@@ -21,5 +22,6 @@ export const GET = route({ access: 'user' }, async ({ session }) => {
   const mediaLibraries = sections.filter((s) => s.type === 'movie' || s.type === 'show');
 
   logger.info('Fetched library sections', { count: mediaLibraries.length, user: session.plexUserId });
-  return NextResponse.json({ sections: mediaLibraries });
+  const response: LibrarySectionsResponse = { sections: mediaLibraries };
+  return NextResponse.json(response);
 });

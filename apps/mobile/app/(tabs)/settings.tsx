@@ -12,14 +12,11 @@ import { Redirect } from 'expo-router';
 import { useAuth } from '@/auth/AuthProvider';
 import { useSync } from '@/sync/SyncProvider';
 import { OfflineBanner } from '@/components/OfflineBanner';
+import type { PlexLibrarySection } from '@decidarr/api-contracts';
 import { coreApi } from '@/api/client';
 import { getCachedPreferences } from '@/db/database';
 
-interface LibrarySection {
-  id: string;
-  title: string;
-  type: string;
-}
+type LibrarySection = PlexLibrarySection;
 
 export default function SettingsScreen() {
   const auth = useAuth();

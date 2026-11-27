@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
-import { watchedCreateBodySchema, watchedPlexIdParamsSchema } from '@decidarr/api-contracts';
+import {
+  watchedCreateBodySchema,
+  watchedPlexIdParamsSchema,
+  type WatchedStatusResponse,
+} from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { WatchedItem } from '@/lib/models/WatchedItem';
 import type { WatchedMediaType } from '@/lib/validation/watched';
@@ -11,7 +15,8 @@ export const GET = route({ access: 'user', params: watchedPlexIdParamsSchema }, 
     plexId: params.plexId,
   }).lean();
 
-  return NextResponse.json({ watched: !!item });
+  const response: WatchedStatusResponse = { watched: !!item };
+  return NextResponse.json(response);
 });
 
 export const POST = route(

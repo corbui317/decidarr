@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import type { AdminUsersListResponse } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { getOrCreateSettings } from '@/lib/models/Settings';
 import { User } from '@/lib/models/User';
@@ -37,5 +38,6 @@ export const GET = route({ access: 'admin' }, async ({ session }) => {
   );
 
   logger.debug('Listed users', { count: users.length });
-  return NextResponse.json({ users });
+  const response: AdminUsersListResponse = { users };
+  return NextResponse.json(response);
 });

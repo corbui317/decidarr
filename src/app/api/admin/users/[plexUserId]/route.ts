@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
-import { adminUserApprovalBodySchema, adminUserApprovalParamsSchema } from '@decidarr/api-contracts';
+import {
+  adminUserApprovalBodySchema,
+  adminUserApprovalParamsSchema,
+  type AdminUserApprovalResponse,
+} from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { getOrCreateSettings } from '@/lib/models/Settings';
 import { User } from '@/lib/models/User';
@@ -35,6 +39,7 @@ export const PUT = route(
     }
 
     logger.info('User approval updated', { plexUserId, approved });
-    return NextResponse.json({ success: true, plexUserId, approved });
+    const response: AdminUserApprovalResponse = { success: true, plexUserId, approved };
+    return NextResponse.json(response);
   }
 );

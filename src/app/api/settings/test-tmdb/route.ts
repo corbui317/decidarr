@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { settingsTestTmdbBodySchema } from '@decidarr/api-contracts';
+import { settingsTestTmdbBodySchema, type TmdbTestResponse } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { createLogger } from '@/lib/logger';
 import { TMDbService } from '@/lib/services/tmdb';
@@ -17,16 +17,15 @@ export const POST = route({ access: 'public', body: settingsTestTmdbBodySchema }
 
   if (!result.valid) {
     logger.warn('TMDB API key invalid');
-    return NextResponse.json({
-      valid: false,
-      error: 'Invalid TMDB API key',
-    });
+    const invalidResponse: TmdbTestResponse = { valid: false, error: 'Invalid TMDB API key' };
+    return NextResponse.json(invalidResponse);
   }
 
   logger.info('TMDB API key valid');
-  return NextResponse.json({
+  const response: TmdbTestResponse = {
     valid: true,
     message: 'TMDB API key is valid',
     imageBaseUrl: result.imageBaseUrl,
-  });
+  };
+  return NextResponse.json(response);
 });
