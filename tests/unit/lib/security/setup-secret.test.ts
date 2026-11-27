@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { clearDatabase } from '../../../helpers/mongo';
 import { getOrCreateSettings } from '@/lib/models/Settings';
+import { clearRateLimitStore } from '@/lib/security/rate-limit';
 import {
   assertSetupSecretAllowed,
   extractSetupSecret,
@@ -8,13 +9,21 @@ import {
   validateSetupSecret,
 } from '@/lib/security/setup-secret';
 
+function setupRequest(secret?: string): Request {
+  return new Request('http://localhost/setup', {
+    headers: secret !== undefined ? { [setupSecretHeaderName()]: secret } : undefined,
+  });
+}
+
 describe('setup secret guard', () => {
   beforeEach(async () => {
     await clearDatabase();
+    clearRateLimitStore();
   });
 
   afterEach(() => {
     vi.unstubAllEnvs();
+    clearRateLimitStore();
   });
 
   it('extracts setup secret from the documented header', () => {
@@ -50,12 +59,12 @@ describe('setup secret guard', () => {
   });
 
   it('requires a matching configured secret while setup is incomplete', async () => {
-    vi.stubEnv('DECIDARR_SETUP_SECRET', 'expected-secret');
+    vi.stubEnv('DECIDARR_SETUP_SECRET', 'expected-setup-secret');
 
     const denied = await assertSetupSecretAllowed(new Request('http://localhost/setup'));
     const allowed = await assertSetupSecretAllowed(
       new Request('http://localhost/setup', {
-        headers: { [setupSecretHeaderName()]: 'expected-secret' },
+        headers: { [setupSecretHeaderName()]: 'expected-setup-secret' },
       })
     );
 
@@ -73,5 +82,47 @@ describe('setup secret guard', () => {
     await expect(assertSetupSecretAllowed(new Request('http://localhost/setup'))).resolves.toEqual({
       ok: true,
     });
+  });
+
+  it('rejects a configured setup secret shorter than 16 characters while setup is incomplete', async () => {
+    vi.stubEnv('DECIDARR_SETUP_SECRET', 'short-secret');
+
+    const result = await assertSetupSecretAllowed(setupRequest('short-secret'));
+
+    expect(result).toMatchObject({ ok: false, status: 503, code: 'SETUP_SECRET_TOO_SHORT' });
+  });
+
+  it('does not enforce the minimum length once setup is complete', async () => {
+    const settings = await getOrCreateSettings();
+    settings.setupComplete = true;
+    await settings.save();
+    vi.stubEnv('DECIDARR_SETUP_SECRET', 'short-secret');
+
+    await expect(assertSetupSecretAllowed(setupRequest('anything'))).resolves.toEqual({ ok: true });
+  });
+
+  it('never rate limits a correct setup secret', async () => {
+    vi.stubEnv('DECIDARR_SETUP_SECRET', 'expected-setup-secret');
+
+    for (let i = 0; i < 20; i++) {
+      const result = await assertSetupSecretAllowed(setupRequest('expected-setup-secret'));
+      expect(result).toEqual({ ok: true });
+    }
+  });
+
+  it('rate limits wrong setup secret guesses under the shared ceiling, with the shared rate-limited code', async () => {
+    vi.stubEnv('DECIDARR_SETUP_SECRET', 'expected-setup-secret');
+
+    const results: Array<{ ok: boolean; status?: number; code?: string }> = [];
+    for (let i = 0; i < 60; i++) {
+      results.push(await assertSetupSecretAllowed(setupRequest(`wrong-guess-${i}`)));
+    }
+
+    const limited = results.filter((r) => r.code === 'RATE_LIMITED');
+    expect(limited.length).toBeGreaterThan(0);
+    expect(limited.every((r) => r.ok === false && r.status === 429)).toBe(true);
+
+    const correctAfterFlood = await assertSetupSecretAllowed(setupRequest('expected-setup-secret'));
+    expect(correctAfterFlood).toEqual({ ok: true });
   });
 });

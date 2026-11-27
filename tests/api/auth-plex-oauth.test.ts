@@ -61,7 +61,7 @@ describe('Plex OAuth API routes', () => {
   });
 
   it('POST /api/auth/plex/start requires setup secret when configured before setup', async () => {
-    vi.stubEnv('DECIDARR_SETUP_SECRET', 'expected-secret');
+    vi.stubEnv('DECIDARR_SETUP_SECRET', 'expected-setup-secret');
 
     const res = await oauthStartPost(new Request('http://localhost/api/auth/plex/start', { method: 'POST' }));
     const body = await res.json();
@@ -138,7 +138,7 @@ describe('Plex OAuth API routes', () => {
   });
 
   it('GET /api/auth/plex/poll also enforces configured setup secret before setup', async () => {
-    vi.stubEnv('DECIDARR_SETUP_SECRET', 'expected-secret');
+    vi.stubEnv('DECIDARR_SETUP_SECRET', 'expected-setup-secret');
     const settings = await getOrCreateSettings();
     expect(settings.setupComplete).toBe(false);
 
