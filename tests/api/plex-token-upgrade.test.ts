@@ -217,6 +217,46 @@ describe('Upgrading stored Plex account tokens to per-server tokens', () => {
     expect(decryptUserField(await rawUser('friend-1'), 'plexServerToken')).toBe(FRIEND_SERVER_TOKEN);
   });
 
+  it.each([
+    ['rate-limits the exchange (429)', () => new Response('slow down', { status: 429 })],
+    ['times the request out (408)', () => new Response('timeout', { status: 408 })],
+    ['sends an unreadable answer', () => new Response('<html>not json</html>', { status: 200 })],
+  ])('keeps every stored token and retries at the next start when plex.tv %s', async (_label, answer) => {
+    await seedPreUpgradeInstall();
+    const before = { admin: await rawUser('admin-1'), friend: await rawUser('friend-1') };
+    fakeIntegrations(answer);
+
+    simulateRestart();
+    await connectDB();
+
+    expect({ admin: await rawUser('admin-1'), friend: await rawUser('friend-1') }).toEqual(before);
+
+    fakePlexByToken({
+      [ADMIN_ACCOUNT_TOKEN]: [{ accessToken: ADMIN_SERVER_TOKEN }],
+      [FRIEND_ACCOUNT_TOKEN]: [{ accessToken: FRIEND_SERVER_TOKEN }],
+    });
+    simulateRestart();
+    await connectDB();
+    expect(decryptUserField(await rawUser('admin-1'), 'plexServerToken')).toBe(ADMIN_SERVER_TOKEN);
+    expect(decryptUserField(await rawUser('friend-1'), 'plexServerToken')).toBe(FRIEND_SERVER_TOKEN);
+  });
+
+  it("drops only a Friend's account token that plex.tv refuses (401), and they sign in again", async () => {
+    await seedPreUpgradeInstall();
+    const before = await userData('friend-1');
+    // The Friend's token is unknown to plex.tv, so it answers 401.
+    fakePlexByToken({ [ADMIN_ACCOUNT_TOKEN]: [{ accessToken: ADMIN_SERVER_TOKEN }] });
+
+    simulateRestart();
+    await connectDB();
+
+    const friendRaw = await rawUser('friend-1');
+    expect(friendRaw.plexToken).toBeUndefined();
+    expect(friendRaw.plexServerToken).toBeUndefined();
+    expect(await userData('friend-1')).toEqual(before);
+    expect(decryptUserField(await rawUser('admin-1'), 'plexServerToken')).toBe(ADMIN_SERVER_TOKEN);
+  });
+
   it("drops a Friend's account token when plex.tv gives them no access to this server, and they sign in again", async () => {
     const { friend } = await seedPreUpgradeInstall();
     const before = await userData('friend-1');
