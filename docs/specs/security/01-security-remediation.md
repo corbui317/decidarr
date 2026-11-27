@@ -169,6 +169,8 @@ interface PlexImageQuery {
 - While `settings.setupComplete === false`, require `X-Decidarr-Setup-Secret` header (or `setupSecret` in POST body for start) matching `DECIDARR_SETUP_SECRET`.
 - If env var unset in development, log warning and allow only when `NODE_ENV !== 'production'`.
 - In production, missing `DECIDARR_SETUP_SECRET` → `503` with message to configure operator secret.
+- `DECIDARR_SETUP_SECRET` must be at least 16 characters while setup is incomplete; a shorter value → `503` with `code: 'SETUP_SECRET_TOO_SHORT'`. Once `setupComplete` is `true`, the secret is never checked, so a short value cannot break a finished install.
+- The correct secret is always accepted and never rate limited. Wrong guesses count against `enforceRateLimit`'s per-client bucket (when `TRUST_PROXY` makes the client identifiable) plus the scope's server-wide ceiling, with the shared `RATE_LIMITED` error code on `429`.
 
 **`completePlexLogin` rules:**
 
@@ -179,7 +181,7 @@ interface PlexImageQuery {
 
 | Method | Path | Auth (target) | SSRF validation |
 |--------|------|---------------|-----------------|
-| POST | `/api/settings/test-plex` | Public only when setup incomplete **and** valid setup secret; otherwise `requireAdmin()` | `assertSafeServiceUrl()` |
+| POST | `/api/settings/test-plex` | `access: 'admin'` (ADR 0002: tests this install's own server with the Admin's own token) | `assertSafeServiceUrl()` |
 | POST | `/api/tautulli/test` | `requireAdmin()` | `assertSafeServiceUrl()` |
 | POST | `/api/overseerr/test` | `requireAdmin()` (already) | `assertSafeServiceUrl()` |
 | PUT | `/api/settings` | `requireAdmin()` | Validate `plex.serverUrl`, `tautulli.url`, `overseerr.url` before save |
