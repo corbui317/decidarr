@@ -53,7 +53,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
     setSyncStateLocal('bootstrapping');
     try {
-      const data = await syncApi.bootstrap(token);
+      const data = await syncApi.bootstrap();
       await saveBootstrapData(data.entities);
       await setSyncState('cursor', data.cursor);
       const now = new Date().toISOString();
@@ -86,7 +86,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     setSyncStateLocal('syncing');
 
     try {
-      const result = await syncApi.mutations(token, pending);
+      const result = await syncApi.mutations(pending);
       for (const item of result.results) {
         if (item.status === 'applied' || item.status === 'duplicate') {
           await removeMutation(item.mutationId);
@@ -124,7 +124,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
     setSyncStateLocal('syncing');
     try {
-      const changes = await syncApi.changes(token, cursor);
+      const changes = await syncApi.changes(cursor);
       if (changes.changes.length > 0) {
         await bootstrap();
       }

@@ -11,17 +11,6 @@ export interface TautulliUser {
   thumb: string;
 }
 
-export interface TautulliWatchedItem {
-  rating_key: string;
-  title: string;
-  year: number;
-  media_type: 'movie' | 'show' | 'episode';
-  last_watched: number;
-  play_count: number;
-  user_id: number;
-  username: string;
-}
-
 export interface TautulliHistoryItem {
   reference_id: number;
   rating_key: string;

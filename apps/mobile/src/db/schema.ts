@@ -1,5 +1,4 @@
 export const DB_NAME = 'decidarr.db';
-export const DB_VERSION = 1;
 
 export const CREATE_TABLES_SQL = `
 CREATE TABLE IF NOT EXISTS preferences (

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
+import { libraryItemsParamsSchema, libraryItemsQuerySchema } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { DomainError } from '@/lib/request/errors';
 import { getAccessibleLibraryIds } from '@/lib/auth';
@@ -13,9 +13,6 @@ import { sanitizeLibraryItemForClient } from '@/lib/plex-image';
 import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('API:LibraryItems');
-
-const itemsParams = z.object({ id: z.string().min(1) });
-const itemsQuery = z.object({ forceRefresh: z.string().optional() });
 
 const ENRICHMENT_FIELDS = [
   'tmdbId',
@@ -79,7 +76,7 @@ function isItemUnenriched(item: ILibraryItem): boolean {
 }
 
 export const GET = route(
-  { access: 'user', params: itemsParams, query: itemsQuery },
+  { access: 'user', params: libraryItemsParamsSchema, query: libraryItemsQuerySchema },
   async ({ session, params, query }) => {
     const { id } = params;
     const forceRefresh = query.forceRefresh === 'true';

@@ -1,4 +1,4 @@
-import type { AnimationSpeed, AnimationStyle } from '@/types/shared';
+import type { AnimationSpeed, AnimationStyle } from '@decidarr/api-contracts';
 
 // Re-export types for local use
 export type { AnimationSpeed, AnimationStyle };

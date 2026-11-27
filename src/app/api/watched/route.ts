@@ -1,18 +1,12 @@
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
+import { watchedListQuerySchema } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { WatchedItem } from '@/lib/models/WatchedItem';
 
 // Reads the session and database on every request; never prerender at build time.
 export const dynamic = 'force-dynamic';
 
-const watchedListQuery = z.object({
-  mediaType: z.string().optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(200).default(50),
-});
-
-export const GET = route({ access: 'user', query: watchedListQuery }, async ({ session, query }) => {
+export const GET = route({ access: 'user', query: watchedListQuerySchema }, async ({ session, query }) => {
   const { mediaType, page, limit } = query;
 
   const filter: Record<string, unknown> = { userId: session.userId };

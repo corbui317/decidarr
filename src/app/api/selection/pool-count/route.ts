@@ -7,12 +7,11 @@ import { WatchedItem } from '@/lib/models/WatchedItem';
 import { PlexService } from '@/lib/services/plex';
 import { createLogger } from '@/lib/logger';
 import { computeDataStats, getPoolCountWithBreakdown, fetchCollectionItemIds } from '@/lib/selection/filters';
-import { selectionRequestBody } from '@/lib/validation/selection-contract';
-import { EMPTY_DATA_STATS } from '@/types/shared';
+import { selectionRequestBodySchema, EMPTY_DATA_STATS } from '@decidarr/api-contracts';
 
 const logger = createLogger('API:PoolCount');
 
-export const POST = route({ access: 'user', body: selectionRequestBody }, async ({ session, body }) => {
+export const POST = route({ access: 'user', body: selectionRequestBodySchema }, async ({ session, body }) => {
   const { libraryIds, mediaType, filters } = body;
 
   if (!libraryIds || libraryIds.length === 0) {

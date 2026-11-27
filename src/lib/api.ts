@@ -1,21 +1,34 @@
 'use client';
 
-import type { Filters } from '@/types/filters';
+import { createApiClient, createWebTransport, ApiError } from '@decidarr/api-contracts';
 import type { LoginErrorCode } from './auth-errors';
-import type { SelectionResultResponse } from '@/types/api/selection';
-import type {
-  MediaType,
-  MediaTypeWithEpisode,
-  TvSelectionMode,
-  AppTheme,
-  AnimationStyle,
-  AnimationSpeed,
-  SelectionParameters,
-} from '@/types/shared';
-import type { WatchedMediaType } from '@/lib/validation/watched';
+import type { Transport, AnimationStyle, AnimationSpeed, MediaTypeWithEpisode } from '@decidarr/api-contracts';
+
+export { ApiError };
 
 // Re-export commonly used types
 export type { AnimationStyle, AnimationSpeed };
+
+// Re-export the contract types the web app keys its API responses on, so callers
+// import them from here rather than duplicating them.
+export type {
+  AuthUser,
+  PlexFriendUser,
+  PreferenceContract as UserPreferences,
+  SpinHistoryPreferencesContract as SpinHistoryPreferences,
+  SpinHistoryEntryResponse as SpinHistoryEntry,
+  SpinHistoryCreateBody as CreateSpinHistoryPayload,
+  PlexCollection,
+  SettingsResponse,
+  SettingsStatusResponse,
+  PlexTestResponse,
+  TmdbTestResponse,
+  TautulliUser,
+  TautulliTestResponse,
+  TautulliSyncResponse,
+  OverseerrTestResponse,
+  OverseerrStatusResponse,
+} from '@decidarr/api-contracts';
 
 const API_BASE = '/api';
 const SETUP_SECRET_STORAGE_KEY = 'decidarr_setup_secret';
@@ -35,13 +48,6 @@ function setupSecretHeaders(): Record<string, string> {
   return secret ? { 'X-Decidarr-Setup-Secret': secret } : {};
 }
 
-interface RequestOptions {
-  method?: string;
-  body?: unknown;
-  headers?: Record<string, string>;
-  signal?: AbortSignal;
-}
-
 // Custom error class for authentication errors
 export class AuthError extends Error {
   public isAuthError = true;
@@ -57,19 +63,6 @@ export class AuthError extends Error {
 // Helper to check if an error is an auth error
 export function isAuthError(error: unknown): error is AuthError {
   return error instanceof AuthError || (error as AuthError)?.isAuthError === true;
-}
-
-// Custom error class for API errors with status and code
-export class ApiError extends Error {
-  public status: number;
-  public code?: string;
-
-  constructor(message: string, status: number, code?: string) {
-    super(message);
-    this.name = 'ApiError';
-    this.status = status;
-    this.code = code;
-  }
 }
 
 export class PlexLoginError extends Error {
@@ -125,444 +118,102 @@ export function formatPlexLoginError(error: unknown): string {
   return 'Login failed';
 }
 
-async function request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, headers = {} } = options;
+const transport = createWebTransport({ baseUrl: API_BASE });
 
-  const config: RequestInit = {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      ...headers,
-    },
-    credentials: 'include',
-    signal: options.signal,
-  };
-
-  if (body) {
-    config.body = JSON.stringify(body);
-  }
-
-  const response = await fetch(`${API_BASE}${endpoint}`, config);
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({ error: 'Request failed' }));
-    const errorMessage = errorData.error || errorData.message || 'Request failed';
-    const errorCode = errorData.code;
-
-    if (response.status === 401) {
-      console.warn(`[API] 401 Unauthorized on ${endpoint}:`, errorMessage);
-      // Throw a typed AuthError instead of auto-redirecting
-      // This lets components decide how to handle the auth failure
-      throw new AuthError(errorMessage, 401);
+/** Converts a 401 into a typed AuthError so components can tell "unauthenticated" apart from other failures. */
+const authConvertingTransport: Transport = {
+  async request(path, options) {
+    try {
+      return await transport.request(path, options);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        console.warn(`[API] 401 Unauthorized on ${path}:`, error.message);
+        throw new AuthError(error.message, 401);
+      }
+      throw error;
     }
-
-    throw new ApiError(errorMessage, response.status, errorCode);
-  }
-
-  return response.json();
-}
-
-export interface AuthUser {
-  id: string;
-  username: string;
-  serverUrl: string;
-  thumb?: string;
-  isAdmin: boolean;
-}
-
-export const authApi = {
-  getCurrentUser: () =>
-    request<{ user: AuthUser; preferences: UserPreferences; expiresAt: number }>('/auth/me'),
-  startPlexLogin: () =>
-    request<{ authUrl: string; pinId: number; state: string }>('/auth/plex/start', {
-      method: 'POST',
-      headers: setupSecretHeaders(),
-    }),
-  pollPlexLogin: async (state: string) => {
-    const response = await fetch(
-      `${API_BASE}/auth/plex/poll?state=${encodeURIComponent(state)}`,
-      { credentials: 'include' }
-    );
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new PlexLoginError(
-        data.error || 'Login failed',
-        response.status,
-        data.code as string | undefined
-      );
-    }
-    return data as {
-      authorized: boolean;
-      success?: boolean;
-      user?: AuthUser;
-      error?: string;
-      code?: string;
-    };
   },
-  refreshSession: () => request<{ success: boolean; expiresAt: number }>('/auth/refresh', { method: 'POST' }),
-  logout: () => request('/auth/logout', { method: 'DELETE' }),
 };
 
-export interface PlexFriendUser {
-  id: string;
-  username: string;
-  thumb?: string;
-  hasServerAccess: boolean;
-  isApproved: boolean;
-}
+const client = createApiClient(authConvertingTransport);
+// Plex sign-in happens before any session exists, so a 401 there is not an AuthError;
+// it is converted to PlexLoginError below instead.
+const loginClient = createApiClient(transport);
+
+export const authApi = {
+  getCurrentUser: () => client.auth.getCurrentUser(),
+  startPlexLogin: () => loginClient.auth.startPlexLogin(setupSecretHeaders()),
+  pollPlexLogin: async (state: string) => {
+    try {
+      return await loginClient.auth.pollPlexLogin(state);
+    } catch (error) {
+      if (error instanceof ApiError) {
+        throw new PlexLoginError(error.message, error.status, error.code);
+      }
+      throw error;
+    }
+  },
+  refreshSession: () => client.auth.refreshSession(),
+  logout: () => client.auth.logout(),
+};
 
 export const adminUsersApi = {
-  list: () => request<{ users: PlexFriendUser[] }>('/admin/users'),
-  setApproved: (plexUserId: string, approved: boolean) =>
-    request<{ success: boolean }>(`/admin/users/${encodeURIComponent(plexUserId)}`, {
-      method: 'PUT',
-      body: { approved },
-    }),
+  list: () => client.admin.listUsers(),
+  setApproved: (plexUserId: string, approved: boolean) => client.admin.setApproved(plexUserId, approved),
 };
 
 export const userPreferencesApi = {
-  get: () =>
-    request<{ preferences: UserPreferences; spinHistory: SpinHistoryPreferences }>(
-      '/users/me/preferences'
-    ),
-  update: (preferences: Partial<UserPreferences>) =>
-    request<{ success: boolean; preferences: UserPreferences }>('/users/me/preferences', {
-      method: 'PUT',
-      body: preferences,
-    }),
-  updateSpinHistory: (spinHistory: Partial<SpinHistoryPreferences>) =>
-    request<{ spinHistory: SpinHistoryPreferences }>('/users/me/preferences', {
-      method: 'PATCH',
-      body: { spinHistory },
-    }),
+  get: () => client.preferences.get(),
+  update: client.preferences.update,
+  updateSpinHistory: client.preferences.updateSpinHistory,
 };
-
-// Library API
-export interface PlexCollection {
-  ratingKey: string;
-  title: string;
-  childCount: number;
-  libraryId: string;
-}
 
 export const libraryApi = {
-  getSections: () => request<{ sections: unknown[] }>('/library/sections'),
-  getItems: (id: string, forceRefresh = false) =>
-    request<{ items: unknown[] }>(`/library/${id}/items?forceRefresh=${forceRefresh}`),
-  getGenres: (libraryIds: string[]) =>
-    request<{ genres: string[] }>(`/library/genres?libraryIds=${libraryIds.join(',')}`),
-  getYears: (libraryIds: string[]) =>
-    request<{ min: number; max: number }>(`/library/years?libraryIds=${libraryIds.join(',')}`),
-  getStudios: () =>
-    request<{ studios: { streaming: string[]; anime: string[]; traditional: string[] } }>(
-      '/library/studios'
-    ),
-  getFilterOptions: (libraryIds: string[]) =>
-    request<{
-      contentRatings: string[];
-      hasRatings: boolean;
-      ratingRange: { min: number; max: number };
-      studios: string[];
-    }>(`/library/filter-options?libraryIds=${libraryIds.join(',')}`),
-  getCollections: (libraryIds: string[]) =>
-    request<{ collections: PlexCollection[] }>(`/library/collections?libraryIds=${libraryIds.join(',')}`),
+  getSections: () => client.library.getSections(),
+  getItems: client.library.getItems,
+  getGenres: client.library.getGenres,
+  getYears: client.library.getYears,
+  getStudios: () => client.library.getStudios(),
+  getFilterOptions: client.library.getFilterOptions,
+  getCollections: client.library.getCollections,
 };
 
-// Selection API
 export const selectionApi = {
-  getRandom: (params: SelectionParameters) =>
-    request<SelectionResultResponse>('/selection/random', {
-      method: 'POST',
-      body: params,
-    }),
-  getAwardCategories: () =>
-    request<{ categories: { id: string; name: string; icon: string }[] }>(
-      '/selection/awards/categories'
-    ),
-  getPoolCount: (params: Omit<SelectionParameters, 'tvSelectionMode'>, signal?: AbortSignal) =>
-    request<{
-      totalItems: number;
-      matchingItems: number;
-      filterBreakdown: {
-        filterName: string;
-        label: string;
-        beforeCount: number;
-        afterCount: number;
-        itemsRemoved: number;
-        causedEmpty: boolean;
-      }[];
-      emptyReason: string | null;
-      dataStats: {
-        itemsWithRating: number;
-        itemsWithContentRating: number;
-        itemsWithStudio: number;
-        itemsWithYear: number;
-        itemsWithGenres: number;
-      };
-      overseerrWarning?: string | null;
-    }>('/selection/pool-count', {
-      method: 'POST',
-      body: params,
-      signal,
-    }),
+  getRandom: client.selection.random,
+  getAwardCategories: () => client.selection.getAwardCategories(),
+  getPoolCount: client.selection.poolCount,
 };
 
-// Watched API
 export const watchedApi = {
-  getAll: (mediaType?: string, page = 1, limit = 50) =>
-    request<{ items: unknown[]; pagination: unknown }>(
-      `/watched?mediaType=${mediaType || ''}&page=${page}&limit=${limit}`
-    ),
-  getStatus: (plexId: string) =>
-    request<{ watched: boolean }>(`/watched/${encodeURIComponent(plexId)}`),
-  markWatched: (plexId: string, mediaType: WatchedMediaType, title: string) =>
-    request(`/watched/${plexId}`, {
-      method: 'POST',
-      body: { mediaType, title },
-    }),
-  markUnwatched: (plexId: string) =>
-    request(`/watched/${plexId}`, { method: 'DELETE' }),
+  getAll: client.watched.getAll,
+  getStatus: client.watched.getStatus,
+  markWatched: (plexId: string, mediaType: MediaTypeWithEpisode, title: string) =>
+    client.watched.markWatched(plexId, { mediaType, title }),
+  markUnwatched: client.watched.markUnwatched,
 };
-
-// Settings API
-export interface UserPreferences {
-  theme?: AppTheme;
-  defaultMediaType?: MediaType;
-  tvSelectionMode?: TvSelectionMode;
-  animationStyle?: AnimationStyle;
-  animationSpeed?: AnimationSpeed;
-  selectedLibraries?: string[];
-  savedFilters?: Record<string, unknown>;
-  spinHistory?: SpinHistoryPreferences;
-}
-
-export interface SettingsResponse {
-  setupComplete: boolean;
-  /** Stored credentials that cannot be decrypted with the current keys; kept until re-entered. */
-  credentialsNeedingReentry: string[];
-  plex: {
-    serverUrl: string | null;
-    username: string | null;
-    machineId: string | null;
-    hasToken: boolean;
-    tokenMasked: string | null;
-  };
-  tmdb: {
-    hasKey: boolean;
-    keyMasked: string | null;
-  };
-  tautulli: {
-    url: string | null;
-    enabled: boolean;
-    hasKey: boolean;
-    keyMasked: string | null;
-    syncIntervalMinutes: number;
-    lastSync: string | null;
-  };
-  overseerr: {
-    url: string | null;
-    filterEnabled: boolean;
-    hasKey: boolean;
-    keyMasked: string | null;
-    lastSyncAt: string | null;
-    lastSyncOk: boolean;
-  };
-  syncFrequencyHours: number;
-  uiPreferences: {
-    theme: AppTheme;
-    defaultMediaType: MediaType;
-    tvSelectionMode: TvSelectionMode;
-    animationStyle: AnimationStyle;
-    animationSpeed: AnimationSpeed;
-  };
-}
-
-export interface SettingsStatusResponse {
-  setupComplete: boolean;
-  hasPlexToken: boolean;
-  hasPlexServer: boolean;
-  hasTmdbKey: boolean;
-}
-
-export interface PlexTestResponse {
-  valid: boolean;
-  error?: string;
-  user?: {
-    username: string;
-    email: string;
-    thumb: string;
-  };
-  servers?: Array<{ name: string; uri: string }>;
-  serverTest?: {
-    valid: boolean;
-    libraryCount: number;
-  } | null;
-}
-
-export interface TmdbTestResponse {
-  valid: boolean;
-  error?: string;
-  message?: string;
-  imageBaseUrl?: string | null;
-}
 
 export const settingsApi = {
-  // Get current settings (masked sensitive values)
-  getSettings: () => request<SettingsResponse>('/settings'),
-
-  // Check if app is configured (public endpoint)
-  getStatus: () => request<SettingsStatusResponse>('/settings/status'),
-
-  // Update settings
-  updateSettings: (settings: {
-    plex?: { token?: string; serverUrl?: string };
-    tmdb?: { apiKey?: string };
-    tautulli?: { url?: string; apiKey?: string; enabled?: boolean; syncIntervalMinutes?: number };
-    overseerr?: { url?: string; apiKey?: string; filterEnabled?: boolean };
-    syncFrequencyHours?: number;
-    uiPreferences?: {
-      theme?: AppTheme;
-      defaultMediaType?: MediaType;
-      tvSelectionMode?: TvSelectionMode;
-      animationStyle?: AnimationStyle;
-      animationSpeed?: AnimationSpeed;
-    };
-  }) =>
-    request<{ success: boolean; settings: SettingsResponse }>('/settings', {
-      method: 'PUT',
-      body: settings,
-    }),
-
-  // Complete initial setup
-  setup: (data: { tmdbApiKey?: string }) =>
-    request<{
-      success: boolean;
-      message: string;
-      plex: { username: string; serverUrl: string };
-    }>('/settings/setup', {
-      method: 'POST',
-      body: data,
-    }),
-
-  // Test Plex connection
-  testPlex: (plexToken: string, plexServerUrl?: string) =>
-    request<PlexTestResponse>('/settings/test-plex', {
-      method: 'POST',
-      body: { plexToken, plexServerUrl },
-    }),
-
-  // Test TMDB API key
-  testTmdb: (apiKey: string) =>
-    request<TmdbTestResponse>('/settings/test-tmdb', {
-      method: 'POST',
-      body: { apiKey },
-    }),
+  getSettings: () => client.settings.getSettings(),
+  getStatus: () => client.settings.getStatus(),
+  updateSettings: client.settings.updateSettings,
+  setup: client.settings.setup,
+  testPlex: client.settings.testPlex,
+  testTmdb: client.settings.testTmdb,
 };
-
-// Tautulli API
-export interface TautulliUser {
-  id: number;
-  username: string;
-  friendlyName: string;
-}
-
-export interface TautulliTestResponse {
-  success: boolean;
-  error?: string;
-  users?: TautulliUser[];
-}
-
-export interface TautulliSyncResponse {
-  success: boolean;
-  synced: number;
-  movies: number;
-  shows: number;
-  lastSync: string;
-  error?: string;
-}
 
 export const tautulliApi = {
-  test: (url: string, apiKey: string) =>
-    request<TautulliTestResponse>('/tautulli/test', {
-      method: 'POST',
-      body: { url, apiKey },
-    }),
-  sync: () => request<TautulliSyncResponse>('/tautulli/sync', { method: 'POST' }),
+  test: client.tautulli.test,
+  sync: () => client.tautulli.sync(),
 };
-
-// Spin History API
-export interface SpinHistoryPreferences {
-  enabled: boolean;
-  retentionLimit: number;
-  storeFilterSnapshot: boolean;
-}
-
-export interface SpinHistoryEntry {
-  _id: string;
-  userId: string;
-  plexId: string;
-  title: string;
-  mediaType: MediaTypeWithEpisode;
-  posterUrl?: string;
-  thumbPath?: string;
-  year?: number;
-  libraryIds: string[];
-  filtersSnapshot?: Filters;
-  tvSelectionMode?: TvSelectionMode;
-  poolSizeAtSpin?: number;
-  spunAt: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CreateSpinHistoryPayload {
-  plexId: string;
-  title: string;
-  mediaType: MediaTypeWithEpisode;
-  thumbPath?: string;
-  year?: number;
-  libraryIds: string[];
-  filtersSnapshot?: Filters;
-  tvSelectionMode?: TvSelectionMode;
-  poolSizeAtSpin?: number;
-}
 
 export const spinHistoryApi = {
-  list: (page = 1, limit = 20) =>
-    request<{ items: SpinHistoryEntry[]; total: number; page: number; pageSize: number }>(
-      `/spin-history?page=${page}&limit=${limit}`
-    ),
-  create: (payload: CreateSpinHistoryPayload) =>
-    request<{ entry?: SpinHistoryEntry; skipped?: boolean; reason?: string }>('/spin-history', {
-      method: 'POST',
-      body: payload,
-    }),
-  delete: (id: string) =>
-    request<{ success: boolean }>(`/spin-history/${id}`, { method: 'DELETE' }),
-  clearAll: () =>
-    request<{ deleted: number }>('/spin-history', { method: 'DELETE' }),
+  list: client.spinHistory.list,
+  create: client.spinHistory.create,
+  delete: client.spinHistory.delete,
+  clearAll: () => client.spinHistory.clearAll(),
 };
 
-export interface OverseerrTestResponse {
-  success: boolean;
-  error?: string;
-  version?: string;
-}
-
-export interface OverseerrStatusResponse {
-  configured: boolean;
-  reachable: boolean | null;
-  filterEnabled: boolean;
-  lastSyncAt: string | null;
-  lastSyncOk: boolean;
-  warning: string | null;
-}
-
 export const overseerrApi = {
-  test: (url: string, apiKey: string) =>
-    request<OverseerrTestResponse>('/overseerr/test', {
-      method: 'POST',
-      body: { url, apiKey },
-    }),
-  getStatus: () => request<OverseerrStatusResponse>('/overseerr/status'),
+  test: client.overseerr.test,
+  getStatus: () => client.overseerr.getStatus(),
 };

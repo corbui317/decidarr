@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
+import { mobileAuthRefreshRequestSchema } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { rotateRefreshToken, redactToken } from '@/lib/mobile-auth/tokens';
 import { isAuthError } from '@/lib/auth-errors';
@@ -7,12 +7,7 @@ import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('API:MobileAuthRefresh');
 
-const bodyContract = z.object({
-  refreshToken: z.string().min(1, 'refreshToken and deviceId are required'),
-  deviceId: z.string().min(1, 'refreshToken and deviceId are required'),
-});
-
-export const POST = route({ access: 'public', body: bodyContract }, async ({ body }) => {
+export const POST = route({ access: 'public', body: mobileAuthRefreshRequestSchema }, async ({ body }) => {
   try {
     const refreshToken = body.refreshToken.trim();
     const deviceId = body.deviceId.trim();

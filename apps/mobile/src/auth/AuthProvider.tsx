@@ -9,7 +9,7 @@ import React, {
 import NetInfo from '@react-native-community/netinfo';
 import * as WebBrowser from 'expo-web-browser';
 import type { SyncClientState } from '@decidarr/api-contracts';
-import { mobileAuthApi, syncApi } from '@/api/client';
+import { getValidAccessToken as getValidMobileAccessToken, mobileAuthApi } from '@/api/client';
 import {
   clearSecureSession,
   getAccessToken,
@@ -63,33 +63,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
-  const refreshTokens = useCallback(async (): Promise<string | null> => {
-    const refreshToken = await getRefreshToken();
-    const id = deviceId ?? (await getOrCreateDeviceId());
-    if (!refreshToken) return null;
-
+  const getValidAccessToken = useCallback(async (): Promise<string | null> => {
     try {
-      const result = await mobileAuthApi.refresh(refreshToken, id);
-      await storeTokens(result.accessToken, result.refreshToken);
-      return result.accessToken;
+      const token = await getValidMobileAccessToken();
+      if (!token) setState('reauth_required');
+      return token;
     } catch {
-      setState('reauth_required');
+      // The refresh call failed transiently (offline, server error), not because the
+      // server rejected the refresh token, so this is not a sign-out condition.
       return null;
     }
-  }, [deviceId]);
-
-  const getValidAccessToken = useCallback(async (): Promise<string | null> => {
-    const token = await getAccessToken();
-    if (!token) return refreshTokens();
-    return token;
-  }, [refreshTokens]);
+  }, []);
 
   const startLogin = useCallback(async () => {
     const id = deviceId ?? (await getOrCreateDeviceId());
     setDeviceId(id);
     setState('authorizing');
 
-    const start = await mobileAuthApi.start(id, 'Decidarr Mobile');
+    const start = await mobileAuthApi.start({ deviceId: id, deviceName: 'Decidarr Mobile' });
     setPendingDeviceCode(start.deviceCode);
     await WebBrowser.openBrowserAsync(start.authUrl);
   }, [deviceId]);
@@ -101,8 +92,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const id = deviceId ?? (await getOrCreateDeviceId());
     setState('authorizing');
 
-    const result = await mobileAuthApi.exchange(pendingDeviceCode, id);
-    await storeTokens(result.accessToken, result.refreshToken);
+    const result = await mobileAuthApi.exchange({ deviceCode: pendingDeviceCode, deviceId: id });
+    await storeTokens(result.accessToken, result.refreshToken, Date.now() + result.expiresIn * 1000);
     await storeUserMetadata(result.user);
     setUser(result.user);
     setPendingDeviceCode(null);
@@ -111,14 +102,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(
     async (clearCache = false) => {
-      const token = await getAccessToken();
       const refreshToken = await getRefreshToken();
-      if (token) {
-        try {
-          await mobileAuthApi.logout(token, refreshToken ?? undefined);
-        } catch {
-          // Revocation is best-effort when offline.
-        }
+      try {
+        await mobileAuthApi.logout({ refreshToken: refreshToken ?? undefined });
+      } catch {
+        // Revocation is best-effort when offline.
       }
       await clearSecureSession();
       if (clearCache) {
