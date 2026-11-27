@@ -148,25 +148,20 @@ export const authApi = {
       headers: setupSecretHeaders(),
     }),
   pollPlexLogin: async (state: string) => {
-    const response = await fetch(
-      `${API_BASE}/auth/plex/poll?state=${encodeURIComponent(state)}`,
-      { credentials: 'include' }
-    );
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new PlexLoginError(
-        data.error || 'Login failed',
-        response.status,
-        data.code as string | undefined
-      );
+    try {
+      return await transport.request<{
+        authorized: boolean;
+        success?: boolean;
+        user?: AuthUser;
+        error?: string;
+        code?: string;
+      }>('/auth/plex/poll', { query: { state } });
+    } catch (error) {
+      if (error instanceof ApiError) {
+        throw new PlexLoginError(error.message, error.status, error.code);
+      }
+      throw error;
     }
-    return data as {
-      authorized: boolean;
-      success?: boolean;
-      user?: AuthUser;
-      error?: string;
-      code?: string;
-    };
   },
   refreshSession: () => request<{ success: boolean; expiresAt: number }>('/auth/refresh', { method: 'POST' }),
   logout: () => request('/auth/logout', { method: 'DELETE' }),
