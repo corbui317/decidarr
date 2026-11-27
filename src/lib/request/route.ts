@@ -88,6 +88,23 @@ async function readJson(request: Request): Promise<unknown> {
 }
 
 /**
+ * For routes whose access level depends on runtime state (public until setup
+ * completes, then admin): declared `access: 'public'`, the handler calls this once
+ * it knows setup is complete, to apply the same Session resolution, same-origin
+ * check, and admin gate that `access: 'admin'` would have applied up front.
+ */
+export async function requireAdminSession(request: Request): Promise<Session> {
+  const session = await resolveSession(request);
+  if (session.credential === 'cookie' && UNSAFE_METHODS.has(request.method)) {
+    assertSameOrigin(request);
+  }
+  if (!session.isAdmin) {
+    throw new DomainError('FORBIDDEN');
+  }
+  return session;
+}
+
+/**
  * Declares an API route handler. The module connects to the database, applies the
  * rate limit, resolves and authorizes the Session (cookie or bearer), rejects
  * cross-origin cookie writes, and validates params, query, and body before the

@@ -1,32 +1,24 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { connectDB } from '@/lib/db';
-import { requireMobileUser } from '@/lib/mobile-auth/context';
-import { isAuthError, authErrorStatus } from '@/lib/auth';
+import { NextResponse } from 'next/server';
+import { route } from '@/lib/request/route';
+import { DomainError } from '@/lib/request/errors';
+import { User } from '@/lib/models/User';
 import { buildBootstrap, backfillSyncRevisions } from '@/lib/sync/service';
-import { createLogger } from '@/lib/logger';
 
 // Reads the session and database on every request; never prerender at build time.
 export const dynamic = 'force-dynamic';
 
-const logger = createLogger('API:SyncBootstrap');
-
-export async function GET(request: NextRequest) {
-  try {
-    await connectDB();
-    const auth = await requireMobileUser(request);
-    await backfillSyncRevisions(auth.user._id);
-
-    const bootstrap = await buildBootstrap(auth.user);
-    return NextResponse.json(bootstrap);
-  } catch (error) {
-    const msg = (error as Error)?.message;
-    if (isAuthError(error)) {
-      return NextResponse.json(
-        { error: error.message, code: error.code },
-        { status: authErrorStatus(error) }
-      );
-    }
-    logger.error('Sync bootstrap failed', { error: msg });
-    return NextResponse.json({ error: 'Failed to bootstrap sync' }, { status: 500 });
+export const GET = route({ access: 'user' }, async ({ session }) => {
+  if (session.credential !== 'bearer') {
+    throw new DomainError('UNAUTHENTICATED');
   }
-}
+
+  const user = await User.findById(session.userId);
+  if (!user) {
+    throw new DomainError('UNAUTHENTICATED');
+  }
+
+  await backfillSyncRevisions(user._id);
+
+  const bootstrap = await buildBootstrap(user);
+  return NextResponse.json(bootstrap);
+});

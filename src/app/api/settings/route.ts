@@ -1,9 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { connectDB } from '@/lib/db';
-import { requireAdmin, isAuthError, authErrorStatus, invalidateAccessibleLibraryCache } from '@/lib/auth';
+import { NextResponse } from 'next/server';
+import { z } from 'zod';
+import { route } from '@/lib/request/route';
+import { DomainError } from '@/lib/request/errors';
+import { invalidateAccessibleLibraryCache } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
 import { findCredentialsNeedingReentry } from '@/lib/migrate';
 import { assertSafeServiceUrl } from '@/lib/security/service-url';
+import { getOrCreateSettings } from '@/lib/models/Settings';
 import { APP_THEMES, ANIMATION_STYLES, ANIMATION_SPEEDS } from '@decidarr/api-contracts';
 
 // Reads the session and database on every request; never prerender at build time.
@@ -18,286 +21,224 @@ const maskValue = (value: string | undefined): string | null => {
   return value.substring(0, 4) + '****' + value.substring(value.length - 4);
 };
 
-// GET /api/settings - Get current settings (masked sensitive values)
-export async function GET() {
-  try {
-    logger.debug('Fetching settings');
-    await connectDB();
-    const { settings } = await requireAdmin();
+const putBodyContract = z.object({
+  plex: z
+    .object({
+      token: z.string().optional(),
+      serverUrl: z.string().optional(),
+    })
+    .optional(),
+  tmdb: z
+    .object({
+      apiKey: z.string().optional(),
+    })
+    .optional(),
+  syncFrequencyHours: z.number().optional(),
+  overseerr: z
+    .object({
+      url: z.string().optional(),
+      apiKey: z.string().optional(),
+      filterEnabled: z.boolean().optional(),
+    })
+    .optional(),
+  tautulli: z
+    .object({
+      url: z.string().optional(),
+      apiKey: z.string().optional(),
+      enabled: z.boolean().optional(),
+      syncIntervalMinutes: z.number().optional(),
+    })
+    .optional(),
+  uiPreferences: z
+    .object({
+      theme: z.string().optional(),
+      defaultMediaType: z.string().optional(),
+      tvSelectionMode: z.string().optional(),
+      animationStyle: z.string().optional(),
+      animationSpeed: z.string().optional(),
+    })
+    .optional(),
+});
 
-    // Get decrypted values for masking
-    const plexToken = settings.getDecryptedPlexToken();
-    const tmdbKey = settings.getDecryptedTmdbKey();
-    const tautulliKey = settings.getDecryptedTautulliKey();
-    const overseerrKey = settings.getDecryptedOverseerrKey();
+async function settingsResponseBody(settings: Awaited<ReturnType<typeof getOrCreateSettings>>) {
+  const plexToken = settings.getDecryptedPlexToken();
+  const tmdbKey = settings.getDecryptedTmdbKey();
+  const tautulliKey = settings.getDecryptedTautulliKey();
+  const overseerrKey = settings.getDecryptedOverseerrKey();
 
-    logger.debug('Settings fetched successfully');
-    return NextResponse.json({
-      setupComplete: settings.setupComplete,
-      credentialsNeedingReentry: await findCredentialsNeedingReentry(),
-      plex: {
-        serverUrl: settings.plexServerUrl || null,
-        username: settings.plexUsername || null,
-        machineId: settings.plexMachineId || null,
-        hasToken: !!plexToken,
-        tokenMasked: maskValue(plexToken || undefined),
-      },
-      tmdb: {
-        hasKey: !!tmdbKey,
-        keyMasked: maskValue(tmdbKey || undefined),
-      },
-      tautulli: {
-        url: settings.tautulliUrl || null,
-        enabled: settings.tautulliEnabled,
-        hasKey: !!tautulliKey,
-        keyMasked: maskValue(tautulliKey || undefined),
-        syncIntervalMinutes: settings.tautulliSyncIntervalMinutes,
-        lastSync: settings.tautulliLastSync || null,
-      },
-      overseerr: {
-        url: settings.overseerrUrl || null,
-        filterEnabled: settings.overseerrFilterEnabled ?? false,
-        hasKey: !!overseerrKey,
-        keyMasked: maskValue(overseerrKey || undefined),
-        lastSyncAt: settings.overseerrLastSyncAt || null,
-        lastSyncOk: settings.overseerrLastSyncOk ?? true,
-      },
-      syncFrequencyHours: settings.syncFrequencyHours,
-      uiPreferences: {
-        theme: settings.uiPreferences?.theme ?? 'dark',
-        defaultMediaType: settings.uiPreferences?.defaultMediaType ?? 'movie',
-        tvSelectionMode: settings.uiPreferences?.tvSelectionMode ?? 'show',
-        animationStyle: settings.uiPreferences?.animationStyle ?? 'slots',
-        animationSpeed: settings.uiPreferences?.animationSpeed ?? 'normal',
-      },
-    });
-  } catch (error) {
-    const errorMsg = (error as Error)?.message;
-    
-    if (isAuthError(error)) {
-      logger.warn('Auth error fetching settings', { error: errorMsg });
-      return NextResponse.json(
-        { error: error.code === 'UNAUTHORIZED' ? 'Session expired' : errorMsg },
-        { status: authErrorStatus(error) }
-      );
-    }
-    
-    logger.error('Failed to get settings', { error: errorMsg });
-    return NextResponse.json({ error: 'Failed to get settings' }, { status: 500 });
-  }
+  return {
+    setupComplete: settings.setupComplete,
+    credentialsNeedingReentry: await findCredentialsNeedingReentry(),
+    plex: {
+      serverUrl: settings.plexServerUrl || null,
+      username: settings.plexUsername || null,
+      machineId: settings.plexMachineId || null,
+      hasToken: !!plexToken,
+      tokenMasked: maskValue(plexToken || undefined),
+    },
+    tmdb: {
+      hasKey: !!tmdbKey,
+      keyMasked: maskValue(tmdbKey || undefined),
+    },
+    tautulli: {
+      url: settings.tautulliUrl || null,
+      enabled: settings.tautulliEnabled,
+      hasKey: !!tautulliKey,
+      keyMasked: maskValue(tautulliKey || undefined),
+      syncIntervalMinutes: settings.tautulliSyncIntervalMinutes,
+      lastSync: settings.tautulliLastSync || null,
+    },
+    overseerr: {
+      url: settings.overseerrUrl || null,
+      filterEnabled: settings.overseerrFilterEnabled ?? false,
+      hasKey: !!overseerrKey,
+      keyMasked: maskValue(overseerrKey || undefined),
+      lastSyncAt: settings.overseerrLastSyncAt || null,
+      lastSyncOk: settings.overseerrLastSyncOk ?? true,
+    },
+    syncFrequencyHours: settings.syncFrequencyHours,
+    uiPreferences: {
+      theme: settings.uiPreferences?.theme ?? 'dark',
+      defaultMediaType: settings.uiPreferences?.defaultMediaType ?? 'movie',
+      tvSelectionMode: settings.uiPreferences?.tvSelectionMode ?? 'show',
+      animationStyle: settings.uiPreferences?.animationStyle ?? 'slots',
+      animationSpeed: settings.uiPreferences?.animationSpeed ?? 'normal',
+    },
+  };
 }
 
-// PUT /api/settings - Update settings
-export async function PUT(request: NextRequest) {
-  try {
-    await connectDB();
-    const { settings } = await requireAdmin();
-    const body = await request.json();
-    let plexServerUrlChanged = false;
+export const GET = route({ access: 'admin' }, async () => {
+  logger.debug('Fetching settings');
+  const settings = await getOrCreateSettings();
+  logger.debug('Settings fetched successfully');
+  return NextResponse.json(await settingsResponseBody(settings));
+});
 
-    // Update Plex settings if provided
-    if (body.plex) {
-      if (body.plex.token !== undefined) {
-        if (body.plex.token && !body.plex.token.includes('****')) {
-          settings.plexToken = body.plex.token;
-        }
+export const PUT = route({ access: 'admin', body: putBodyContract }, async ({ body }) => {
+  const settings = await getOrCreateSettings();
+  let plexServerUrlChanged = false;
+
+  if (body.plex) {
+    if (body.plex.token !== undefined) {
+      if (body.plex.token && !body.plex.token.includes('****')) {
+        settings.plexToken = body.plex.token;
       }
-      if (body.plex.serverUrl !== undefined && body.plex.serverUrl) {
-        const urlCheck = await assertSafeServiceUrl(body.plex.serverUrl);
+    }
+    if (body.plex.serverUrl !== undefined && body.plex.serverUrl) {
+      const urlCheck = await assertSafeServiceUrl(body.plex.serverUrl);
+      if (!urlCheck.valid) {
+        throw new DomainError('VALIDATION_FAILED', urlCheck.error || 'Invalid or disallowed service URL');
+      }
+      const nextServerUrl = urlCheck.normalized || body.plex.serverUrl;
+      plexServerUrlChanged = nextServerUrl !== settings.plexServerUrl;
+      settings.plexServerUrl = nextServerUrl;
+    }
+  }
+
+  if (body.tmdb) {
+    if (body.tmdb.apiKey !== undefined) {
+      if (body.tmdb.apiKey && !body.tmdb.apiKey.includes('****')) {
+        settings.tmdbApiKey = body.tmdb.apiKey;
+      } else if (body.tmdb.apiKey === '') {
+        settings.tmdbApiKey = undefined;
+      }
+    }
+  }
+
+  if (body.syncFrequencyHours !== undefined) {
+    settings.syncFrequencyHours = Math.max(1, Math.min(168, body.syncFrequencyHours));
+  }
+
+  if (body.overseerr) {
+    if (body.overseerr.url !== undefined) {
+      if (body.overseerr.url) {
+        const urlCheck = await assertSafeServiceUrl(body.overseerr.url);
         if (!urlCheck.valid) {
-          return NextResponse.json(
-            { error: urlCheck.error || 'Invalid or disallowed service URL' },
-            { status: 400 }
-          );
+          throw new DomainError('VALIDATION_FAILED', urlCheck.error || 'Invalid or disallowed service URL');
         }
-        const nextServerUrl = urlCheck.normalized || body.plex.serverUrl;
-        plexServerUrlChanged = nextServerUrl !== settings.plexServerUrl;
-        settings.plexServerUrl = nextServerUrl;
+        settings.overseerrUrl = urlCheck.normalized;
+      } else {
+        settings.overseerrUrl = undefined;
       }
     }
-
-    // Update TMDB settings if provided
-    if (body.tmdb) {
-      if (body.tmdb.apiKey !== undefined) {
-        // Only update if a new key is provided (not the masked value)
-        if (body.tmdb.apiKey && !body.tmdb.apiKey.includes('****')) {
-          settings.tmdbApiKey = body.tmdb.apiKey;
-        } else if (body.tmdb.apiKey === '') {
-          settings.tmdbApiKey = undefined;
-        }
+    if (body.overseerr.apiKey !== undefined) {
+      if (body.overseerr.apiKey && !body.overseerr.apiKey.includes('****')) {
+        settings.overseerrApiKey = body.overseerr.apiKey;
+      } else if (body.overseerr.apiKey === '') {
+        settings.overseerrApiKey = undefined;
       }
     }
-
-    // Update sync frequency if provided
-    if (body.syncFrequencyHours !== undefined) {
-      settings.syncFrequencyHours = Math.max(1, Math.min(168, body.syncFrequencyHours));
+    if (body.overseerr.filterEnabled !== undefined) {
+      settings.overseerrFilterEnabled = !!body.overseerr.filterEnabled;
     }
-
-    if (body.overseerr) {
-      if (body.overseerr.url !== undefined) {
-        if (body.overseerr.url) {
-          const urlCheck = await assertSafeServiceUrl(body.overseerr.url);
-          if (!urlCheck.valid) {
-            return NextResponse.json(
-              { error: urlCheck.error || 'Invalid or disallowed service URL' },
-              { status: 400 }
-            );
-          }
-          settings.overseerrUrl = urlCheck.normalized;
-        } else {
-          settings.overseerrUrl = undefined;
-        }
-      }
-      if (body.overseerr.apiKey !== undefined) {
-        if (body.overseerr.apiKey && !body.overseerr.apiKey.includes('****')) {
-          settings.overseerrApiKey = body.overseerr.apiKey;
-        } else if (body.overseerr.apiKey === '') {
-          settings.overseerrApiKey = undefined;
-        }
-      }
-      if (body.overseerr.filterEnabled !== undefined) {
-        settings.overseerrFilterEnabled = !!body.overseerr.filterEnabled;
-      }
-    }
-
-    // Update Tautulli settings if provided
-    if (body.tautulli) {
-      if (body.tautulli.url !== undefined) {
-        if (body.tautulli.url) {
-          const urlCheck = await assertSafeServiceUrl(body.tautulli.url);
-          if (!urlCheck.valid) {
-            return NextResponse.json(
-              { error: urlCheck.error || 'Invalid or disallowed service URL' },
-              { status: 400 }
-            );
-          }
-          settings.tautulliUrl = urlCheck.normalized;
-        } else {
-          settings.tautulliUrl = undefined;
-        }
-      }
-      if (body.tautulli.apiKey !== undefined) {
-        if (body.tautulli.apiKey && !body.tautulli.apiKey.includes('****')) {
-          settings.tautulliApiKey = body.tautulli.apiKey;
-        } else if (body.tautulli.apiKey === '') {
-          settings.tautulliApiKey = undefined;
-        }
-      }
-      if (body.tautulli.enabled !== undefined) {
-        settings.tautulliEnabled = !!body.tautulli.enabled;
-      }
-      if (body.tautulli.syncIntervalMinutes !== undefined) {
-        settings.tautulliSyncIntervalMinutes = Math.max(5, Math.min(1440, body.tautulli.syncIntervalMinutes));
-      }
-
-      if (settings.tautulliEnabled) {
-        const tautulliKey = settings.getDecryptedTautulliKey();
-        if (!settings.tautulliUrl) {
-          return NextResponse.json(
-            { error: 'Tautulli URL is required when sync is enabled' },
-            { status: 400 }
-          );
-        }
-        if (!tautulliKey) {
-          return NextResponse.json(
-            { error: 'Tautulli API key is required when sync is enabled' },
-            { status: 400 }
-          );
-        }
-      }
-    }
-
-    // Update UI preferences if provided
-    if (body.uiPreferences) {
-      if (body.uiPreferences.theme && APP_THEMES.includes(body.uiPreferences.theme)) {
-        settings.uiPreferences.theme = body.uiPreferences.theme;
-      }
-      if (body.uiPreferences.defaultMediaType) {
-        settings.uiPreferences.defaultMediaType = body.uiPreferences.defaultMediaType;
-      }
-      if (body.uiPreferences.tvSelectionMode) {
-        settings.uiPreferences.tvSelectionMode = body.uiPreferences.tvSelectionMode;
-      }
-      if (
-        body.uiPreferences.animationStyle &&
-        ANIMATION_STYLES.includes(body.uiPreferences.animationStyle)
-      ) {
-        settings.uiPreferences.animationStyle = body.uiPreferences.animationStyle;
-      }
-      if (
-        body.uiPreferences.animationSpeed &&
-        ANIMATION_SPEEDS.includes(body.uiPreferences.animationSpeed)
-      ) {
-        settings.uiPreferences.animationSpeed = body.uiPreferences.animationSpeed;
-      }
-    }
-
-    await settings.save();
-
-    if (plexServerUrlChanged) {
-      invalidateAccessibleLibraryCache();
-    }
-
-    // Get updated decrypted values for response
-    const plexToken = settings.getDecryptedPlexToken();
-    const tmdbKey = settings.getDecryptedTmdbKey();
-    const tautulliKey = settings.getDecryptedTautulliKey();
-    const overseerrKey = settings.getDecryptedOverseerrKey();
-
-    return NextResponse.json({
-      success: true,
-      settings: {
-        setupComplete: settings.setupComplete,
-        credentialsNeedingReentry: await findCredentialsNeedingReentry(),
-        plex: {
-          serverUrl: settings.plexServerUrl || null,
-          username: settings.plexUsername || null,
-          machineId: settings.plexMachineId || null,
-          hasToken: !!plexToken,
-          tokenMasked: maskValue(plexToken || undefined),
-        },
-        tmdb: {
-          hasKey: !!tmdbKey,
-          keyMasked: maskValue(tmdbKey || undefined),
-        },
-        tautulli: {
-          url: settings.tautulliUrl || null,
-          enabled: settings.tautulliEnabled,
-          hasKey: !!tautulliKey,
-          keyMasked: maskValue(tautulliKey || undefined),
-          syncIntervalMinutes: settings.tautulliSyncIntervalMinutes,
-          lastSync: settings.tautulliLastSync || null,
-        },
-        overseerr: {
-          url: settings.overseerrUrl || null,
-          filterEnabled: settings.overseerrFilterEnabled ?? false,
-          hasKey: !!overseerrKey,
-          keyMasked: maskValue(overseerrKey || undefined),
-          lastSyncAt: settings.overseerrLastSyncAt || null,
-          lastSyncOk: settings.overseerrLastSyncOk ?? true,
-        },
-        syncFrequencyHours: settings.syncFrequencyHours,
-        uiPreferences: {
-          theme: settings.uiPreferences?.theme ?? 'dark',
-          defaultMediaType: settings.uiPreferences?.defaultMediaType ?? 'movie',
-          tvSelectionMode: settings.uiPreferences?.tvSelectionMode ?? 'show',
-          animationStyle: settings.uiPreferences?.animationStyle ?? 'slots',
-          animationSpeed: settings.uiPreferences?.animationSpeed ?? 'normal',
-        },
-      },
-    });
-  } catch (error) {
-    const errorMsg = (error as Error)?.message;
-    
-    if (isAuthError(error)) {
-      logger.warn('Auth error updating settings', { error: errorMsg });
-      return NextResponse.json(
-        { error: error.code === 'UNAUTHORIZED' ? 'Session expired' : errorMsg },
-        { status: 401 }
-      );
-    }
-    
-    logger.error('Failed to update settings', { error: errorMsg });
-    return NextResponse.json({ error: 'Failed to update settings' }, { status: 500 });
   }
-}
+
+  if (body.tautulli) {
+    if (body.tautulli.url !== undefined) {
+      if (body.tautulli.url) {
+        const urlCheck = await assertSafeServiceUrl(body.tautulli.url);
+        if (!urlCheck.valid) {
+          throw new DomainError('VALIDATION_FAILED', urlCheck.error || 'Invalid or disallowed service URL');
+        }
+        settings.tautulliUrl = urlCheck.normalized;
+      } else {
+        settings.tautulliUrl = undefined;
+      }
+    }
+    if (body.tautulli.apiKey !== undefined) {
+      if (body.tautulli.apiKey && !body.tautulli.apiKey.includes('****')) {
+        settings.tautulliApiKey = body.tautulli.apiKey;
+      } else if (body.tautulli.apiKey === '') {
+        settings.tautulliApiKey = undefined;
+      }
+    }
+    if (body.tautulli.enabled !== undefined) {
+      settings.tautulliEnabled = !!body.tautulli.enabled;
+    }
+    if (body.tautulli.syncIntervalMinutes !== undefined) {
+      settings.tautulliSyncIntervalMinutes = Math.max(5, Math.min(1440, body.tautulli.syncIntervalMinutes));
+    }
+
+    if (settings.tautulliEnabled) {
+      const tautulliKey = settings.getDecryptedTautulliKey();
+      if (!settings.tautulliUrl) {
+        throw new DomainError('VALIDATION_FAILED', 'Tautulli URL is required when sync is enabled');
+      }
+      if (!tautulliKey) {
+        throw new DomainError('VALIDATION_FAILED', 'Tautulli API key is required when sync is enabled');
+      }
+    }
+  }
+
+  if (body.uiPreferences) {
+    if (body.uiPreferences.theme && APP_THEMES.includes(body.uiPreferences.theme as (typeof APP_THEMES)[number])) {
+      settings.uiPreferences.theme = body.uiPreferences.theme as (typeof APP_THEMES)[number];
+    }
+    if (body.uiPreferences.defaultMediaType) {
+      settings.uiPreferences.defaultMediaType = body.uiPreferences.defaultMediaType as typeof settings.uiPreferences.defaultMediaType;
+    }
+    if (body.uiPreferences.tvSelectionMode) {
+      settings.uiPreferences.tvSelectionMode = body.uiPreferences.tvSelectionMode as typeof settings.uiPreferences.tvSelectionMode;
+    }
+    if (
+      body.uiPreferences.animationStyle &&
+      ANIMATION_STYLES.includes(body.uiPreferences.animationStyle as (typeof ANIMATION_STYLES)[number])
+    ) {
+      settings.uiPreferences.animationStyle = body.uiPreferences.animationStyle as (typeof ANIMATION_STYLES)[number];
+    }
+    if (
+      body.uiPreferences.animationSpeed &&
+      ANIMATION_SPEEDS.includes(body.uiPreferences.animationSpeed as (typeof ANIMATION_SPEEDS)[number])
+    ) {
+      settings.uiPreferences.animationSpeed = body.uiPreferences.animationSpeed as (typeof ANIMATION_SPEEDS)[number];
+    }
+  }
+
+  await settings.save();
+
+  if (plexServerUrlChanged) {
+    invalidateAccessibleLibraryCache();
+  }
+
+  return NextResponse.json({ success: true, settings: await settingsResponseBody(settings) });
+});
