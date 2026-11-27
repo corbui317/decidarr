@@ -36,6 +36,7 @@ v3:<iv>:<tag>:<ciphertext>
 | `mobileAuthCode` | the code's `_id` as hex | `plexAuthToken` |
 
 `plexServerToken` is the user's access token for this install's Plex server; every Plex server call uses it.
+The unencrypted `plexServerMachineId` beside it names the server it was issued for, and the token is used only while `settings.plexMachineId` is that server.
 `plexAccountToken` is the Admin's plex.tv account token, kept because listing Friends needs it; a Friend never has one ([ADR 0002](adr/0002-per-server-plex-tokens.md)).
 `plexAuthToken` holds the plex.tv account token of a mobile sign-in only until the sign-in completes or the code expires.
 

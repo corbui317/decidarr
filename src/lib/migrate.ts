@@ -319,7 +319,10 @@ async function exchangeAccountTokens(settings: ISettings): Promise<void> {
     }
 
     const set: Record<string, string> = {};
-    if (serverToken) set.plexServerToken = encryptSecret(serverToken, userTokenLocation(user, 'plexServerToken'));
+    if (serverToken) {
+      set.plexServerToken = encryptSecret(serverToken, userTokenLocation(user, 'plexServerToken'));
+      set.plexServerMachineId = settings.plexMachineId;
+    }
     if (user.isAdmin) set.plexAccountToken = encryptSecret(accountToken, userTokenLocation(user, 'plexAccountToken'));
     const result = await User.updateOne(
       { _id: user._id, plexToken: stored },

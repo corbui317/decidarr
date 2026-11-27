@@ -79,7 +79,16 @@ export default function PlexIntegration({
         </div>
       )}
 
-      {plexValidation?.valid && (
+      {plexValidation?.differentServer && (
+        <div role="status" className="bg-yellow-500/10 border border-yellow-500/50 rounded-lg p-3">
+          <p className="text-yellow-400 text-sm">
+            This URL reaches a different Plex server. Saving it moves Decidarr there, and everyone else
+            will need to sign in again.
+          </p>
+        </div>
+      )}
+
+      {plexValidation?.valid && !plexValidation.differentServer && (
         <div role="status" className="bg-green-500/10 border border-green-500/50 rounded-lg p-3">
           <p className="text-green-400 text-sm">
             Connected: {plexValidation.libraryCount ?? 0} {plexValidation.libraryCount === 1 ? 'library' : 'libraries'} found

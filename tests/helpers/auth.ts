@@ -58,7 +58,7 @@ export async function seedTestUser(overrides?: {
   };
 }): Promise<IUser> {
   await connectDB();
-  await getOrCreateSettings();
+  const settings = await getOrCreateSettings();
   const plexUserId = overrides?.plexUserId ?? 'plex-user-test-1';
 
   let user = await User.findOne({ plexUserId });
@@ -71,7 +71,12 @@ export async function seedTestUser(overrides?: {
       sessionVersion: 0,
       preferences: {},
     });
-    user.setPlexTokens({ serverToken: TEST_SERVER_TOKEN, accountToken: user.isAdmin ? TEST_ACCOUNT_TOKEN : null });
+    user.setPlexTokens({
+      serverToken: TEST_SERVER_TOKEN,
+      accountToken: user.isAdmin ? TEST_ACCOUNT_TOKEN : null,
+      // Seeded before settings name a server, the token is for the one seedConfiguredSettings() names.
+      machineId: settings.plexMachineId ?? 'machine-1',
+    });
     await user.save();
   }
 

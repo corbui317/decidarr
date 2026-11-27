@@ -118,6 +118,8 @@ export const plexTestResponseSchema = z.object({
   valid: z.boolean(),
   error: z.string().optional(),
   libraryCount: z.number().optional(),
+  /** The URL reaches a Plex server other than this install's; saving it moves the install there. */
+  differentServer: z.boolean().optional(),
 });
 export type PlexTestResponse = z.infer<typeof plexTestResponseSchema>;
 

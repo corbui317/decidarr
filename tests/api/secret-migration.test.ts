@@ -148,7 +148,7 @@ describe('Stored secrets', () => {
       expect(admin!.plexToken).toBeUndefined();
       expect(isCurrentCiphertext(admin!.plexAccountToken!)).toBe(true);
       expect(admin!.getAccountToken()).toBe(LEGACY_PLAINTEXT.plexToken);
-      expect(admin!.getServerToken()).toBe(defaultServerToken(LEGACY_MACHINE_ID));
+      expect(admin!.getServerToken(LEGACY_MACHINE_ID)).toBe(defaultServerToken(LEGACY_MACHINE_ID));
       expect(await findCredentialsNeedingReentry()).toEqual([]);
     });
 

@@ -91,7 +91,8 @@ async function rawSettings(): Promise<Record<string, unknown>> {
 
 /** Everything about the user except their Plex tokens and bookkeeping timestamps. */
 async function userData(plexUserId: string): Promise<unknown> {
-  const { plexToken: _a, plexServerToken: _b, plexAccountToken: _c, updatedAt: _d, ...rest } = await rawUser(plexUserId);
+  const { plexToken: _a, plexServerToken: _b, plexServerMachineId: _e, plexAccountToken: _c, updatedAt: _d, ...rest } =
+    await rawUser(plexUserId);
   const watched = await WatchedItem.find({ userId: rest._id }).lean();
   return { ...rest, watched: watched.map(({ plexId }) => plexId) };
 }
@@ -139,6 +140,7 @@ describe('Upgrading stored Plex account tokens to per-server tokens', () => {
     expect(friendRaw.plexToken).toBeUndefined();
     expect(friendRaw.plexAccountToken).toBeUndefined();
     expect(decryptUserField(friendRaw, 'plexServerToken')).toBe(FRIEND_SERVER_TOKEN);
+    expect([admin.plexServerMachineId, friendRaw.plexServerMachineId]).toEqual(['machine-1', 'machine-1']);
     expect({ admin: await userData('admin-1'), friend: await userData('friend-1') }).toEqual(before);
     expect(await rawSettings()).not.toHaveProperty('plexToken');
     expect(sent.filter(({ url }) => url.origin === PLEX_TV).map(({ url }) => url.pathname)).toEqual([

@@ -161,10 +161,11 @@ export async function authContextForSession(payload: SessionPayload): Promise<Au
     throw new Error('Plex server URL not configured');
   }
 
-  // No server token yet (an upgrade whose exchange failed) or an unreadable one: only a new sign-in helps.
+  // No server token for the configured server (an upgrade whose exchange failed, a server move) or an
+  // unreadable one: only a new sign-in helps.
   let plexToken: string | null;
   try {
-    plexToken = user.getServerToken();
+    plexToken = user.getServerToken(settings.plexMachineId);
   } catch {
     plexToken = null;
   }

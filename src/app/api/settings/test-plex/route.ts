@@ -2,19 +2,32 @@ import { NextResponse } from 'next/server';
 import { settingsTestPlexBodySchema, type PlexTestResponse } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { DomainError } from '@/lib/request/errors';
-import { PlexService } from '@/lib/services/plex';
+import { getOrCreateSettings } from '@/lib/models/Settings';
+import { PlexService, readPlexServerIdentity } from '@/lib/services/plex';
 import { createLogger } from '@/lib/logger';
 import { assertSafeServiceUrl } from '@/lib/security/service-url';
 
 const logger = createLogger('API:TestPlex');
 
-/** Checks that a Plex server URL answers the Admin with their own access token for this install's server. */
+/**
+ * Checks a Plex server URL. When it reaches this install's server, the Admin's own access token
+ * for it lists the libraries; when it reaches a different server, that is reported and no token
+ * is sent there (saving it moves the install, ADR 0002).
+ */
 export const POST = route({ access: 'admin', body: settingsTestPlexBodySchema }, async ({ session, body }) => {
   const urlCheck = await assertSafeServiceUrl(body.plexServerUrl);
   if (!urlCheck.valid) {
     throw new DomainError('VALIDATION_FAILED', urlCheck.error || 'Invalid or disallowed service URL');
   }
   const serverUrl = urlCheck.normalized || body.plexServerUrl;
+
+  const machineId = await readPlexServerIdentity(serverUrl);
+  if (!machineId) {
+    return NextResponse.json<PlexTestResponse>({ valid: false, error: 'No Plex server answered at that URL' });
+  }
+  if (machineId !== (await getOrCreateSettings()).plexMachineId) {
+    return NextResponse.json<PlexTestResponse>({ valid: true, differentServer: true });
+  }
 
   try {
     const sections = await new PlexService(session.plex.token, serverUrl).getLibrarySections();

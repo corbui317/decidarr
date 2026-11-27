@@ -233,7 +233,7 @@ export async function completePlexLogin(
     user.tokenValidatedAt = new Date();
   }
 
-  user.setPlexTokens({ serverToken, accountToken: isAdmin ? authToken : null });
+  user.setPlexTokens({ serverToken, accountToken: isAdmin ? authToken : null, machineId: installServer.clientIdentifier });
   await user.save();
 
   if (!settings.setupComplete && isAdmin && candidateServer) {

@@ -37,6 +37,7 @@ describe('Auth and setup API routes', () => {
         [`${PLEX_TV}/api/v2/user`]: () => Response.json({ id: 1, username: 'testuser', email: 'test@example.com' }),
         [`${PLEX_TV}/api/v2/resources`]: () =>
           plexResources([{ name: 'Home', clientIdentifier: 'machine-1', owned: true, uri: TEST_PLEX_SERVER }]),
+        [`${TEST_PLEX_SERVER}/identity`]: () => Response.json({ MediaContainer: { machineIdentifier: 'machine-1' } }),
         [`${TEST_PLEX_SERVER}/library/sections`]: () => plexSections([{ id: '1', title: 'Movies', type: 'movie' }]),
       })
     ));
@@ -193,6 +194,7 @@ describe('Auth and setup API routes', () => {
       const body = await res.json();
       expect(body).toEqual({ valid: true, libraryCount: 1 });
       expect(sent.map((r) => [r.url.toString(), r.headers.get('X-Plex-Token')])).toEqual([
+        [`${TEST_PLEX_SERVER}/identity`, null],
         [`${TEST_PLEX_SERVER}/library/sections`, TEST_SERVER_TOKEN],
       ]);
     });
@@ -200,7 +202,11 @@ describe('Auth and setup API routes', () => {
     it('reports a server that refuses the token as invalid', async () => {
       await seedConfiguredSettings();
       await authenticateTestSession();
-      fakeIntegrations(() => new Response('Unauthorized', { status: 401 }));
+      fakeIntegrations(({ url }) =>
+        url.pathname === '/identity'
+          ? Response.json({ MediaContainer: { machineIdentifier: 'machine-1' } })
+          : new Response('Unauthorized', { status: 401 })
+      );
       const req = createJsonRequest('http://localhost/api/settings/test-plex', 'POST', {
         plexServerUrl: TEST_PLEX_SERVER,
       });

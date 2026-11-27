@@ -6,6 +6,7 @@ import { createLogger } from '@/lib/logger';
 import { findCredentialsNeedingReentry } from '@/lib/migrate';
 import { assertSafeServiceUrl } from '@/lib/security/service-url';
 import { getOrCreateSettings } from '@/lib/models/Settings';
+import { setPlexServer } from '@/lib/plex-server-move';
 import {
   APP_THEMES,
   ANIMATION_STYLES,
@@ -76,9 +77,10 @@ export const GET = route({ access: 'admin' }, async () => {
   return NextResponse.json(await settingsResponseBody(settings));
 });
 
-export const PUT = route({ access: 'admin', body: settingsUpdateBodySchema }, async ({ body }) => {
+export const PUT = route({ access: 'admin', body: settingsUpdateBodySchema }, async ({ body, session }) => {
   const settings = await getOrCreateSettings();
-  let plexServerUrlChanged = false;
+  // Moving servers writes users' tokens, so it runs after every other check in this request.
+  let nextPlexServerUrl: string | null = null;
 
   if (body.plex) {
     if (body.plex.serverUrl !== undefined && body.plex.serverUrl) {
@@ -87,8 +89,7 @@ export const PUT = route({ access: 'admin', body: settingsUpdateBodySchema }, as
         throw new DomainError('VALIDATION_FAILED', urlCheck.error || 'Invalid or disallowed service URL');
       }
       const nextServerUrl = urlCheck.normalized || body.plex.serverUrl;
-      plexServerUrlChanged = nextServerUrl !== settings.plexServerUrl;
-      settings.plexServerUrl = nextServerUrl;
+      if (nextServerUrl !== settings.plexServerUrl) nextPlexServerUrl = nextServerUrl;
     }
   }
 
@@ -191,9 +192,12 @@ export const PUT = route({ access: 'admin', body: settingsUpdateBodySchema }, as
     }
   }
 
+  if (nextPlexServerUrl) {
+    await setPlexServer(settings, nextPlexServerUrl, session.userId);
+  }
   await settings.save();
 
-  if (plexServerUrlChanged) {
+  if (nextPlexServerUrl) {
     invalidateAccessibleLibraryCache();
   }
 

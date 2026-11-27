@@ -79,7 +79,7 @@ describe('Upgrading a legacy install to DECIDARR_SECRET', () => {
     const admin = await User.findById(settings.adminUserId!);
     expect(admin!.plexToken).toBeUndefined();
     expect(admin?.getAccountToken()).toBe(LEGACY_PLAINTEXT.plexToken);
-    expect(admin?.getServerToken()).toBe(defaultServerToken(LEGACY_MACHINE_ID));
+    expect(admin?.getServerToken(LEGACY_MACHINE_ID)).toBe(defaultServerToken(LEGACY_MACHINE_ID));
 
     // The legacy admin signs in through Plex OAuth and keeps admin rights.
     const { sent } = fakeLegacyPlex();
@@ -162,7 +162,7 @@ describe('Restarting with a different DECIDARR_SECRET', () => {
     await connectDB();
     const settings = await getOrCreateSettings();
     const admin = new User({ plexUserId: LEGACY_ADMIN_PLEX_USER_ID, plexUsername: 'admin', isAdmin: true, isApproved: true });
-    admin.setPlexTokens({ serverToken: 'admin-server-token', accountToken: 'admin-plex-token' });
+    admin.setPlexTokens({ serverToken: 'admin-server-token', accountToken: 'admin-plex-token', machineId: 'machine-a' });
     await admin.save();
     settings.plexServerUrl = 'http://192.168.1.10:32400';
     settings.plexMachineId = 'machine-a';
@@ -289,12 +289,13 @@ describe('Restarting a legacy install with a changed MONGODB_URI', () => {
     expect(settings.getDecryptedTmdbKey()).toBe(LEGACY_PLAINTEXT.tmdbApiKey);
     const admin = await User.findOne({ plexUserId: LEGACY_ADMIN_PLEX_USER_ID });
     expect(admin?.getAccountToken()).toBe(LEGACY_PLAINTEXT.plexToken);
-    expect(admin?.getServerToken()).toBe(defaultServerToken(LEGACY_MACHINE_ID));
+    expect(admin?.getServerToken(LEGACY_MACHINE_ID)).toBe(defaultServerToken(LEGACY_MACHINE_ID));
   });
 });
 
 async function readServerToken(plexUserId: string): Promise<string | null> {
-  return (await User.findOne({ plexUserId }))!.getServerToken();
+  const { plexMachineId } = await getOrCreateSettings();
+  return (await User.findOne({ plexUserId }))!.getServerToken(plexMachineId);
 }
 
 /** Raw stored ciphertext, read past the models so nothing decrypts or re-saves it. */

@@ -45,6 +45,8 @@ export interface IUser extends Document {
   plexToken?: string;
   /** This user's access token for the configured Plex server; every Plex server call uses it. */
   plexServerToken?: string;
+  /** The machine id of the Plex server plexServerToken belongs to; the token is used only while that server is configured. */
+  plexServerMachineId?: string;
   /** The Admin's plex.tv account token, kept because listing Friends needs it. Never set for a Friend. */
   plexAccountToken?: string;
   plexUserId: string;
@@ -61,9 +63,12 @@ export interface IUser extends Document {
   createdAt: Date;
   updatedAt: Date;
   /** Stores the tokens a sign-in yields; a Friend's account token is never stored. */
-  setPlexTokens(tokens: { serverToken: string; accountToken: string | null }): void;
-  /** Null when none is stored; throws SecretUnreadableError when it cannot be decrypted. */
-  getServerToken(): string | null;
+  setPlexTokens(tokens: { serverToken: string; accountToken: string | null; machineId: string }): void;
+  /**
+   * The token for the server with `machineId`; null when none is stored for that server, so a token
+   * for another server is never sent to this one. Throws SecretUnreadableError when it cannot be decrypted.
+   */
+  getServerToken(machineId: string | undefined): string | null;
   /** Null when none is stored; throws SecretUnreadableError when it cannot be decrypted. */
   getAccountToken(): string | null;
 }
@@ -72,6 +77,7 @@ const userSchema = new mongoose.Schema<IUser>(
   {
     plexToken: { type: String },
     plexServerToken: { type: String },
+    plexServerMachineId: { type: String },
     plexAccountToken: { type: String },
     plexUserId: { type: String, required: true, unique: true },
     plexUsername: { type: String },
@@ -141,16 +147,18 @@ export function userTokenLocation(user: Pick<IUser, '_id'>, field: UserTokenFiel
 
 userSchema.methods.setPlexTokens = function (
   this: IUser,
-  { serverToken, accountToken }: { serverToken: string; accountToken: string | null }
+  { serverToken, accountToken, machineId }: { serverToken: string; accountToken: string | null; machineId: string }
 ): void {
   this.plexServerToken = encryptSecret(serverToken, userTokenLocation(this, 'plexServerToken'));
+  this.plexServerMachineId = machineId;
   this.plexAccountToken = accountToken
     ? encryptSecret(accountToken, userTokenLocation(this, 'plexAccountToken'))
     : undefined;
   this.plexToken = undefined;
 };
 
-userSchema.methods.getServerToken = function (this: IUser): string | null {
+userSchema.methods.getServerToken = function (this: IUser, machineId: string | undefined): string | null {
+  if (!machineId || this.plexServerMachineId !== machineId) return null;
   return this.plexServerToken ? decryptSecret(this.plexServerToken, userTokenLocation(this, 'plexServerToken')) : null;
 };
 

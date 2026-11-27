@@ -96,13 +96,23 @@ export function isPlexSignInRequired(err: unknown): boolean {
  * working, and surfaces as an IntegrationError with status 401 that callers map to
  * "sign in again".
  */
+/**
+ * The machine id of the Plex server at `serverUrl`, from /identity, which Plex answers without a
+ * token, so no user's token is sent to a server before it is known to be this install's. Null when
+ * nothing there answers as a Plex server.
+ */
+export function readPlexServerIdentity(serverUrl: string): Promise<string | null> {
+  return new PlexService(null, serverUrl).fetchMachineIdFromServer().catch(() => null);
+}
+
 export class PlexService {
   private serverUrl: string;
   private machineId: string | null;
-  private serverToken: string;
+  private serverToken: string | null;
   private server: Promise<IntegrationClient> | null = null;
 
-  constructor(serverToken: string, serverUrl: string, machineId: string | null = null) {
+  /** A null token reaches only what Plex answers without one, such as /identity. */
+  constructor(serverToken: string | null, serverUrl: string, machineId: string | null = null) {
     this.serverToken = serverToken;
     this.serverUrl = serverUrl;
     this.machineId = machineId;
@@ -113,7 +123,7 @@ export class PlexService {
       const client = createIntegrationClient({
         integration: 'Plex',
         baseUrl: this.serverUrl,
-        auth: { header: 'X-Plex-Token', value: this.serverToken },
+        auth: this.serverToken ? { header: 'X-Plex-Token', value: this.serverToken } : undefined,
         headers,
         timeoutMs: PLEX_SERVER_TIMEOUT_MS,
       });

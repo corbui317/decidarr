@@ -6,6 +6,7 @@ import {
   REFRESH_TOKEN_TTL_SECONDS,
 } from '@decidarr/api-contracts';
 import { IUser, User } from '@/lib/models/User';
+import { getOrCreateSettings } from '@/lib/models/Settings';
 import { deriveKey } from '@/lib/secrets';
 import { MobileRefreshToken } from '@/lib/models/MobileRefreshToken';
 import { createLogger } from '@/lib/logger';
@@ -144,7 +145,7 @@ export async function rotateRefreshToken(
   }
   let serverToken: string | null;
   try {
-    serverToken = user.getServerToken();
+    serverToken = user.getServerToken((await getOrCreateSettings()).plexMachineId);
   } catch {
     // After a DECIDARR_SECRET change the device must sign in again; the token itself is kept.
     serverToken = null;
