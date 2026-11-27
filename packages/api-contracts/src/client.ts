@@ -358,11 +358,9 @@ export function createApiClient(transport: Transport) {
         transport.request<SettingsUpdateResponse>('/settings', { method: 'PUT', body }),
       setup: (body: SettingsSetupBody) =>
         transport.request<SettingsSetupResponse>('/settings/setup', { method: 'POST', body }),
-      testPlex: (plexToken: string, plexServerUrl?: string) =>
-        transport.request<PlexTestResponse>('/settings/test-plex', {
-          method: 'POST',
-          body: { plexToken, plexServerUrl },
-        }),
+      /** Tests a Plex server URL with the Admin's own access token for this install's server. */
+      testPlex: (plexServerUrl: string) =>
+        transport.request<PlexTestResponse>('/settings/test-plex', { method: 'POST', body: { plexServerUrl } }),
       testTmdb: (apiKey: string) =>
         transport.request<TmdbTestResponse>('/settings/test-tmdb', { method: 'POST', body: { apiKey } }),
     },

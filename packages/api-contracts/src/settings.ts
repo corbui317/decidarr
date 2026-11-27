@@ -4,7 +4,6 @@ import { appThemeSchema, mediaTypeSchema, tvSelectionModeSchema, animationStyleS
 export const settingsUpdateBodySchema = z.object({
   plex: z
     .object({
-      token: z.string().optional(),
       serverUrl: z.string().optional(),
     })
     .optional(),
@@ -45,8 +44,7 @@ export const settingsSetupBodySchema = z.object({ tmdbApiKey: z.string().optiona
 export type SettingsSetupBody = z.infer<typeof settingsSetupBodySchema>;
 
 export const settingsTestPlexBodySchema = z.object({
-  plexToken: z.string().min(1, 'Plex token is required'),
-  plexServerUrl: z.string().optional(),
+  plexServerUrl: z.string().min(1, 'Plex server URL is required'),
 });
 export type SettingsTestPlexBody = z.infer<typeof settingsTestPlexBodySchema>;
 
@@ -63,8 +61,6 @@ export const settingsResponseSchema = z.object({
     serverUrl: z.string().nullable(),
     username: z.string().nullable(),
     machineId: z.string().nullable(),
-    hasToken: z.boolean(),
-    tokenMasked: z.string().nullable(),
   }),
   tmdb: z.object({
     hasKey: z.boolean(),
@@ -121,21 +117,9 @@ export type SettingsSetupResponse = z.infer<typeof settingsSetupResponseSchema>;
 export const plexTestResponseSchema = z.object({
   valid: z.boolean(),
   error: z.string().optional(),
-  user: z
-    .object({
-      username: z.string(),
-      email: z.string().optional(),
-      thumb: z.string().optional(),
-    })
-    .optional(),
-  servers: z.array(z.object({ name: z.string(), uri: z.string() })).optional(),
-  serverTest: z
-    .object({
-      valid: z.boolean(),
-      libraryCount: z.number(),
-    })
-    .nullable()
-    .optional(),
+  libraryCount: z.number().optional(),
+  /** The URL reaches a Plex server other than this install's; saving it moves the install there. */
+  differentServer: z.boolean().optional(),
 });
 export type PlexTestResponse = z.infer<typeof plexTestResponseSchema>;
 

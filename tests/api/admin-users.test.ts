@@ -8,6 +8,7 @@ import {
   createModernSessionToken,
   seedConfiguredSettings,
   seedTestUser,
+  TEST_ACCOUNT_TOKEN,
 } from '../helpers/auth';
 import { setTestCookie } from '../helpers/cookies';
 import { getOrCreateSettings } from '@/lib/models/Settings';
@@ -85,6 +86,24 @@ describe('Admin users API routes', () => {
         }),
       ])
     );
+    // Listing Friends is the one plex.tv call that needs the Admin's account token.
+    expect(sent.map(({ url, headers }) => [url.pathname, headers.get('X-Plex-Token')])).toEqual([
+      ['/api/v2/friends', TEST_ACCOUNT_TOKEN],
+    ]);
+  });
+
+  it('lists only local users when the Admin holds no readable account token', async () => {
+    const admin = await seedTestUser({ plexUserId: 'admin-user', plexUsername: 'admin', isAdmin: true });
+    await User.updateOne({ _id: admin._id }, { $unset: { plexAccountToken: 1 } });
+    await seedTestUser({ plexUserId: 'local-friend', plexUsername: 'dave', isAdmin: false });
+    await authenticateTestSession({ user: admin });
+
+    const res = await adminUsersGet(createJsonRequest('http://localhost/api/admin/users', 'GET'));
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.users.map((u: { id: string }) => u.id)).toEqual(['local-friend']);
+    expect(sent).toEqual([]);
   });
 
   it('approves users by adding them to configured visibility and user state', async () => {

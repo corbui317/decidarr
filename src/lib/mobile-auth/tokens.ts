@@ -6,6 +6,7 @@ import {
   REFRESH_TOKEN_TTL_SECONDS,
 } from '@decidarr/api-contracts';
 import { IUser, User } from '@/lib/models/User';
+import { getOrCreateSettings } from '@/lib/models/Settings';
 import { deriveKey } from '@/lib/secrets';
 import { MobileRefreshToken } from '@/lib/models/MobileRefreshToken';
 import { createLogger } from '@/lib/logger';
@@ -142,11 +143,15 @@ export async function rotateRefreshToken(
   if (!user || (!user.isApproved && !user.isAdmin)) {
     throw new SessionError('UNAUTHORIZED');
   }
+  let serverToken: string | null;
   try {
-    // After a DECIDARR_SECRET change the device must sign in again; the token itself is kept.
-    user.getDecryptedToken();
+    serverToken = user.getServerToken((await getOrCreateSettings()).plexMachineId);
   } catch {
-    throw new SessionError('UNAUTHORIZED');
+    // After a DECIDARR_SECRET change the device must sign in again; the token itself is kept.
+    serverToken = null;
+  }
+  if (!serverToken) {
+    throw new SessionError('PLEX_SIGN_IN_REQUIRED');
   }
 
   existing.revokedAt = new Date();

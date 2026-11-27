@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { libraryApi, isAuthError } from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
 import LoadingSpinner from './LoadingSpinner';
 import type { MediaType } from '@decidarr/api-contracts';
 
@@ -56,11 +57,8 @@ export default function LibrarySelector({
     loadSections();
   }, [loadSections]);
 
-  const handleReLogin = useCallback(() => {
-    // Clear any stale state and redirect to home for re-authentication
-    // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full reload clears all client state
-    window.location.href = '/';
-  }, []);
+  // Ends the session first: the sign-in screen only shows once the old session is gone.
+  const { logout } = useAuth();
 
   const filteredSections = sections.filter((s) => s.type === mediaType);
 
@@ -104,17 +102,12 @@ export default function LibrarySelector({
           <p className="text-decidarr-error mb-4">{error}</p>
           
           {isAuthErrorState ? (
-            <div className="space-y-2">
-              <p className="text-gray-400 text-sm mb-3">
-                Your session may have expired. Please log in again.
-              </p>
-              <button
-                onClick={handleReLogin}
-                className="px-4 py-2 bg-decidarr-primary text-decidarr-dark font-medium rounded-lg hover:opacity-90 transition-opacity"
-              >
-                Re-Login
-              </button>
-            </div>
+            <button
+              onClick={logout}
+              className="px-4 py-2 bg-decidarr-primary text-decidarr-dark font-medium rounded-lg hover:opacity-90 transition-opacity"
+            >
+              Sign in again
+            </button>
           ) : (
             <button
               onClick={loadSections}

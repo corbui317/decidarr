@@ -21,7 +21,7 @@ Decidarr is a movie roulette application that randomly selects movies or TV show
 ### Prerequisites
 
 - Docker and Docker Compose installed
-- A Plex Media Server with a valid token
+- A Plex Media Server, and the Plex account that owns it
 
 ### Installation
 
@@ -53,8 +53,7 @@ Decidarr is a movie roulette application that randomly selects movies or TV show
 4. Open `http://localhost:3100` in your browser
 
 5. Complete the setup wizard:
-   - Enter your Plex token
-   - Your Plex servers will be auto-discovered (or enter manually)
+   - Sign in with Plex as the owner of your Plex Media Server; the server is detected automatically
    - Optionally add a TMDB API key for enhanced data
 
 ## Configuration
@@ -64,8 +63,7 @@ All settings are managed through the **Settings** panel (gear icon in the header
 ### Plex Tab
 | Setting | Description |
 |---------|-------------|
-| **Plex Token** | Your Plex authentication token |
-| **Plex Server** | Auto-discovered or manually entered |
+| **Server URL** | Where Decidarr reaches your Plex server; detected at setup, change it if the address moves. There is no token to enter: every user reaches the server with their own Plex sign-in. |
 
 ### TMDB Tab
 | Setting | Description |
@@ -143,15 +141,6 @@ Decidarr supports powerful filtering to narrow down your selection pool:
 ## Play Now
 
 When a movie or show is selected, click the **Play** button to launch it directly in your Plex app. Decidarr uses Plex deep links (`plex://`) to open the native app, with a fallback to Plex Web if the app isn't available.
-
-## Getting Your Plex Token
-
-1. Sign in to Plex at https://app.plex.tv
-2. Open any media item and click the three dots menu
-3. Click "Get Info" then "View XML"
-4. Find `X-Plex-Token=` in the URL
-
-Or visit: https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/
 
 ## Getting a TMDB API Key (Optional)
 
@@ -239,6 +228,8 @@ Your settings and watch history are stored in MongoDB and will be preserved.
 - Session and encryption keys are derived from `DECIDARR_SECRET` with HKDF, one key per purpose
 - Plex tokens and integration keys are encrypted in the database with AES-256-GCM, each bound to its record and field ([details](docs/stored-secrets.md))
 - A credential that cannot be decrypted is kept and reported to the Admin, never wiped
+- Plex sign-in uses a user's plex.tv account token once, to fetch their access token for this install's Plex server; only that per-server token is stored and sent to the server, including by the image proxy ([ADR 0002](docs/adr/0002-per-server-plex-tokens.md)). A Friend's account token is never stored; the Admin's is kept because listing Friends needs it. Upgrading exchanges previously stored account tokens the same way, and anyone whose exchange fails is asked to sign in again with their data untouched.
+- Each install generates its own Plex client identifier, so no other app or page can pose as it in the Plex sign-in prompt
 - Session-based authentication with JWT
 - SSRF protection for every outbound request to Plex, plex.tv, Tautulli, Overseerr and TMDb:
   - each request resolves the host and checks every address when it connects, then connects only to the address it checked, so a changed DNS answer cannot redirect it;

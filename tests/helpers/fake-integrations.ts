@@ -96,16 +96,24 @@ export interface FakePlexServer {
   clientIdentifier: string;
   owned: boolean;
   uri: string;
+  /** The account's access token for this one server; defaults to `server-token-<clientIdentifier>`. */
+  accessToken?: string;
+}
+
+/** The access token plexResources() hands out for a server when the test names none. */
+export function defaultServerToken(clientIdentifier: string): string {
+  return `server-token-${clientIdentifier}`;
 }
 
 /** plex.tv's resource list: the servers an account can reach. */
 export function plexResources(servers: FakePlexServer[]): Response {
   return Response.json(
-    servers.map(({ name, clientIdentifier, owned, uri }) => ({
+    servers.map(({ name, clientIdentifier, owned, uri, accessToken }) => ({
       name: name ?? 'Fake Server',
       provides: 'server',
       clientIdentifier,
       owned,
+      accessToken: accessToken ?? defaultServerToken(clientIdentifier),
       connections: [{ uri, local: true, relay: false }],
     }))
   );

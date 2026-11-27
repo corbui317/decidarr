@@ -32,12 +32,17 @@ export function createAuthError(code: AuthErrorCode, detailedReason: string): Lo
   };
 }
 
-export type SessionErrorCode = 'APP_NOT_CONFIGURED' | 'UNAUTHORIZED' | 'FORBIDDEN';
+export type SessionErrorCode = 'APP_NOT_CONFIGURED' | 'UNAUTHORIZED' | 'FORBIDDEN' | 'PLEX_SIGN_IN_REQUIRED';
+
+/** Shown when a user's stored Plex server access token is missing, unreadable or refused. */
+export const PLEX_SIGN_IN_REQUIRED_MESSAGE =
+  'Your Plex access to this server has stopped working. Please sign in again.';
 
 const SESSION_ERRORS: Record<SessionErrorCode, { message: string; status: number }> = {
   APP_NOT_CONFIGURED: { message: 'App not configured', status: 401 },
   UNAUTHORIZED: { message: 'Unauthorized', status: 401 },
   FORBIDDEN: { message: 'Forbidden', status: 403 },
+  PLEX_SIGN_IN_REQUIRED: { message: PLEX_SIGN_IN_REQUIRED_MESSAGE, status: 401 },
 };
 
 /** Why a request has no usable session. Routes switch on `code`, never on the message. */
