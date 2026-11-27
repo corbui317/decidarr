@@ -73,6 +73,29 @@ describe('completePlexLogin', () => {
     expect(user?.isApproved).toBe(true);
   });
 
+  it("refuses a Friend when plex.tv gives no access token for this install's server", async () => {
+    await seedConfiguredSettings();
+    const settings = await getOrCreateSettings();
+    settings.approvedPlexUserIds = ['plex-user-1'];
+    await settings.save();
+    const plexTv = fakePlexTv({
+      account: ACCOUNT,
+      servers: [{ clientIdentifier: 'machine-1', owned: false, uri: TEST_PLEX_SERVER }],
+    });
+    // A resource entry without an accessToken, as plex.tv lists a server whose share was revoked.
+    fakeIntegrations(async (request) => {
+      if (request.url.pathname !== '/api/v2/resources') return plexTv(request);
+      const [server] = await (await plexTv(request)).json();
+      return Response.json([{ ...server, accessToken: undefined }]);
+    });
+
+    const result = await completePlexLogin('friend-token');
+
+    expect(result).toMatchObject({ success: false, status: 403, code: 'NO_SERVER_ACCESS' });
+    expect(await User.findOne({ plexUserId: 'plex-user-1' })).toBeNull();
+    expect(getTestCookie('decidarr_session')).toBeUndefined();
+  });
+
   it('blocks configured users who have Plex access but are not approved', async () => {
     await seedConfiguredSettings();
     fakePlexTvWith([{ name: 'Shared Server', clientIdentifier: 'machine-1', owned: false, uri: TEST_PLEX_SERVER }]);

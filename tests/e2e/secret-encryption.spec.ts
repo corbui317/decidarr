@@ -9,6 +9,7 @@ import {
   type StoredSettings,
 } from '../helpers/legacy-install-seed';
 import { decryptSecret, isCurrentCiphertext, legacyMasterKeyFor } from '@/lib/secrets';
+import { E2E_MACHINE_ID, E2E_SERVER_TOKEN } from './fake-plex';
 
 // Lets this process derive the keys the E2E server uses, to check what it stored.
 process.env.DECIDARR_SECRET = E2E_DECIDARR_SECRET;
@@ -89,7 +90,7 @@ test.describe('DECIDARR_SECRET encryption', () => {
     let copied = '';
     await withE2eDb(async (db) => {
       const admin = await db.collection('users').findOne({ plexUserId: LEGACY_ADMIN_PLEX_USER_ID });
-      copied = admin!.plexToken;
+      copied = admin!.plexServerToken;
       await db
         .collection<StoredSettings>('settings')
         .updateOne({ _id: 'app-settings' }, { $set: { tautulliApiKey: copied } });
@@ -113,20 +114,22 @@ test.describe('DECIDARR_SECRET encryption', () => {
     // An install from before DECIDARR_SECRET (CryptoJS, master key from MONGODB_URI)
     // is restarted with DECIDARR_SECRET set: write that legacy data, then boot it
     // the way the restart would, which runs the migration.
-    // Its Plex server is the fake one on loopback, so the dashboard can list libraries.
+    // Its Plex server is the fake one on loopback, so the dashboard can list libraries
+    // and the upgrade can exchange the stored account token for that server's token.
     await withE2eDb(async (db) => {
       await seedLegacyInstall(db, legacyMasterKeyFor(E2E_MONGO_URI));
       await db
         .collection<StoredSettings>('settings')
-        .updateOne({ _id: 'app-settings' }, { $set: { plexServerUrl: E2E_PLEX_SERVER_URL } });
+        .updateOne({ _id: 'app-settings' }, { $set: { plexServerUrl: E2E_PLEX_SERVER_URL, plexMachineId: E2E_MACHINE_ID } });
+      await db.collection('librarycaches').updateMany({}, { $set: { plexMachineId: E2E_MACHINE_ID } });
     });
     const restart = await request.post('/api/test/restart', {
       headers: { 'X-E2E-Reset-Secret': E2E_RESET_SECRET },
     });
     expect(restart.ok(), await restart.text()).toBeTruthy();
 
-    // Assert the migration on disk before signing in: login re-encrypts the
-    // admin's Plex token with the fresh OAuth token.
+    // Assert the migration on disk before signing in: the stored account token was
+    // exchanged for the Admin's server token, and the settings-level token is gone.
     await withE2eDb(async (db) => {
       const settings = await db.collection<StoredSettings>('settings').findOne({ _id: 'app-settings' });
       expect(isCurrentCiphertext(settings!.tmdbApiKey!)).toBe(true);
@@ -134,11 +137,13 @@ test.describe('DECIDARR_SECRET encryption', () => {
         decryptSecret(settings!.tmdbApiKey!, { recordType: 'settings', recordId: 'app-settings', field: 'tmdbApiKey' })
       ).toBe(LEGACY_PLAINTEXT.tmdbApiKey);
 
+      expect(settings).not.toHaveProperty('plexToken');
+
       const admin = await db.collection('users').findOne({ plexUserId: LEGACY_ADMIN_PLEX_USER_ID });
-      expect(isCurrentCiphertext(admin!.plexToken)).toBe(true);
-      expect(
-        decryptSecret(admin!.plexToken, { recordType: 'user', recordId: String(admin!._id), field: 'plexToken' })
-      ).toBe(LEGACY_PLAINTEXT.plexToken);
+      const location = (field: string) => ({ recordType: 'user' as const, recordId: String(admin!._id), field });
+      expect(admin).not.toHaveProperty('plexToken');
+      expect(decryptSecret(admin!.plexAccountToken, location('plexAccountToken'))).toBe(LEGACY_PLAINTEXT.plexToken);
+      expect(decryptSecret(admin!.plexServerToken, location('plexServerToken'))).toBe(E2E_SERVER_TOKEN);
     });
 
     // setupComplete is true, so the app offers sign-in, not the setup wizard.

@@ -10,7 +10,13 @@ import { getTestCookie, setTestCookie } from '../helpers/cookies';
 import jwt from 'jsonwebtoken';
 import { clearDatabase } from '../helpers/mongo';
 import { User } from '@/lib/models/User';
-import { fakeIntegrations, PLEX_TV, routes, type SentRequest } from '../helpers/fake-integrations';
+import {
+  fakeIntegrations,
+  plexSections,
+  routes,
+  TEST_PLEX_SERVER,
+  type SentRequest,
+} from '../helpers/fake-integrations';
 
 import { POST as refreshPost } from '@/app/api/auth/refresh/route';
 import { DELETE as logoutDelete } from '@/app/api/auth/logout/route';
@@ -18,18 +24,18 @@ import { GET as meGet } from '@/app/api/auth/me/route';
 import { GET as sectionsGet } from '@/app/api/library/sections/route';
 
 describe('Auth session API routes', () => {
-  let plexTvAccepts: boolean;
+  let serverAccepts: boolean;
   let sent: SentRequest[];
 
   beforeEach(async () => {
     await clearDatabase();
     clearTestCookies();
-    plexTvAccepts = true;
+    serverAccepts = true;
     ({ sent } = fakeIntegrations(
       routes({
-        [`${PLEX_TV}/api/v2/user`]: () =>
-          plexTvAccepts
-            ? Response.json({ id: 1, username: 'testuser', email: 'test@example.com' })
+        [`${TEST_PLEX_SERVER}/library/sections`]: () =>
+          serverAccepts
+            ? plexSections([{ id: '1', title: 'Movies', type: 'movie' }])
             : new Response('unauthorized', { status: 401 }),
       })
     ));
@@ -46,23 +52,24 @@ describe('Auth session API routes', () => {
     expect(body.success).toBe(true);
     expect(getTestCookie('decidarr_session')).toBeTruthy();
     expect(sent.map((r) => [r.url.pathname, r.headers.get('X-Plex-Token')])).toEqual([
-      ['/api/v2/user', 'test-plex-token-abcdefghijklmnop'],
+      ['/library/sections', 'test-plex-token-abcdefghijklmnop'],
     ]);
 
     const refreshed = await User.findById(user._id);
     expect(refreshed?.tokenValidatedAt).toBeInstanceOf(Date);
   });
 
-  it('returns 401 when Plex token validation fails during refresh', async () => {
+  it('asks the user to sign in again when the Plex server refuses their token during refresh', async () => {
     await seedConfiguredSettings();
     await authenticateTestSession();
-    plexTvAccepts = false;
+    serverAccepts = false;
 
     const res = await refreshPost(createJsonRequest('http://localhost/api/auth/refresh', 'POST'));
     const body = await res.json();
 
     expect(res.status).toBe(401);
-    expect(body.error).toMatch(/expired/i);
+    expect(body.code).toBe('PLEX_SIGN_IN_REQUIRED');
+    expect(body.error).toMatch(/sign in again/i);
   });
 
   it('returns 401 when refresh is requested without a session', async () => {

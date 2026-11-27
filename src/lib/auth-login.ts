@@ -3,8 +3,8 @@ import { signSessionJwt } from './security/session-jwt';
 import { Types } from 'mongoose';
 import { getOrCreateSettings } from './models/Settings';
 import { User, IUser } from './models/User';
-import { PlexServer, PlexService } from './services/plex';
-import { fetchPlexUser } from './services/plex-oauth';
+import { PlexService } from './services/plex';
+import { fetchPlexServers, fetchPlexUser, type PlexServerResource } from './services/plex-oauth';
 import { assertSafeServiceUrl } from './security/service-url';
 import { createLogger } from './logger';
 import { IntegrationError } from './integrations/client';
@@ -32,6 +32,11 @@ export interface LoginResult {
   requiresSetup?: boolean;
 }
 
+/**
+ * Signs a user in with their plex.tv account token. The account token is used here
+ * once, to read the user's servers; only their access token for this install's server
+ * is kept, plus the account token itself for the Admin (ADR 0002).
+ */
 export async function completePlexLogin(
   authToken: string,
   options?: { setupTmdbApiKey?: string }
@@ -62,11 +67,10 @@ export async function completePlexLogin(
   }
 
   const settings = await getOrCreateSettings();
-  const plexService = new PlexService(authToken);
 
-  let servers: PlexServer[] = [];
+  let servers: PlexServerResource[] = [];
   try {
-    servers = await plexService.getServers();
+    servers = await fetchPlexServers(authToken);
   } catch (err) {
     logger.error('Server discovery failed', { error: (err as Error).message });
     if (err instanceof IntegrationError && err.unavailable) {
@@ -173,6 +177,34 @@ export async function completePlexLogin(
     }
   }
 
+  if (settings.setupComplete && isAdmin && !settings.plexMachineId && settings.plexServerUrl) {
+    // Installs set up by hand before OAuth may not know their server's identity yet.
+    // A refusal leaves the identity unknown, and sign-in then reports no access to this server.
+    const machineId = await new PlexService(authToken, settings.plexServerUrl).fetchMachineIdFromServer().catch(() => null);
+    if (machineId) {
+      settings.plexMachineId = machineId;
+      await settings.save();
+    }
+  }
+
+  const installServer = settings.setupComplete
+    ? servers.find((s) => s.clientIdentifier === settings.plexMachineId)
+    : candidateServer;
+  const serverToken = installServer?.accessToken;
+  if (!serverToken) {
+    const authError = createAuthError(
+      'NO_SERVER_ACCESS',
+      "Plex did not return an access token for this install's server"
+    );
+    logger.warn('Login denied', { reason: authError.detailedReason, plexUserId: plexUser.id });
+    return {
+      success: false,
+      error: authError.message,
+      code: authError.code,
+      status: 403,
+    };
+  }
+
   let user = await User.findOne({ plexUserId: plexUser.id });
   if (!user) {
     user = new User({
@@ -201,7 +233,7 @@ export async function completePlexLogin(
     user.tokenValidatedAt = new Date();
   }
 
-  user.setEncryptedToken(authToken);
+  user.setPlexTokens({ serverToken, accountToken: isAdmin ? authToken : null, machineId: installServer.clientIdentifier });
   await user.save();
 
   if (!settings.setupComplete && isAdmin && candidateServer) {

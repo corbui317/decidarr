@@ -7,6 +7,7 @@
 import http from 'http';
 import {
   PLEX_TV,
+  defaultServerToken,
   fakePlexTv,
   plexMetadata,
   plexSections,
@@ -29,8 +30,17 @@ const plexLibrary = routes({
   [`${E2E_PLEX_SERVER_URL}/library/sections/1/collections`]: () => plexMetadata([]),
 });
 
-/** The library above, plus details for any item a spin picks (the specs seed the items into the library cache). */
+/** The access token plex.tv hands out for the fake server; the server refuses every other token. */
+export const E2E_SERVER_TOKEN = defaultServerToken(E2E_MACHINE_ID);
+
+/**
+ * The library above, plus details for any item a spin picks (the specs seed the items into the library cache).
+ * Like a real Plex server it answers only its own access token, so a plex.tv account token gets a 401.
+ */
 const plexServer: FakeHandler = (request) => {
+  if (request.url.pathname !== '/identity' && request.headers.get('x-plex-token') !== E2E_SERVER_TOKEN) {
+    return new Response('Unauthorized', { status: 401 });
+  }
   const ratingKey = request.url.pathname.match(/^\/library\/metadata\/([^/]+)$/)?.[1];
   return ratingKey ? plexMetadata([{ ratingKey, title: `Fake Movie ${ratingKey}`, type: 'movie' }]) : plexLibrary(request);
 };

@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { createLogger } from '../logger';
 import { createIntegrationClient, type IntegrationClient } from '../integrations/client';
 import { isSecureCookieEnabled } from '@/lib/security/cookie-options';
+import { Settings, SETTINGS_ID, getOrCreateSettings } from '../models/Settings';
 
 const logger = createLogger('PlexOAuth');
 const PLEX_TV_TIMEOUT_MS = 15_000;
@@ -11,8 +12,22 @@ export const PLEX_VERSION = process.env.PLEX_APP_VERSION || '2.0.0';
 export const PLEX_PLATFORM = 'Web';
 export const PLEX_DEVICE = 'Decidarr Web';
 
-export const PLEX_CLIENT_ID =
-  process.env.PLEX_CLIENT_ID || 'decidarr-app-plex-oauth';
+/**
+ * This install's Plex client identifier, generated on first use and persisted, so Plex
+ * shows each install as its own app and no other page can pose as it in the sign-in prompt.
+ */
+export async function getPlexClientId(): Promise<string> {
+  const settings = await getOrCreateSettings();
+  if (settings.plexClientId) return settings.plexClientId;
+  // Only the first writer's id lands; every caller then reads that one.
+  await Settings.updateOne(
+    { _id: SETTINGS_ID, plexClientId: { $exists: false } },
+    { $set: { plexClientId: crypto.randomUUID() } }
+  );
+  const stored = await Settings.findById(SETTINGS_ID, { plexClientId: 1 }).lean();
+  if (!stored?.plexClientId) throw new Error('Plex client identifier was not stored');
+  return stored.plexClientId;
+}
 
 export const OAUTH_PIN_COOKIE = 'decidarr_oauth_pin';
 export const OAUTH_PIN_CODE_COOKIE = 'decidarr_oauth_pin_code';
@@ -33,7 +48,8 @@ export interface PlexOAuthUser {
   thumb?: string;
 }
 
-export function getPlexClientHeaders(extra?: Record<string, string>): Record<string, string> {
+/** The headers that identify this install to plex.tv and to Plex servers. */
+export async function getPlexClientHeaders(): Promise<Record<string, string>> {
   return {
     Accept: 'application/json',
     'X-Plex-Product': PLEX_PRODUCT,
@@ -41,19 +57,18 @@ export function getPlexClientHeaders(extra?: Record<string, string>): Record<str
     'X-Plex-Platform': PLEX_PLATFORM,
     'X-Plex-Device': PLEX_DEVICE,
     'X-Plex-Device-Name': PLEX_DEVICE,
-    'X-Plex-Client-Identifier': PLEX_CLIENT_ID,
-    ...extra,
+    'X-Plex-Client-Identifier': await getPlexClientId(),
   };
 }
 
 /** The plex.tv client, signed in with an account token when one is given. */
-export function plexTvClient(authToken?: string): IntegrationClient {
+async function plexTvClient(authToken?: string): Promise<IntegrationClient> {
   return createIntegrationClient({
     integration: 'plex.tv',
     // E2E points this at a fake plex.tv on loopback.
     baseUrl: process.env.PLEX_TV_URL || 'https://plex.tv',
     auth: authToken ? { header: 'X-Plex-Token', value: authToken } : undefined,
-    headers: getPlexClientHeaders(),
+    headers: await getPlexClientHeaders(),
     timeoutMs: PLEX_TV_TIMEOUT_MS,
   });
 }
@@ -72,13 +87,13 @@ async function readErrorSnippet(response: Response): Promise<string> {
 }
 
 export async function createAuthPin(): Promise<PlexPin> {
-  const response = await plexTvClient().request('/api/v2/pins?strong=true', {
+  const response = await (await plexTvClient()).request('/api/v2/pins?strong=true', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       strong: 'true',
       'X-Plex-Product': PLEX_PRODUCT,
-      'X-Plex-Client-Identifier': PLEX_CLIENT_ID,
+      'X-Plex-Client-Identifier': await getPlexClientId(),
     }).toString(),
   });
 
@@ -101,7 +116,7 @@ export async function createAuthPin(): Promise<PlexPin> {
 }
 
 export async function pollAuthPin(pinId: number, code: string): Promise<PlexPin> {
-  const response = await plexTvClient().request(`/api/v2/pins/${pinId}`, { query: { code } });
+  const response = await (await plexTvClient()).request(`/api/v2/pins/${pinId}`, { query: { code } });
 
   if (!response.ok) {
     const snippet = await readErrorSnippet(response);
@@ -127,9 +142,9 @@ export async function pollAuthPin(pinId: number, code: string): Promise<PlexPin>
   };
 }
 
-export function buildPlexAuthUrl(code: string, options?: { forwardUrl?: string }): string {
+export async function buildPlexAuthUrl(code: string, options?: { forwardUrl?: string }): Promise<string> {
   const params = new URLSearchParams({
-    clientID: PLEX_CLIENT_ID,
+    clientID: await getPlexClientId(),
     code,
     'context[device][product]': PLEX_PRODUCT,
     'context[device][platform]': PLEX_PLATFORM,
@@ -146,7 +161,7 @@ export function buildPlexAuthUrl(code: string, options?: { forwardUrl?: string }
 }
 
 export async function fetchPlexUser(authToken: string): Promise<PlexOAuthUser> {
-  const response = await plexTvClient(authToken).request('/api/v2/user');
+  const response = await (await plexTvClient(authToken)).request('/api/v2/user');
 
   if (!response.ok) {
     if (response.status >= 500) {
@@ -164,11 +179,41 @@ export async function fetchPlexUser(authToken: string): Promise<PlexOAuthUser> {
   };
 }
 
+export interface PlexServerResource {
+  name: string;
+  clientIdentifier: string;
+  owned: boolean;
+  /** The account's access token for this one server; it unlocks nothing else. */
+  accessToken: string | null;
+  connections: { uri: string; local: boolean; relay: boolean }[];
+}
+
+/** The Plex servers an account can reach, each with that account's access token for it. */
+export async function fetchPlexServers(accountToken: string): Promise<PlexServerResource[]> {
+  const data = await (await plexTvClient(accountToken)).json<Record<string, unknown>[]>(
+    '/api/v2/resources?includeHttps=1&includeRelay=1'
+  );
+  const servers = (Array.isArray(data) ? data : []).filter((r) => r.provides === 'server');
+
+  logger.debug('Fetched servers', { count: servers.length });
+  return servers.map((server) => ({
+    name: server.name as string,
+    clientIdentifier: server.clientIdentifier as string,
+    owned: Boolean(server.owned),
+    accessToken: typeof server.accessToken === 'string' && server.accessToken ? server.accessToken : null,
+    connections: ((server.connections as Record<string, unknown>[] | undefined) ?? []).map((c) => ({
+      uri: c.uri as string,
+      local: c.local as boolean,
+      relay: c.relay as boolean,
+    })),
+  }));
+}
+
 export async function fetchPlexFriends(authToken: string): Promise<
   Array<{ id: string; username: string; thumb?: string }>
 > {
   try {
-    const response = await plexTvClient(authToken).request('/api/v2/friends');
+    const response = await (await plexTvClient(authToken)).request('/api/v2/friends');
 
     if (!response.ok) {
       return [];

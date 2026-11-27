@@ -7,3 +7,7 @@ The trust model is that the Admin is trusted with the server but not with Friend
 ## Consequences
 
 When a Friend's server access token stops working (for example the Admin stops sharing), Decidarr cannot silently recover it; the Friend has to sign in again.
+
+Each stored server token names the server it was issued for and is used only while that server is configured, so no token is ever sent to another server.
+When the Admin saves a URL that reaches a different Plex server, its identity is read without a token, the Admin's access token for it is fetched with their stored account token, and every other user's token is deleted, so they sign in again (a Friend without access to the new server is refused).
+If the Admin's new token cannot be fetched, nothing is changed and the save fails with the reason.

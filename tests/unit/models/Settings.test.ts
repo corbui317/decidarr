@@ -15,15 +15,6 @@ describe('Settings model', () => {
     expect(settings.setupComplete).toBe(false);
   });
 
-  it('round-trips encrypted Plex token', async () => {
-    const settings = await getOrCreateSettings();
-    settings.plexToken = 'my-secret-plex-token-value';
-    await settings.save();
-
-    const reloaded = await getOrCreateSettings();
-    expect(reloaded.getDecryptedPlexToken()).toBe('my-secret-plex-token-value');
-  });
-
   it('round-trips encrypted TMDB key', async () => {
     const settings = await getOrCreateSettings();
     settings.tmdbApiKey = 'tmdb-api-key-12345';

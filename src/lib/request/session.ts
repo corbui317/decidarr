@@ -15,7 +15,7 @@ export interface Session {
   plexUserId: string;
   isAdmin: boolean;
   credential: CredentialOrigin;
-  /** How this user reaches the configured Plex server. Never send it to a client. */
+  /** How this user reaches the configured Plex server: their per-server access token. Never send it to a client. */
   plex: { serverUrl: string; token: string };
   /** Unix timestamp (ms) when this session's underlying token expires. */
   expiresAt: number;

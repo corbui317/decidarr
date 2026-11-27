@@ -1,5 +1,10 @@
 import type { SyncClientState } from '@decidarr/api-contracts';
 
+/** A 401 means the session or the user's Plex server token was refused; only a new sign-in helps. */
+export function requiresSignIn(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { status?: unknown }).status === 401;
+}
+
 export function canSpin(state: SyncClientState, isOnline: boolean): boolean {
   return isOnline && (state === 'ready_online' || state === 'syncing');
 }
