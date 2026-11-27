@@ -1,13 +1,14 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { clearDatabase } from '../../helpers/mongo';
-import { clearTestCookies } from '../../helpers/auth';
+import { authenticateTestSession, clearTestCookies, createJsonRequest, seedConfiguredSettings } from '../../helpers/auth';
 import { clearRateLimitStore } from '@/lib/security/rate-limit';
 import { fakeIntegrations, fakePlexTv } from '../../helpers/fake-integrations';
 
 import { POST as plexStartPost } from '@/app/api/auth/plex/start/route';
 import { GET as plexPollGet } from '@/app/api/auth/plex/poll/route';
 import { POST as loginPost } from '@/app/api/auth/login/route';
+import { GET as meGet } from '@/app/api/auth/me/route';
 
 describe('Auth hardening', () => {
   beforeEach(async () => {
@@ -40,6 +41,23 @@ describe('Auth hardening', () => {
       const body = await rateLimitedResponse.json();
       expect(body.error).toMatch(/try again later/i);
       expect(body.code).toBe('RATE_LIMITED');
+    });
+
+    it('never signs out or blocks an already signed-in user once the shared ceiling is exhausted', async () => {
+      await seedConfiguredSettings();
+      const { user } = await authenticateTestSession();
+
+      const makeLoginAttempt = () =>
+        loginPost(new Request('http://localhost/api/auth/login', { method: 'POST' }));
+      for (let i = 0; i < 51; i++) {
+        await makeLoginAttempt();
+      }
+
+      const meResponse = await meGet(createJsonRequest('http://localhost/api/auth/me', 'GET'));
+      const body = await meResponse.json();
+
+      expect(meResponse.status).toBe(200);
+      expect(body.user.id).toBe(user._id.toString());
     });
 
     it('returns 429 after exhausting the global ceiling on /api/auth/plex/start', async () => {
