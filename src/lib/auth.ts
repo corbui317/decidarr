@@ -18,6 +18,7 @@ const logger = createLogger('Auth');
 export interface AuthContext {
   user: IUser;
   settings: ISettings;
+  /** The user's access token for the configured Plex server, never a plex.tv account token. */
   plexToken: string;
   plexServerUrl: string;
   isAdmin: boolean;
@@ -160,15 +161,16 @@ export async function authContextForSession(payload: SessionPayload): Promise<Au
     throw new Error('Plex server URL not configured');
   }
 
-  let plexToken: string;
+  // No server token yet (an upgrade whose exchange failed) or an unreadable one: only a new sign-in helps.
+  let plexToken: string | null;
   try {
-    plexToken = user.getDecryptedToken();
+    plexToken = user.getServerToken();
   } catch {
-    throw new SessionError('UNAUTHORIZED');
+    plexToken = null;
   }
-
   if (!plexToken) {
-    throw new SessionError('UNAUTHORIZED');
+    logger.warn('Auth failed: no usable Plex server token', { sub: payload.sub });
+    throw new SessionError('PLEX_SIGN_IN_REQUIRED');
   }
 
   return {

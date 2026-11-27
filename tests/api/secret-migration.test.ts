@@ -8,8 +8,10 @@ import {
   seedV2Install,
   LEGACY_PLAINTEXT,
   LEGACY_ADMIN_PLEX_USER_ID,
+  LEGACY_MACHINE_ID,
   type StoredSettings,
 } from '../helpers/legacy-install-seed';
+import { defaultServerToken, fakeIntegrations, fakePlex } from '../helpers/fake-integrations';
 import { connectDB, forgetConnectionForTests } from '@/lib/db';
 import { findCredentialsNeedingReentry, runMigrations, resetMigrationStateForTests } from '@/lib/migrate';
 import { getOrCreateSettings } from '@/lib/models/Settings';
@@ -114,7 +116,7 @@ describe('Stored secrets', () => {
       await seedConfiguredSettings();
       const admin = await seedTestUser({ plexUserId: 'admin-1', plexUsername: 'admin' });
       const friend = await seedTestUser({ plexUserId: 'friend-1', plexUsername: 'friend', isAdmin: false });
-      await User.updateOne({ _id: friend._id }, { $set: { plexToken: admin.plexToken } });
+      await User.updateOne({ _id: friend._id }, { $set: { plexServerToken: admin.plexServerToken } });
 
       setTestCookie('decidarr_session', await createModernSessionToken(friend));
       expect((await meGet(createJsonRequest('http://localhost/api/auth/me', 'GET'))).status).toBe(401);
@@ -122,7 +124,7 @@ describe('Stored secrets', () => {
       setTestCookie('decidarr_session', await createModernSessionToken(admin));
       expect((await meGet(createJsonRequest('http://localhost/api/auth/me', 'GET'))).status).toBe(200);
       expect(await findCredentialsNeedingReentry()).toEqual(['Plex sign-in for friend']);
-      expect((await User.findById(friend._id))?.plexToken).toBe(admin.plexToken);
+      expect((await User.findById(friend._id))?.plexServerToken).toBe(admin.plexServerToken);
     });
   });
 
@@ -131,20 +133,22 @@ describe('Stored secrets', () => {
       await connectDB();
       const seed = await seedV2Install(mongoose.connection.db!, SECRET);
       const legacyWrappedKey = (await rawSettings()).encryptionKey;
+      fakeIntegrations(fakePlex({ serverUri: 'http://192.168.1.10:32400', machineId: LEGACY_MACHINE_ID }));
 
       simulateRestart();
       expect((await statusGet(createJsonRequest('http://localhost/api/settings/status', 'GET'))).status).toBe(200);
 
       const raw = await rawSettings();
-      expect(isCurrentCiphertext(raw.plexToken!)).toBe(true);
+      expect(raw.plexToken).toBeUndefined();
       expect(isCurrentCiphertext(raw.tmdbApiKey!)).toBe(true);
       expect(raw.encryptionKey).toBe(legacyWrappedKey);
       const settings = await getOrCreateSettings();
       expect(settings.getDecryptedTmdbKey()).toBe(LEGACY_PLAINTEXT.tmdbApiKey);
-      expect(settings.getDecryptedPlexToken()).toBe(LEGACY_PLAINTEXT.plexToken);
       const admin = await User.findById(seed.adminUserId);
-      expect(isCurrentCiphertext(admin!.plexToken)).toBe(true);
-      expect(admin!.getDecryptedToken()).toBe(LEGACY_PLAINTEXT.plexToken);
+      expect(admin!.plexToken).toBeUndefined();
+      expect(isCurrentCiphertext(admin!.plexAccountToken!)).toBe(true);
+      expect(admin!.getAccountToken()).toBe(LEGACY_PLAINTEXT.plexToken);
+      expect(admin!.getServerToken()).toBe(defaultServerToken(LEGACY_MACHINE_ID));
       expect(await findCredentialsNeedingReentry()).toEqual([]);
     });
 

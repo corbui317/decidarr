@@ -6,6 +6,7 @@ import {
   clearTestCookies,
   createJsonRequest,
 } from '../../helpers/auth';
+import mongoose from 'mongoose';
 import { getOrCreateSettings } from '@/lib/models/Settings';
 import { GET as settingsGet, PUT as settingsPut } from '@/app/api/settings/route';
 
@@ -13,21 +14,18 @@ describe('Settings API routes', () => {
   beforeEach(async () => {
     await clearDatabase();
     clearTestCookies();
-    await seedConfiguredSettings({
-      plexToken: 'test-plex-token-abcdefghijklmnop',
-      tmdbApiKey: 'tmdb12345678abcdef',
-    });
+    await seedConfiguredSettings({ tmdbApiKey: 'tmdb12345678abcdef' });
     await authenticateTestSession();
   });
 
   describe('GET /api/settings', () => {
-    it('returns masked secrets', async () => {
+    it('returns masked secrets and no Plex token at all', async () => {
       const res = await settingsGet(createJsonRequest('http://localhost/api/settings', 'GET'));
       expect(res.status).toBe(200);
       const body = await res.json();
-      expect(body.plex.hasToken).toBe(true);
-      expect(body.plex.tokenMasked).toContain('****');
-      expect(body.plex.tokenMasked).not.toBe('abcdefghijklmnop');
+      expect(body.plex).toEqual({ serverUrl: 'http://192.168.1.10:32400', username: 'testuser', machineId: 'machine-1' });
+      expect(body.tmdb.keyMasked).toContain('****');
+      expect(body.tmdb.keyMasked).not.toBe('tmdb12345678abcdef');
     });
 
     it('returns 401 without session', async () => {
@@ -38,19 +36,15 @@ describe('Settings API routes', () => {
   });
 
   describe('PUT /api/settings', () => {
-    it('does not overwrite token when masked value sent', async () => {
-      const getRes = await settingsGet(createJsonRequest('http://localhost/api/settings', 'GET'));
-      const current = await getRes.json();
-
+    it('never stores a settings-level Plex token', async () => {
       const putReq = createJsonRequest('http://localhost/api/settings', 'PUT', {
-        plex: { token: current.plex.tokenMasked },
+        plex: { token: 'pasted-plex-token' },
       });
       const putRes = await settingsPut(putReq as never);
       expect(putRes.status).toBe(200);
 
-      const afterRes = await settingsGet(createJsonRequest('http://localhost/api/settings', 'GET'));
-      const after = await afterRes.json();
-      expect(after.plex.hasToken).toBe(true);
+      const raw = await mongoose.connection.collection('settings').findOne({ _id: 'app-settings' as never });
+      expect(raw).not.toHaveProperty('plexToken');
     });
 
     it('rejects invalid Plex server URL', async () => {

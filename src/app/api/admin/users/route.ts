@@ -10,9 +10,22 @@ export const dynamic = 'force-dynamic';
 
 const logger = createLogger('API:AdminUsers');
 
+/** The Admin's plex.tv account token, which listing Friends needs; null when it is missing or unreadable. */
+async function readAdminAccountToken(userId: unknown): Promise<string | null> {
+  try {
+    return (await User.findById(userId))?.getAccountToken() ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export const GET = route({ access: 'admin' }, async ({ session }) => {
   const settings = await getOrCreateSettings();
-  const friends = await fetchPlexFriends(session.plex.token);
+  const accountToken = await readAdminAccountToken(session.userId);
+  if (!accountToken) {
+    logger.warn('No readable Plex account token for the Admin; listing local users only');
+  }
+  const friends = accountToken ? await fetchPlexFriends(accountToken) : [];
   const dbUsers = await User.find({ isAdmin: false }).lean();
   const approvedSet = new Set(settings.approvedPlexUserIds || []);
 

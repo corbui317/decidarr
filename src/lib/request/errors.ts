@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { isAuthError } from '@/lib/auth-errors';
+import { isAuthError, PLEX_SIGN_IN_REQUIRED_MESSAGE } from '@/lib/auth-errors';
 import { IntegrationError } from '@/lib/integrations/client';
 
 /**
@@ -13,6 +13,8 @@ const ERROR_TABLE = {
   NOT_FOUND: { status: 404, message: 'Not found' },
   CONFLICT: { status: 409, message: 'Conflict' },
   RATE_LIMITED: { status: 429, message: 'Too many requests. Please try again later.' },
+  /** The user's Plex server access token is missing or refused; only a new sign-in fixes it (ADR 0002). */
+  PLEX_SIGN_IN_REQUIRED: { status: 401, message: PLEX_SIGN_IN_REQUIRED_MESSAGE },
   INTEGRATION_UNAVAILABLE: { status: 503, message: 'Integration unavailable' },
   INTEGRATION_REJECTED: { status: 502, message: 'Integration rejected the request' },
   INTERNAL: { status: 500, message: 'Internal server error' },
@@ -44,10 +46,11 @@ export function errorResponse(error: unknown): NextResponse {
     domainError = error;
   } else if (isAuthError(error)) {
     // The old auth helpers throw SessionError; keep their message, map their code.
-    domainError = new DomainError(
-      error.code === 'FORBIDDEN' ? 'FORBIDDEN' : 'UNAUTHENTICATED',
-      error.message
-    );
+    const code =
+      error.code === 'FORBIDDEN' || error.code === 'PLEX_SIGN_IN_REQUIRED' ? error.code : 'UNAUTHENTICATED';
+    domainError = new DomainError(code, error.message);
+  } else if (error instanceof IntegrationError && error.integration === 'Plex' && error.status === 401) {
+    domainError = new DomainError('PLEX_SIGN_IN_REQUIRED');
   } else if (error instanceof IntegrationError) {
     // The table's message only: the integration's error can name internal hosts.
     domainError = new DomainError(error.unavailable ? 'INTEGRATION_UNAVAILABLE' : 'INTEGRATION_REJECTED');

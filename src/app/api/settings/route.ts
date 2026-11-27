@@ -24,7 +24,6 @@ const maskValue = (value: string | undefined): string | null => {
 const putBodyContract = z.object({
   plex: z
     .object({
-      token: z.string().optional(),
       serverUrl: z.string().optional(),
     })
     .optional(),
@@ -61,7 +60,6 @@ const putBodyContract = z.object({
 });
 
 async function settingsResponseBody(settings: Awaited<ReturnType<typeof getOrCreateSettings>>) {
-  const plexToken = settings.getDecryptedPlexToken();
   const tmdbKey = settings.getDecryptedTmdbKey();
   const tautulliKey = settings.getDecryptedTautulliKey();
   const overseerrKey = settings.getDecryptedOverseerrKey();
@@ -73,8 +71,6 @@ async function settingsResponseBody(settings: Awaited<ReturnType<typeof getOrCre
       serverUrl: settings.plexServerUrl || null,
       username: settings.plexUsername || null,
       machineId: settings.plexMachineId || null,
-      hasToken: !!plexToken,
-      tokenMasked: maskValue(plexToken || undefined),
     },
     tmdb: {
       hasKey: !!tmdbKey,
@@ -119,11 +115,6 @@ export const PUT = route({ access: 'admin', body: putBodyContract }, async ({ bo
   let plexServerUrlChanged = false;
 
   if (body.plex) {
-    if (body.plex.token !== undefined) {
-      if (body.plex.token && !body.plex.token.includes('****')) {
-        settings.plexToken = body.plex.token;
-      }
-    }
     if (body.plex.serverUrl !== undefined && body.plex.serverUrl) {
       const urlCheck = await assertSafeServiceUrl(body.plex.serverUrl);
       if (!urlCheck.valid) {

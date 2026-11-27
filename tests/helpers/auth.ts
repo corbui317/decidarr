@@ -7,8 +7,12 @@ import { setTestCookie, clearTestCookies } from './cookies';
 
 export { clearTestCookies };
 
+/** The Plex server access token every seeded user holds. */
+export const TEST_SERVER_TOKEN = 'test-plex-token-abcdefghijklmnop';
+/** The plex.tv account token a seeded Admin holds; Friends hold none. */
+export const TEST_ACCOUNT_TOKEN = 'test-plex-account-token';
+
 export async function seedConfiguredSettings(overrides?: {
-  plexToken?: string;
   plexServerUrl?: string;
   plexUsername?: string;
   plexMachineId?: string;
@@ -17,7 +21,6 @@ export async function seedConfiguredSettings(overrides?: {
   await connectDB();
   const settings = await getOrCreateSettings();
 
-  settings.plexToken = overrides?.plexToken ?? 'test-plex-token-abcdefghijklmnop';
   settings.plexServerUrl = overrides?.plexServerUrl ?? 'http://192.168.1.10:32400';
   settings.plexUsername = overrides?.plexUsername ?? 'testuser';
   settings.plexMachineId = overrides?.plexMachineId ?? 'machine-1';
@@ -30,12 +33,11 @@ export async function seedConfiguredSettings(overrides?: {
   return settings;
 }
 
-/** Settings marked complete but missing Plex token (stale/partial local DB state). */
+/** Settings marked complete but with no Admin holding a Plex token (stale/partial local DB state). */
 export async function seedPartialSettings() {
   await connectDB();
   const settings = await getOrCreateSettings();
 
-  settings.plexToken = undefined;
   settings.plexServerUrl = 'http://192.168.1.10:32400';
   settings.plexUsername = 'testuser';
   settings.setupComplete = true;
@@ -56,9 +58,8 @@ export async function seedTestUser(overrides?: {
   };
 }): Promise<IUser> {
   await connectDB();
-  const settings = await getOrCreateSettings();
+  await getOrCreateSettings();
   const plexUserId = overrides?.plexUserId ?? 'plex-user-test-1';
-  const plexToken = settings.getDecryptedPlexToken() ?? 'test-plex-token-abcdefghijklmnop';
 
   let user = await User.findOne({ plexUserId });
   if (!user) {
@@ -70,7 +71,7 @@ export async function seedTestUser(overrides?: {
       sessionVersion: 0,
       preferences: {},
     });
-    user.setEncryptedToken(plexToken);
+    user.setPlexTokens({ serverToken: TEST_SERVER_TOKEN, accountToken: user.isAdmin ? TEST_ACCOUNT_TOKEN : null });
     await user.save();
   }
 

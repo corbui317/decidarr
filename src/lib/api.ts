@@ -344,8 +344,6 @@ export interface SettingsResponse {
     serverUrl: string | null;
     username: string | null;
     machineId: string | null;
-    hasToken: boolean;
-    tokenMasked: string | null;
   };
   tmdb: {
     hasKey: boolean;
@@ -387,16 +385,7 @@ export interface SettingsStatusResponse {
 export interface PlexTestResponse {
   valid: boolean;
   error?: string;
-  user?: {
-    username: string;
-    email: string;
-    thumb: string;
-  };
-  servers?: Array<{ name: string; uri: string }>;
-  serverTest?: {
-    valid: boolean;
-    libraryCount: number;
-  } | null;
+  libraryCount?: number;
 }
 
 export interface TmdbTestResponse {
@@ -415,7 +404,7 @@ export const settingsApi = {
 
   // Update settings
   updateSettings: (settings: {
-    plex?: { token?: string; serverUrl?: string };
+    plex?: { serverUrl?: string };
     tmdb?: { apiKey?: string };
     tautulli?: { url?: string; apiKey?: string; enabled?: boolean; syncIntervalMinutes?: number };
     overseerr?: { url?: string; apiKey?: string; filterEnabled?: boolean };
@@ -444,11 +433,11 @@ export const settingsApi = {
       body: data,
     }),
 
-  // Test Plex connection
-  testPlex: (plexToken: string, plexServerUrl?: string) =>
+  // Test a Plex server URL with the Admin's own access token for this install's server
+  testPlex: (plexServerUrl: string) =>
     request<PlexTestResponse>('/settings/test-plex', {
       method: 'POST',
-      body: { plexToken, plexServerUrl },
+      body: { plexServerUrl },
     }),
 
   // Test TMDB API key

@@ -9,7 +9,7 @@ import {
   LEGACY_MACHINE_ID,
   type StoredSettings,
 } from '../helpers/legacy-install-seed';
-import { fakeIntegrations, fakePlex } from '../helpers/fake-integrations';
+import { defaultServerToken, fakeIntegrations, fakePlex } from '../helpers/fake-integrations';
 import { connectDB, forgetConnectionForTests } from '@/lib/db';
 import { resetMigrationStateForTests } from '@/lib/migrate';
 import { getOrCreateSettings } from '@/lib/models/Settings';
@@ -54,6 +54,7 @@ describe('Upgrading a legacy install to DECIDARR_SECRET', () => {
     // Upgrade: restart with DECIDARR_SECRET; the first request is the public status check.
     vi.stubEnv('DECIDARR_SECRET', 'upgrade-test-secret');
     simulateRestart();
+    const { sent: exchange } = fakeLegacyPlex();
 
     const res = await statusGet(createJsonRequest('http://localhost/api/settings/status', 'GET'));
     expect(res.status).toBe(200);
@@ -65,16 +66,20 @@ describe('Upgrading a legacy install to DECIDARR_SECRET', () => {
     });
 
     const raw = await db.collection<StoredSettings>('settings').findOne({ _id: 'app-settings' });
-    expect(isCurrentCiphertext(raw!.plexToken!)).toBe(true);
+    expect(raw!.plexToken).toBeUndefined();
     expect(isCurrentCiphertext(raw!.tmdbApiKey!)).toBe(true);
 
     const settings = await getOrCreateSettings();
     expect(settings.getDecryptedTmdbKey()).toBe(LEGACY_PLAINTEXT.tmdbApiKey);
-    expect(settings.getDecryptedPlexToken()).toBe(LEGACY_PLAINTEXT.plexToken);
 
+    // The stored account token was exchanged once for the Admin's server token, and kept.
+    expect(exchange.map(({ url, headers }) => [url.pathname, headers.get('X-Plex-Token')])).toEqual([
+      ['/api/v2/resources', LEGACY_PLAINTEXT.plexToken],
+    ]);
     const admin = await User.findById(settings.adminUserId!);
-    expect(isCurrentCiphertext(admin!.plexToken)).toBe(true);
-    expect(admin?.getDecryptedToken()).toBe(LEGACY_PLAINTEXT.plexToken);
+    expect(admin!.plexToken).toBeUndefined();
+    expect(admin?.getAccountToken()).toBe(LEGACY_PLAINTEXT.plexToken);
+    expect(admin?.getServerToken()).toBe(defaultServerToken(LEGACY_MACHINE_ID));
 
     // The legacy admin signs in through Plex OAuth and keeps admin rights.
     const { sent } = fakeLegacyPlex();
@@ -157,7 +162,7 @@ describe('Restarting with a different DECIDARR_SECRET', () => {
     await connectDB();
     const settings = await getOrCreateSettings();
     const admin = new User({ plexUserId: LEGACY_ADMIN_PLEX_USER_ID, plexUsername: 'admin', isAdmin: true, isApproved: true });
-    admin.setEncryptedToken('admin-plex-token');
+    admin.setPlexTokens({ serverToken: 'admin-server-token', accountToken: 'admin-plex-token' });
     await admin.save();
     settings.plexServerUrl = 'http://192.168.1.10:32400';
     settings.plexMachineId = 'machine-a';
@@ -216,7 +221,6 @@ describe('Restarting with a different DECIDARR_SECRET', () => {
     const body = await res.json();
     expect(body.credentialsNeedingReentry).toEqual(
       expect.arrayContaining([
-        'Plex token (server settings)',
         'TMDB API key',
         'Tautulli API key',
         'Overseerr API key',
@@ -237,7 +241,7 @@ describe('Restarting with a different DECIDARR_SECRET', () => {
     expect(restored.getDecryptedTmdbKey()).toBe('tmdb-key-a');
     expect(restored.getDecryptedTautulliKey()).toBe('tautulli-key-a');
     expect(restored.getDecryptedOverseerrKey()).toBe('overseerr-key-a');
-    expect(await readUserToken('friend-1')).toBe('test-plex-token-abcdefghijklmnop');
+    expect(await readServerToken('friend-1')).toBe('test-plex-token-abcdefghijklmnop');
   });
 });
 
@@ -278,17 +282,19 @@ describe('Restarting a legacy install with a changed MONGODB_URI', () => {
     expect((await statusGet(createJsonRequest('http://localhost/api/settings/status', 'GET'))).status).toBe(200);
     expect(await storedSecrets()).toEqual(before);
 
+    fakeLegacyPlex();
     await restartWithUri(originalUri);
     expect((await statusGet(createJsonRequest('http://localhost/api/settings/status', 'GET'))).status).toBe(200);
     const settings = await getOrCreateSettings();
     expect(settings.getDecryptedTmdbKey()).toBe(LEGACY_PLAINTEXT.tmdbApiKey);
-    expect(settings.getDecryptedPlexToken()).toBe(LEGACY_PLAINTEXT.plexToken);
-    expect(await readUserToken(LEGACY_ADMIN_PLEX_USER_ID)).toBe(LEGACY_PLAINTEXT.plexToken);
+    const admin = await User.findOne({ plexUserId: LEGACY_ADMIN_PLEX_USER_ID });
+    expect(admin?.getAccountToken()).toBe(LEGACY_PLAINTEXT.plexToken);
+    expect(admin?.getServerToken()).toBe(defaultServerToken(LEGACY_MACHINE_ID));
   });
 });
 
-async function readUserToken(plexUserId: string): Promise<string> {
-  return (await User.findOne({ plexUserId }))!.getDecryptedToken();
+async function readServerToken(plexUserId: string): Promise<string | null> {
+  return (await User.findOne({ plexUserId }))!.getServerToken();
 }
 
 /** Raw stored ciphertext, read past the models so nothing decrypts or re-saves it. */
@@ -297,13 +303,13 @@ async function storedSecrets() {
   const settings = await db.collection<StoredSettings>('settings').findOne({ _id: 'app-settings' });
   const users = await db
     .collection('users')
-    .find({}, { projection: { plexUserId: 1, plexToken: 1 } })
+    .find({}, { projection: { plexUserId: 1, plexToken: 1, plexServerToken: 1, plexAccountToken: 1 } })
     .sort({ plexUserId: 1 })
     .toArray();
   return {
     settings: Object.fromEntries(
       ['plexToken', 'tmdbApiKey', 'tautulliApiKey', 'overseerrApiKey'].map((f) => [f, settings?.[f]])
     ),
-    users: users.map((u) => [u.plexUserId as string, u.plexToken as string]),
+    users: users.map((u) => [u.plexUserId as string, u.plexToken, u.plexServerToken, u.plexAccountToken]),
   };
 }

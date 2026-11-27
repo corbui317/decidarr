@@ -33,7 +33,12 @@ export interface IUserPreferences {
 }
 
 export interface IUser extends Document {
-  plexToken: string;
+  /** Pre-v2 plex.tv account token; only the upgrade reads it, then removes it (ADR 0002). */
+  plexToken?: string;
+  /** This user's access token for the configured Plex server; every Plex server call uses it. */
+  plexServerToken?: string;
+  /** The Admin's plex.tv account token, kept because listing Friends needs it. Never set for a Friend. */
+  plexAccountToken?: string;
   plexUserId: string;
   plexUsername?: string;
   plexEmail?: string;
@@ -47,14 +52,19 @@ export interface IUser extends Document {
   preferences: IUserPreferences;
   createdAt: Date;
   updatedAt: Date;
-  setEncryptedToken(plainToken: string): void;
-  /** Throws SecretUnreadableError when the stored token cannot be decrypted. */
-  getDecryptedToken(): string;
+  /** Stores the tokens a sign-in yields; a Friend's account token is never stored. */
+  setPlexTokens(tokens: { serverToken: string; accountToken: string | null }): void;
+  /** Null when none is stored; throws SecretUnreadableError when it cannot be decrypted. */
+  getServerToken(): string | null;
+  /** Null when none is stored; throws SecretUnreadableError when it cannot be decrypted. */
+  getAccountToken(): string | null;
 }
 
 const userSchema = new mongoose.Schema<IUser>(
   {
-    plexToken: { type: String, required: true },
+    plexToken: { type: String },
+    plexServerToken: { type: String },
+    plexAccountToken: { type: String },
     plexUserId: { type: String, required: true, unique: true },
     plexUsername: { type: String },
     plexEmail: { type: String },
@@ -114,16 +124,32 @@ const userSchema = new mongoose.Schema<IUser>(
 
 userSchema.index({ isApproved: 1 });
 
-export function userTokenLocation(user: Pick<IUser, '_id'>): SecretLocation {
-  return { recordType: 'user', recordId: String(user._id), field: 'plexToken' };
+export const USER_TOKEN_FIELDS = ['plexToken', 'plexServerToken', 'plexAccountToken'] as const;
+export type UserTokenField = (typeof USER_TOKEN_FIELDS)[number];
+
+export function userTokenLocation(user: Pick<IUser, '_id'>, field: UserTokenField): SecretLocation {
+  return { recordType: 'user', recordId: String(user._id), field };
 }
 
-userSchema.methods.setEncryptedToken = function (this: IUser, plainToken: string): void {
-  this.plexToken = encryptSecret(plainToken, userTokenLocation(this));
+userSchema.methods.setPlexTokens = function (
+  this: IUser,
+  { serverToken, accountToken }: { serverToken: string; accountToken: string | null }
+): void {
+  this.plexServerToken = encryptSecret(serverToken, userTokenLocation(this, 'plexServerToken'));
+  this.plexAccountToken = accountToken
+    ? encryptSecret(accountToken, userTokenLocation(this, 'plexAccountToken'))
+    : undefined;
+  this.plexToken = undefined;
 };
 
-userSchema.methods.getDecryptedToken = function (this: IUser): string {
-  return decryptSecret(this.plexToken, userTokenLocation(this));
+userSchema.methods.getServerToken = function (this: IUser): string | null {
+  return this.plexServerToken ? decryptSecret(this.plexServerToken, userTokenLocation(this, 'plexServerToken')) : null;
+};
+
+userSchema.methods.getAccountToken = function (this: IUser): string | null {
+  return this.plexAccountToken
+    ? decryptSecret(this.plexAccountToken, userTokenLocation(this, 'plexAccountToken'))
+    : null;
 };
 
 export const User: Model<IUser> =

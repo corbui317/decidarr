@@ -1,11 +1,12 @@
 import mongoose from 'mongoose';
 import {
   getOrCreateSettings,
+  Settings,
   SETTINGS_ID,
   SETTINGS_SECRET_FIELDS,
   type ISettings,
 } from './models/Settings';
-import { User, userTokenLocation } from './models/User';
+import { User, USER_TOKEN_FIELDS, userTokenLocation, type IUser } from './models/User';
 import { WatchedItem } from './models/WatchedItem';
 import { LibraryCache } from './models/LibraryCache';
 import { SpinHistoryEntry } from './models/SpinHistoryEntry';
@@ -25,6 +26,9 @@ import {
 } from './secrets';
 import { createLogger } from './logger';
 import { assertTestOnly } from './test-only';
+import { IntegrationError } from './integrations/client';
+import { fetchPlexServers } from './services/plex-oauth';
+import { PlexService } from './services/plex';
 
 const logger = createLogger('Migration');
 
@@ -99,7 +103,10 @@ async function migrateTokenizedMediaUrls(): Promise<void> {
   }
 }
 
-const SETTINGS_SECRET_LABELS: Record<(typeof SETTINGS_SECRET_FIELDS)[number], string> = {
+/** Settings secrets the migration reads: the live ones plus the legacy Plex token it removes. */
+const STORED_SETTINGS_SECRETS = [...SETTINGS_SECRET_FIELDS, 'plexToken'] as const;
+
+const SETTINGS_SECRET_LABELS: Record<(typeof STORED_SETTINGS_SECRETS)[number], string> = {
   plexToken: 'Plex token (server settings)',
   tmdbApiKey: 'TMDB API key',
   tautulliApiKey: 'Tautulli API key',
@@ -144,7 +151,7 @@ async function upgradeStoredSecrets(settings: ISettings): Promise<void> {
 
   const settingsUpdate: Record<string, string> = {};
   const settingsFilter: Record<string, string> = { _id: SETTINGS_ID };
-  for (const field of SETTINGS_SECRET_FIELDS) {
+  for (const field of STORED_SETTINGS_SECRETS) {
     const stored = settings[field];
     const next = stored && upgrade(stored, { recordType: 'settings', recordId: SETTINGS_ID, field });
     if (stored && next) {
@@ -162,9 +169,10 @@ async function upgradeStoredSecrets(settings: ISettings): Promise<void> {
     }
   }
 
+  // Only the legacy account token can predate v3; the per-server and Admin tokens are always v3.
   const users = await User.find({ plexToken: { $exists: true, $nin: [null, ''] } }, { plexToken: 1 });
   for (const user of users) {
-    const next = upgrade(user.plexToken, userTokenLocation(user));
+    const next = user.plexToken && upgrade(user.plexToken, userTokenLocation(user, 'plexToken'));
     if (!next) continue;
     const result = await User.updateOne(
       { _id: user._id, plexToken: user.plexToken },
@@ -209,7 +217,7 @@ export async function findCredentialsNeedingReentry(): Promise<string[]> {
     }
   };
 
-  for (const field of SETTINGS_SECRET_FIELDS) {
+  for (const field of STORED_SETTINGS_SECRETS) {
     const stored = settings[field];
     if (stored && unreadable(stored, { recordType: 'settings', recordId: SETTINGS_ID, field })) {
       labels.push(SETTINGS_SECRET_LABELS[field]);
@@ -217,16 +225,131 @@ export async function findCredentialsNeedingReentry(): Promise<string[]> {
   }
 
   const users = await User.find(
-    { plexToken: { $exists: true, $nin: [null, ''] } },
-    { plexToken: 1, plexUsername: 1, plexUserId: 1 }
+    { $or: USER_TOKEN_FIELDS.map((field) => ({ [field]: { $exists: true, $nin: [null, ''] } })) },
+    { ...Object.fromEntries(USER_TOKEN_FIELDS.map((field) => [field, 1])), plexUsername: 1, plexUserId: 1 }
   ).sort({ plexUsername: 1 });
   for (const user of users) {
-    if (unreadable(user.plexToken, userTokenLocation(user))) {
+    const anyUnreadable = USER_TOKEN_FIELDS.some((field) => {
+      const stored = user[field];
+      return !!stored && unreadable(stored, userTokenLocation(user, field));
+    });
+    if (anyUnreadable) {
       labels.push(`Plex sign-in for ${user.plexUsername || user.plexUserId}`);
     }
   }
 
   return labels;
+}
+
+/** The pre-ADR 0002 settings-level Plex token, or null when there is none or it cannot be read. */
+function readLegacySettingsPlexToken(settings: ISettings): string | null {
+  if (!settings.plexToken) return null;
+  try {
+    return decryptSecret(settings.plexToken, { recordType: 'settings', recordId: SETTINGS_ID, field: 'plexToken' });
+  } catch {
+    return null;
+  }
+}
+
+/** Reads a user's legacy account token; null when it cannot be decrypted with the current keys. */
+function readLegacyAccountToken(user: IUser): string | null {
+  try {
+    return decryptSecret(user.plexToken!, userTokenLocation(user, 'plexToken'));
+  } catch {
+    return null;
+  }
+}
+
+/** Installs set up by hand before OAuth may not know their server's identity; the exchange needs it. */
+async function ensurePlexMachineId(settings: ISettings, users: IUser[]): Promise<void> {
+  if (settings.plexMachineId || !settings.plexServerUrl) return;
+  const adminToken = users.filter((user) => user.isAdmin).map(readLegacyAccountToken).find(Boolean);
+  if (!adminToken) return;
+  const machineId = await new PlexService(adminToken, settings.plexServerUrl).fetchMachineIdFromServer();
+  if (!machineId) return;
+  await Settings.updateOne({ _id: SETTINGS_ID, plexMachineId: { $exists: false } }, { $set: { plexMachineId: machineId } });
+  settings.plexMachineId = (await Settings.findById(SETTINGS_ID, { plexMachineId: 1 }).lean())?.plexMachineId;
+}
+
+/**
+ * Exchanges every stored plex.tv account token (written before ADR 0002) for that user's
+ * access token to this install's server, keeps the Admin's account token, and drops a
+ * Friend's. A user whose token cannot be read, or whose exchange plex.tv cannot answer
+ * now, keeps exactly what is stored and is retried at the next start; meanwhile they are
+ * asked to sign in again. Their other data is never touched. Each user's write lands only
+ * if their stored token is still the one that was read, so a sign-in in between wins and
+ * a second or interrupted run picks up exactly the users not yet done.
+ */
+async function exchangeAccountTokens(settings: ISettings): Promise<void> {
+  const users = await User.find({ plexToken: { $exists: true, $nin: [null, ''] } });
+  if (users.length === 0) return;
+
+  await ensurePlexMachineId(settings, users);
+  if (!settings.plexMachineId) {
+    logger.warn("Plex server identity unknown; stored Plex tokens are kept and exchanged at a later start");
+    return;
+  }
+
+  const signInAgain: string[] = [];
+  let exchanged = 0;
+  for (const [index, user] of users.entries()) {
+    const label = user.plexUsername || user.plexUserId;
+    const stored = user.plexToken!;
+    const accountToken = readLegacyAccountToken(user);
+    if (!accountToken) {
+      signInAgain.push(label);
+      continue;
+    }
+
+    let serverToken: string | null;
+    try {
+      const servers = await fetchPlexServers(accountToken);
+      serverToken = servers.find((server) => server.clientIdentifier === settings.plexMachineId)?.accessToken ?? null;
+    } catch (err) {
+      if (!(err instanceof IntegrationError) || err.unavailable) {
+        // plex.tv cannot answer now: keep every remaining token for the next start rather than wait on each.
+        signInAgain.push(...users.slice(index).map((u) => u.plexUsername || u.plexUserId));
+        break;
+      }
+      // plex.tv refused the account token itself.
+      serverToken = null;
+    }
+
+    const set: Record<string, string> = {};
+    if (serverToken) set.plexServerToken = encryptSecret(serverToken, userTokenLocation(user, 'plexServerToken'));
+    if (user.isAdmin) set.plexAccountToken = encryptSecret(accountToken, userTokenLocation(user, 'plexAccountToken'));
+    const result = await User.updateOne(
+      { _id: user._id, plexToken: stored },
+      { $unset: { plexToken: 1 }, ...(Object.keys(set).length > 0 ? { $set: set } : {}) }
+    );
+    if (result.modifiedCount === 1 && serverToken) exchanged += 1;
+    if (result.modifiedCount === 1 && !serverToken) signInAgain.push(label);
+  }
+
+  if (exchanged > 0) {
+    logger.info('Exchanged stored Plex account tokens for server access tokens', { count: exchanged });
+  }
+  if (signInAgain.length > 0) {
+    logger.warn('Some users have no Plex server access token and must sign in again', { users: signInAgain });
+  }
+}
+
+/**
+ * Removes the pre-ADR 0002 settings-level Plex token once an Admin user exists, since
+ * each user's own server token replaces it. An unreadable one is kept and reported.
+ */
+async function removeLegacySettingsPlexToken(settings: ISettings): Promise<void> {
+  if (!settings.plexToken || !settings.adminUserId) return;
+  if (!readLegacySettingsPlexToken(settings)) return;
+  if (!(await User.exists({ _id: settings.adminUserId }))) return;
+  const result = await Settings.updateOne(
+    { _id: SETTINGS_ID, plexToken: settings.plexToken },
+    { $unset: { plexToken: 1 } }
+  );
+  if (result.modifiedCount === 1) {
+    settings.plexToken = undefined;
+    logger.info('Removed the legacy settings-level Plex token');
+  }
 }
 
 /** Runs this process's migrations once; concurrent callers share the same run, and a failed run is retried. */
@@ -245,7 +368,7 @@ async function migrate(): Promise<void> {
   await migrateTokenizedMediaUrls();
 
   if (settings.setupComplete && !settings.adminUserId) {
-    const legacyToken = settings.getDecryptedPlexToken();
+    const legacyToken = readLegacySettingsPlexToken(settings);
     if (legacyToken && settings.plexUsername) {
       logger.info('Migrating legacy single-user install to admin User');
       let admin = await User.findOne({ plexUserId: settings.plexMachineId ? `legacy-${settings.plexUsername}` : settings.plexUsername });
@@ -265,7 +388,8 @@ async function migrate(): Promise<void> {
             animationSpeed: settings.uiPreferences?.animationSpeed || 'normal',
           },
         });
-        admin.setEncryptedToken(legacyToken);
+        // Stored as a legacy account token so the exchange below treats it like any other.
+        admin.plexToken = encryptSecret(legacyToken, userTokenLocation(admin, 'plexToken'));
         await admin.save();
       }
 
@@ -309,6 +433,9 @@ async function migrate(): Promise<void> {
       }
     }
   }
+
+  await exchangeAccountTokens(settings);
+  await removeLegacySettingsPlexToken(settings);
 
   const needReentry = await findCredentialsNeedingReentry();
   if (needReentry.length > 0) {

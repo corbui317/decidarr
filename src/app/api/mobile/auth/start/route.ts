@@ -45,7 +45,7 @@ export const POST = route(
       const deviceCode = generateDeviceCode();
       const expiresAt = authCodeExpiresAt();
 
-      const authUrl = buildPlexAuthUrl(pin.code, { forwardUrl: resolveOAuthForwardUrl(request) });
+      const authUrl = await buildPlexAuthUrl(pin.code, { forwardUrl: resolveOAuthForwardUrl(request) });
 
       await MobileAuthCode.create({
         deviceCode,

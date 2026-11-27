@@ -142,11 +142,15 @@ export async function rotateRefreshToken(
   if (!user || (!user.isApproved && !user.isAdmin)) {
     throw new SessionError('UNAUTHORIZED');
   }
+  let serverToken: string | null;
   try {
-    // After a DECIDARR_SECRET change the device must sign in again; the token itself is kept.
-    user.getDecryptedToken();
+    serverToken = user.getServerToken();
   } catch {
-    throw new SessionError('UNAUTHORIZED');
+    // After a DECIDARR_SECRET change the device must sign in again; the token itself is kept.
+    serverToken = null;
+  }
+  if (!serverToken) {
+    throw new SessionError('PLEX_SIGN_IN_REQUIRED');
   }
 
   existing.revokedAt = new Date();
