@@ -1,6 +1,7 @@
 import type { Filters, FilterBreakdown, DataStats } from '@/types/filters';
 import type { ILibraryItem } from '@/lib/models/LibraryCache';
 import type { OverseerrAvailability } from '@/types/overseerr';
+import { isPlexSignInRequired } from '@/lib/services/plex';
 
 export type FilterableItem = Pick<
   ILibraryItem,
@@ -26,6 +27,7 @@ export async function fetchCollectionItemIds(
           collectionItemIds.add(item.plexId);
         }
       } catch (err) {
+        if (isPlexSignInRequired(err)) throw err;
         logger?.warn('Failed to fetch collection items', {
           collectionKey,
           error: (err as Error).message,

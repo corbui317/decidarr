@@ -265,7 +265,8 @@ async function ensurePlexMachineId(settings: ISettings, users: IUser[]): Promise
   if (settings.plexMachineId || !settings.plexServerUrl) return;
   const adminToken = users.filter((user) => user.isAdmin).map(readLegacyAccountToken).find(Boolean);
   if (!adminToken) return;
-  const machineId = await new PlexService(adminToken, settings.plexServerUrl).fetchMachineIdFromServer();
+  // A refusal here only means the identity stays unknown until a later start.
+  const machineId = await new PlexService(adminToken, settings.plexServerUrl).fetchMachineIdFromServer().catch(() => null);
   if (!machineId) return;
   await Settings.updateOne({ _id: SETTINGS_ID, plexMachineId: { $exists: false } }, { $set: { plexMachineId: machineId } });
   settings.plexMachineId = (await Settings.findById(SETTINGS_ID, { plexMachineId: 1 }).lean())?.plexMachineId;

@@ -85,6 +85,11 @@ export interface PlexItem {
   writers?: string[];
 }
 
+/** The Plex server refused the user's access token: only a new sign-in fixes it, so callers must not swallow it. */
+export function isPlexSignInRequired(err: unknown): boolean {
+  return err instanceof IntegrationError && err.integration === 'Plex' && err.status === 401;
+}
+
 /**
  * The configured Plex server, reached with one user's access token for that server
  * (never a plex.tv account token). A 401 from the server means that token stopped
@@ -151,6 +156,7 @@ export class PlexService {
       logger.warn('Server identity response missing machineIdentifier');
       return null;
     } catch (err) {
+      if (isPlexSignInRequired(err)) throw err;
       logger.error('Error fetching server identity', { error: (err as Error).message });
       return null;
     }
@@ -308,6 +314,7 @@ export class PlexService {
         addedAt: c.addedAt ? new Date((c.addedAt as number) * 1000) : undefined,
       }));
     } catch (err) {
+      if (isPlexSignInRequired(err)) throw err;
       logger.error('Error fetching collections', { sectionId, error: (err as Error).message });
       return [];
     }
@@ -330,6 +337,7 @@ export class PlexService {
       logger.debug('Fetched collection items', { collectionRatingKey, count: items.length });
       return items.map((item: Record<string, unknown>) => this.mapPlexItem(item));
     } catch (err) {
+      if (isPlexSignInRequired(err)) throw err;
       logger.error('Error fetching collection items', { collectionRatingKey, error: (err as Error).message });
       return [];
     }

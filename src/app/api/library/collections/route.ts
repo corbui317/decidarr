@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { route } from '@/lib/request/route';
 import { getAccessibleLibraryIds } from '@/lib/auth';
 import { getOrCreateSettings } from '@/lib/models/Settings';
-import { PlexService } from '@/lib/services/plex';
+import { isPlexSignInRequired, PlexService } from '@/lib/services/plex';
 import { createLogger } from '@/lib/logger';
 
 // Reads the session and database on every request; never prerender at build time.
@@ -48,6 +48,7 @@ export const GET = route({ access: 'user', query: collectionsQuery }, async ({ s
           });
         }
       } catch (err) {
+        if (isPlexSignInRequired(err)) throw err;
         logger.warn('Failed to get collections for library', { libraryId, error: (err as Error).message });
       }
     })

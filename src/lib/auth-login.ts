@@ -179,7 +179,8 @@ export async function completePlexLogin(
 
   if (settings.setupComplete && isAdmin && !settings.plexMachineId && settings.plexServerUrl) {
     // Installs set up by hand before OAuth may not know their server's identity yet.
-    const machineId = await new PlexService(authToken, settings.plexServerUrl).fetchMachineIdFromServer();
+    // A refusal leaves the identity unknown, and sign-in then reports no access to this server.
+    const machineId = await new PlexService(authToken, settings.plexServerUrl).fetchMachineIdFromServer().catch(() => null);
     if (machineId) {
       settings.plexMachineId = machineId;
       await settings.save();

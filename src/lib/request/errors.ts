@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { isAuthError, PLEX_SIGN_IN_REQUIRED_MESSAGE } from '@/lib/auth-errors';
 import { IntegrationError } from '@/lib/integrations/client';
+import { isPlexSignInRequired } from '@/lib/services/plex';
 
 /**
  * The one table from domain errors to HTTP status and a stable `code` in the body.
@@ -49,7 +50,7 @@ export function errorResponse(error: unknown): NextResponse {
     const code =
       error.code === 'FORBIDDEN' || error.code === 'PLEX_SIGN_IN_REQUIRED' ? error.code : 'UNAUTHENTICATED';
     domainError = new DomainError(code, error.message);
-  } else if (error instanceof IntegrationError && error.integration === 'Plex' && error.status === 401) {
+  } else if (isPlexSignInRequired(error)) {
     domainError = new DomainError('PLEX_SIGN_IN_REQUIRED');
   } else if (error instanceof IntegrationError) {
     // The table's message only: the integration's error can name internal hosts.
