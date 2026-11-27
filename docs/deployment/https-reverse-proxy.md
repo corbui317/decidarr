@@ -37,7 +37,7 @@ PORT=3100
 ```
 
 `APP_URL` must be the canonical origin: Plex sign-in (browser and mobile) only redirects back to it.
-`TRUST_PROXY=true` makes the sign-in rate limits use the client address your proxy appends to `X-Forwarded-For`; set it only when every request reaches Decidarr through that proxy, since otherwise a direct request could set that header itself. Without it, sign-in attempts are rate limited per PIN or device instead, with a server-wide ceiling as a backstop.
+`TRUST_PROXY=true` makes the sign-in rate limits use the client address your proxy appends to `X-Forwarded-For`; set it only when every request reaches Decidarr through that proxy, since otherwise a direct request could set that header itself. OAuth polling is still rate limited per sign-in attempt (its PIN) either way; a start request has no other identity to count by without `TRUST_PROXY`, so it only has a server-wide ceiling as a backstop.
 
 ### Local development (HTTP only)
 
