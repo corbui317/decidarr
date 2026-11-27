@@ -1,6 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { timingSafeEqual } from 'crypto';
+import { z } from 'zod';
+import { route } from '@/lib/request/route';
 import {
   pollAuthPin,
   OAUTH_PIN_COOKIE,
@@ -8,7 +10,6 @@ import {
   OAUTH_STATE_COOKIE,
 } from '@/lib/services/plex-oauth';
 import { completePlexLogin } from '@/lib/auth-login';
-import { connectDB } from '@/lib/db';
 import { createLogger } from '@/lib/logger';
 import { assertSetupSecretAllowed } from '@/lib/security/setup-secret';
 import { isRateLimited } from '@/lib/security/rate-limit';
@@ -40,10 +41,10 @@ function statesMatch(expected: string, provided: string): boolean {
   return timingSafeEqual(a, b);
 }
 
-export async function GET(request: NextRequest) {
-  try {
-    await connectDB();
+const queryContract = z.object({ state: z.string().optional() });
 
+export const GET = route({ access: 'public', query: queryContract }, async ({ request, query }) => {
+  try {
     const setupCheck = await assertSetupSecretAllowed(request);
     if (!setupCheck.ok) {
       return NextResponse.json(
@@ -56,9 +57,10 @@ export async function GET(request: NextRequest) {
     const pinId = parseInt(cookieStore.get(OAUTH_PIN_COOKIE)?.value || '', 10);
     const pinCode = cookieStore.get(OAUTH_PIN_CODE_COOKIE)?.value || '';
     const stateCookie = cookieStore.get(OAUTH_STATE_COOKIE)?.value || '';
-    const stateParam = request.nextUrl.searchParams.get('state') || '';
+    const url = new URL(request.url);
+    const stateParam = query.state || '';
 
-    if (request.nextUrl.searchParams.has('pinId') || request.nextUrl.searchParams.has('code')) {
+    if (url.searchParams.has('pinId') || url.searchParams.has('code')) {
       return NextResponse.json(
         { error: 'OAuth pin must come from session cookies', code: 'INVALID_OAUTH_PIN' },
         { status: 400 }
@@ -141,4 +143,4 @@ export async function GET(request: NextRequest) {
     logger.error('Plex poll error', { error: msg });
     return NextResponse.json({ error: 'Login failed', code: 'LOGIN_FAILED' }, { status: 500 });
   }
-}
+});

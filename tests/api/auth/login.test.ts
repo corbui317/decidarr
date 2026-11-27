@@ -41,7 +41,7 @@ describe('Auth and setup API routes', () => {
 
   describe('GET /api/settings/status', () => {
     it('returns setupComplete false for fresh install', async () => {
-      const res = await statusGet();
+      const res = await statusGet(createJsonRequest('http://localhost/api/settings/status', 'GET'));
       const body = await res.json();
       expect(res.status).toBe(200);
       expect(body.setupComplete).toBe(false);
@@ -49,7 +49,7 @@ describe('Auth and setup API routes', () => {
 
     it('returns configured status after setup', async () => {
       await seedConfiguredSettings();
-      const res = await statusGet();
+      const res = await statusGet(createJsonRequest('http://localhost/api/settings/status', 'GET'));
       const body = await res.json();
       expect(body.setupComplete).toBe(true);
       expect(body.hasPlexToken).toBe(true);
@@ -58,7 +58,7 @@ describe('Auth and setup API routes', () => {
 
     it('returns setupComplete false when DB flag is set but Plex token is missing', async () => {
       await seedPartialSettings();
-      const res = await statusGet();
+      const res = await statusGet(createJsonRequest('http://localhost/api/settings/status', 'GET'));
       const body = await res.json();
       expect(res.status).toBe(200);
       expect(body.setupComplete).toBe(false);
@@ -78,7 +78,7 @@ describe('Auth and setup API routes', () => {
       settings.adminUserId = adminUser._id;
       await settings.save();
 
-      const res = await statusGet();
+      const res = await statusGet(createJsonRequest('http://localhost/api/settings/status', 'GET'));
       const body = await res.json();
       expect(res.status).toBe(200);
       expect(body.setupComplete).toBe(true);
@@ -146,14 +146,14 @@ describe('Auth and setup API routes', () => {
   describe('GET /api/auth/me', () => {
     it('returns 401 without session', async () => {
       await seedConfiguredSettings();
-      const res = await meGet();
+      const res = await meGet(createJsonRequest('http://localhost/api/auth/me', 'GET'));
       expect(res.status).toBe(401);
     });
 
     it('returns user when session valid', async () => {
       await seedConfiguredSettings();
       await authenticateTestSession();
-      const res = await meGet();
+      const res = await meGet(createJsonRequest('http://localhost/api/auth/me', 'GET'));
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.user.username).toBe('testuser');

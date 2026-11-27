@@ -1,17 +1,21 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { connectDB } from '@/lib/db';
+import { NextResponse } from 'next/server';
+import { z } from 'zod';
+import { route } from '@/lib/request/route';
 import { rotateRefreshToken, redactToken } from '@/lib/mobile-auth/tokens';
 import { isAuthError } from '@/lib/auth-errors';
 import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('API:MobileAuthRefresh');
 
-export async function POST(request: NextRequest) {
+const bodyContract = z.object({
+  refreshToken: z.string().min(1, 'refreshToken and deviceId are required'),
+  deviceId: z.string().min(1, 'refreshToken and deviceId are required'),
+});
+
+export const POST = route({ access: 'public', body: bodyContract }, async ({ body }) => {
   try {
-    await connectDB();
-    const body = await request.json().catch(() => null);
-    const refreshToken = typeof body?.refreshToken === 'string' ? body.refreshToken.trim() : '';
-    const deviceId = typeof body?.deviceId === 'string' ? body.deviceId.trim() : '';
+    const refreshToken = body.refreshToken.trim();
+    const deviceId = body.deviceId.trim();
 
     if (!refreshToken || !deviceId) {
       return NextResponse.json({ error: 'refreshToken and deviceId are required' }, { status: 400 });
@@ -38,4 +42,4 @@ export async function POST(request: NextRequest) {
     logger.error('Mobile token refresh failed', { error: (err as Error).message });
     return NextResponse.json({ error: 'Failed to refresh session' }, { status: 500 });
   }
-}
+});

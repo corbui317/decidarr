@@ -12,6 +12,9 @@ export const RATE_LIMIT_STORE_MAX_ENTRIES = 10_000;
 
 const store = new Map<string, RateLimitEntry>();
 
+/** Ceiling bucket keys, so a flood of distinct identity keys can evict a scope's shared ceiling. */
+const protectedKeys = new Set<string>();
+
 export interface RateLimitConfig {
   windowMs: number;
   maxAttempts: number;
@@ -58,39 +61,42 @@ function hashIdentity(value: string): string {
 
 function evictOldestIfFull(): void {
   if (store.size < RATE_LIMIT_STORE_MAX_ENTRIES) return;
-  const oldestKey = store.keys().next().value;
-  if (oldestKey !== undefined) store.delete(oldestKey);
+  for (const key of store.keys()) {
+    if (protectedKeys.has(key)) continue;
+    store.delete(key);
+    return;
+  }
+}
+
+/** Reads the current count for a key without recording a hit, treating an expired or missing entry as zero. */
+function peekCount(key: string): number {
+  const entry = store.get(key);
+  if (!entry || entry.resetAt <= Date.now()) return 0;
+  return entry.count;
+}
+
+/** Records one hit against a key, starting a fresh window if the entry is missing or expired. */
+function recordHit(key: string, windowMs: number): RateLimitEntry {
+  const now = Date.now();
+  const entry = store.get(key);
+  if (!entry || entry.resetAt <= now) {
+    evictOldestIfFull();
+    const newEntry: RateLimitEntry = { count: 1, resetAt: now + windowMs };
+    store.set(key, newEntry);
+    return newEntry;
+  }
+  entry.count += 1;
+  store.set(key, entry);
+  return entry;
 }
 
 export function checkRateLimit(key: string, config: RateLimitConfig): RateLimitResult {
-  const now = Date.now();
-  const entry = store.get(key);
-
-  if (!entry || entry.resetAt <= now) {
-    evictOldestIfFull();
-    const newEntry: RateLimitEntry = {
-      count: 1,
-      resetAt: now + config.windowMs,
-    };
-    store.set(key, newEntry);
-    return {
-      allowed: true,
-      remaining: config.maxAttempts - 1,
-      resetAt: newEntry.resetAt,
-    };
+  if (peekCount(key) >= config.maxAttempts) {
+    const entry = store.get(key) as RateLimitEntry;
+    return { allowed: false, remaining: 0, resetAt: entry.resetAt };
   }
 
-  if (entry.count >= config.maxAttempts) {
-    return {
-      allowed: false,
-      remaining: 0,
-      resetAt: entry.resetAt,
-    };
-  }
-
-  entry.count += 1;
-  store.set(key, entry);
-
+  const entry = recordHit(key, config.windowMs);
   return {
     allowed: true,
     remaining: config.maxAttempts - entry.count,
@@ -98,13 +104,21 @@ export function checkRateLimit(key: string, config: RateLimitConfig): RateLimitR
   };
 }
 
+function globalCeilingKey(scope: string): string {
+  const key = `${scope}:__global__`;
+  protectedKeys.add(key);
+  return key;
+}
+
 /**
- * Checks a rate-limit policy for one request. A global ceiling for the scope always applies,
- * regardless of identity. Beyond that, the request is also checked against an identity-scoped
- * bucket keyed on `targetId` (what is being attacked: a PIN, a device code, a setup secret)
- * when given, or otherwise the client IP when `TRUST_PROXY` makes it trustworthy. When neither
- * is available, only the global ceiling applies, so an unknown client is never folded into a
- * shared bucket that a handful of failed attempts could use to lock out everyone else.
+ * Checks a rate-limit policy for one request. The request is checked against every identity
+ * bucket that is known for it: a bucket keyed on `targetId` (what is being attacked, when it
+ * identifies one of many concurrent instances, such as a PIN or a device code) and a bucket
+ * keyed on the client IP when `TRUST_PROXY` makes it trustworthy. Both are required, so with
+ * TRUST_PROXY enabled a caller cannot dodge its IP bucket by rotating a target it controls.
+ * A request already rejected by one of its own identity buckets is never also charged against
+ * the scope's global ceiling, so a single over-limit client cannot spend down the ceiling and
+ * lock out everyone else; when no identity is known at all, only the ceiling applies.
  */
 export function isRateLimited(
   request: Request,
@@ -112,16 +126,21 @@ export function isRateLimited(
   policy: RateLimitPolicy,
   targetId?: string
 ): boolean {
-  const { windowMs, maxAttempts, globalMaxAttempts = policy.maxAttempts } = policy;
+  const { windowMs, maxAttempts, globalMaxAttempts = maxAttempts } = policy;
 
-  if (!checkRateLimit(`${scope}:__global__`, { windowMs, maxAttempts: globalMaxAttempts }).allowed) {
-    return true;
-  }
+  const identityKeys: string[] = [];
+  if (targetId) identityKeys.push(`${scope}:target:${hashIdentity(targetId)}`);
+  const ip = getClientIp(request);
+  if (ip) identityKeys.push(`${scope}:ip:${hashIdentity(ip)}`);
 
-  const identity = targetId ? hashIdentity(targetId) : getClientIp(request);
-  if (!identity) return false;
+  if (identityKeys.some((key) => peekCount(key) >= maxAttempts)) return true;
 
-  return !checkRateLimit(`${scope}:${identity}`, { windowMs, maxAttempts }).allowed;
+  const ceilingKey = globalCeilingKey(scope);
+  if (peekCount(ceilingKey) >= globalMaxAttempts) return true;
+
+  identityKeys.forEach((key) => recordHit(key, windowMs));
+  recordHit(ceilingKey, windowMs);
+  return false;
 }
 
 /**
@@ -146,6 +165,7 @@ export function enforceRateLimit(
 export function clearRateLimitStore(): void {
   assertTestOnly('clearRateLimitStore');
   store.clear();
+  protectedKeys.clear();
 }
 
 /** @internal Test-only: current number of rate-limit buckets. */

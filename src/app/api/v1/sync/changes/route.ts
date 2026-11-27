@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { connectDB } from '@/lib/db';
-import { requireMobileUser } from '@/lib/mobile-auth/context';
-import { isAuthError, authErrorStatus } from '@/lib/auth';
+import { NextResponse } from 'next/server';
+import { z } from 'zod';
+import { route } from '@/lib/request/route';
+import { DomainError } from '@/lib/request/errors';
 import { getChanges } from '@/lib/sync/service';
 import { SYNC_SCHEMA_VERSION } from '@decidarr/api-contracts';
 import { createLogger } from '@/lib/logger';
@@ -11,20 +11,22 @@ export const dynamic = 'force-dynamic';
 
 const logger = createLogger('API:SyncChanges');
 
-export async function GET(request: NextRequest) {
+const queryContract = z.object({
+  cursor: z.string().optional(),
+  limit: z.string().optional(),
+});
+
+export const GET = route({ access: 'user', query: queryContract }, async ({ session, query }) => {
+  if (session.credential !== 'bearer') {
+    throw new DomainError('UNAUTHENTICATED');
+  }
+
+  const cursor = query.cursor ?? null;
+  const rawLimit = parseInt(query.limit ?? '100', 10);
+  const limit = Math.max(1, Math.min(500, Number.isNaN(rawLimit) ? 100 : rawLimit));
+
   try {
-    await connectDB();
-    const auth = await requireMobileUser(request);
-
-    const cursor = request.nextUrl.searchParams.get('cursor');
-    const rawLimit = parseInt(request.nextUrl.searchParams.get('limit') || '100', 10);
-    const limit = Math.max(1, Math.min(500, Number.isNaN(rawLimit) ? 100 : rawLimit));
-
-    const { changes, nextCursor, hasMore } = await getChanges(
-      auth.user._id,
-      cursor,
-      limit
-    );
+    const { changes, nextCursor, hasMore } = await getChanges(session.userId, cursor, limit);
 
     return NextResponse.json({
       schemaVersion: SYNC_SCHEMA_VERSION,
@@ -40,13 +42,7 @@ export async function GET(request: NextRequest) {
     if (statusCode === 410 || msg === 'full_resync_required') {
       return NextResponse.json({ error: 'full_resync_required' }, { status: 410 });
     }
-    if (isAuthError(error)) {
-      return NextResponse.json(
-        { error: error.message, code: error.code },
-        { status: authErrorStatus(error) }
-      );
-    }
     logger.error('Sync changes failed', { error: msg });
     return NextResponse.json({ error: 'Failed to fetch changes' }, { status: 500 });
   }
-}
+});

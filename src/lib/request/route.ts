@@ -15,6 +15,12 @@ export type Access = 'public' | 'user' | 'admin';
 export interface RateLimitPolicy extends CoreRateLimitPolicy {
   /** Names the bucket, so two routes never share counts. */
   scope: string;
+  /**
+   * Identifies what is being attacked, when that identifies one of many concurrent
+   * instances (a PIN, a device code) rather than a single shared resource. Read from the
+   * raw request, since this runs before body parsing.
+   */
+  target?: (request: Request) => string | undefined;
 }
 
 type Contract = z.ZodType | undefined;
@@ -88,6 +94,23 @@ async function readJson(request: Request): Promise<unknown> {
 }
 
 /**
+ * For routes whose access level depends on runtime state (public until setup
+ * completes, then admin): declared `access: 'public'`, the handler calls this once
+ * it knows setup is complete, to apply the same Session resolution, same-origin
+ * check, and admin gate that `access: 'admin'` would have applied up front.
+ */
+export async function requireAdminSession(request: Request): Promise<Session> {
+  const session = await resolveSession(request);
+  if (session.credential === 'cookie' && UNSAFE_METHODS.has(request.method)) {
+    assertSameOrigin(request);
+  }
+  if (!session.isAdmin) {
+    throw new DomainError('FORBIDDEN');
+  }
+  return session;
+}
+
+/**
  * Declares an API route handler. The module connects to the database, applies the
  * rate limit, resolves and authorizes the Session (cookie or bearer), rejects
  * cross-origin cookie writes, and validates params, query, and body before the
@@ -108,8 +131,8 @@ export function route<
       await runMigrations();
 
       if (spec.rateLimit) {
-        const { scope, ...policy } = spec.rateLimit;
-        if (isRateLimited(request, scope, policy)) {
+        const { scope, target, ...policy } = spec.rateLimit;
+        if (isRateLimited(request, scope, policy, target?.(request))) {
           throw new DomainError('RATE_LIMITED');
         }
       }

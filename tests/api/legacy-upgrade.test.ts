@@ -19,7 +19,7 @@ import { completePlexLogin } from '@/lib/auth-login';
 import { GET as statusGet } from '@/app/api/settings/status/route';
 import { POST as restartPost } from '@/app/api/test/restart/route';
 import { GET as settingsGet } from '@/app/api/settings/route';
-import { seedConfiguredSettings, seedTestUser } from '../helpers/auth';
+import { createJsonRequest, seedConfiguredSettings, seedTestUser } from '../helpers/auth';
 
 /** A real upgrade restarts the server: no cached connection, no migration run yet. */
 function simulateRestart(): void {
@@ -55,7 +55,7 @@ describe('Upgrading a legacy install to DECIDARR_SECRET', () => {
     vi.stubEnv('DECIDARR_SECRET', 'upgrade-test-secret');
     simulateRestart();
 
-    const res = await statusGet();
+    const res = await statusGet(createJsonRequest('http://localhost/api/settings/status', 'GET'));
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       setupComplete: true,
@@ -170,7 +170,7 @@ describe('Restarting with a different DECIDARR_SECRET', () => {
     vi.stubEnv('DECIDARR_SECRET', 'secret-b');
     simulateRestart();
 
-    const before = await statusGet();
+    const before = await statusGet(createJsonRequest('http://localhost/api/settings/status', 'GET'));
     expect(before.status).toBe(200);
 
     fakeIntegrations(fakePlex({ serverUri: 'http://192.168.1.10:32400', machineId: 'machine-a' }));
@@ -178,7 +178,7 @@ describe('Restarting with a different DECIDARR_SECRET', () => {
     expect(login).toMatchObject({ success: true, user: { isAdmin: true } });
     expect(getTestCookie('decidarr_session')).toBeTruthy();
 
-    const after = await statusGet();
+    const after = await statusGet(createJsonRequest('http://localhost/api/settings/status', 'GET'));
     expect(after.status).toBe(200);
     expect(await after.json()).toMatchObject({ setupComplete: true, hasPlexToken: true });
   });
@@ -204,14 +204,14 @@ describe('Restarting with a different DECIDARR_SECRET', () => {
     // The operator restarts with a mistyped secret B.
     vi.stubEnv('DECIDARR_SECRET', secretB);
     simulateRestart();
-    expect((await statusGet()).status).toBe(200);
+    expect((await statusGet(createJsonRequest('http://localhost/api/settings/status', 'GET'))).status).toBe(200);
     expect(await storedSecrets()).toEqual(before);
 
     // The admin signs in again (which re-enters their own Plex token) and is shown the rest.
     fakeIntegrations(fakePlex({ serverUri: 'http://192.168.1.10:32400', machineId: 'machine-1' }));
     const login = await completePlexLogin('fresh-oauth-token');
     expect(login).toMatchObject({ success: true, user: { isAdmin: true } });
-    const res = await settingsGet();
+    const res = await settingsGet(createJsonRequest('http://localhost/api/settings', 'GET'));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.credentialsNeedingReentry).toEqual(
@@ -275,11 +275,11 @@ describe('Restarting a legacy install with a changed MONGODB_URI', () => {
     // The legacy master key came from MONGODB_URI, so new connection options break it.
     vi.stubEnv('DECIDARR_SECRET', 'upgrade-test-secret-0123456789abcdef');
     await restartWithUri(`${originalUri}?appName=decidarr-changed`);
-    expect((await statusGet()).status).toBe(200);
+    expect((await statusGet(createJsonRequest('http://localhost/api/settings/status', 'GET'))).status).toBe(200);
     expect(await storedSecrets()).toEqual(before);
 
     await restartWithUri(originalUri);
-    expect((await statusGet()).status).toBe(200);
+    expect((await statusGet(createJsonRequest('http://localhost/api/settings/status', 'GET'))).status).toBe(200);
     const settings = await getOrCreateSettings();
     expect(settings.getDecryptedTmdbKey()).toBe(LEGACY_PLAINTEXT.tmdbApiKey);
     expect(settings.getDecryptedPlexToken()).toBe(LEGACY_PLAINTEXT.plexToken);

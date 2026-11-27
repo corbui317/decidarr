@@ -1,28 +1,28 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin, isAuthError, authErrorStatus } from '@/lib/auth';
+import { NextResponse } from 'next/server';
+import { z } from 'zod';
+import { route } from '@/lib/request/route';
 import { assertSafeServiceUrl } from '@/lib/security/service-url';
 import type { Logger } from '@/lib/logger';
 
 export type ConnectionTestResult = { success: boolean; error?: string; [key: string]: unknown };
 
-export async function handleConnectionTest(
-  request: NextRequest,
+const bodyContract = z.object({
+  url: z.string().min(1, 'URL and API key are required'),
+  apiKey: z.string().min(1, 'URL and API key are required'),
+});
+
+/**
+ * An admin-only connection test for an already-configured integration (Overseerr,
+ * Tautulli). Unlike Plex setup and the Plex connection test, these have no public
+ * phase: the integration being tested is only reachable once an Admin exists.
+ */
+export function connectionTestRoute(
   testConnection: (url: string, apiKey: string) => Promise<ConnectionTestResult>,
   serviceName: string,
   logger: Logger
-): Promise<NextResponse> {
-  try {
-    await requireAdmin();
-
-    const body = await request.json();
+) {
+  return route({ access: 'admin', body: bodyContract }, async ({ body }) => {
     const { url, apiKey } = body;
-
-    if (!url || !apiKey) {
-      return NextResponse.json(
-        { error: `${serviceName} URL and API key are required` },
-        { status: 400 }
-      );
-    }
 
     const urlCheck = await assertSafeServiceUrl(url);
     if (!urlCheck.valid) {
@@ -43,17 +43,5 @@ export async function handleConnectionTest(
 
     logger.warn(`${serviceName} test failed`, { error: result.error });
     return NextResponse.json({ success: false, error: result.error });
-  } catch (error) {
-    if (isAuthError(error)) {
-      return NextResponse.json(
-        { error: (error as Error).message },
-        { status: authErrorStatus(error) }
-      );
-    }
-    logger.error(`${serviceName} test error`, { error: (error as Error).message });
-    return NextResponse.json(
-      { success: false, error: `Failed to test ${serviceName} connection` },
-      { status: 500 }
-    );
-  }
+  });
 }

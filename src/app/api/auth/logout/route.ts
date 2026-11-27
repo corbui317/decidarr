@@ -1,15 +1,17 @@
 import { NextResponse } from 'next/server';
+import { route } from '@/lib/request/route';
+import { resolveSession } from '@/lib/request/session';
 import { clearSessionCookie } from '@/lib/auth-login';
-import { invalidateAccessibleLibraryCache, requireUser } from '@/lib/auth';
+import { invalidateAccessibleLibraryCache } from '@/lib/auth';
 
-export async function DELETE() {
+export const DELETE = route({ access: 'public' }, async ({ request }) => {
   try {
-    const auth = await requireUser();
-    invalidateAccessibleLibraryCache(String(auth.user._id));
+    const session = await resolveSession(request);
+    invalidateAccessibleLibraryCache(String(session.userId));
   } catch {
     // Session may already be invalid; still clear the cookie.
   }
 
   await clearSessionCookie();
   return NextResponse.json({ message: 'Logged out successfully' });
-}
+});

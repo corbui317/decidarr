@@ -1,7 +1,6 @@
-import { NextRequest } from 'next/server';
 import { OverseerrService } from '@/lib/services/overseerr';
 import { createLogger } from '@/lib/logger';
-import { handleConnectionTest } from '@/lib/routes/connection-test';
+import { connectionTestRoute } from '@/lib/routes/connection-test';
 
 const logger = createLogger('API:OverseerrTest');
 
@@ -19,6 +18,4 @@ async function testOverseerrConnection(url: string, apiKey: string) {
   return result;
 }
 
-export async function POST(request: NextRequest) {
-  return handleConnectionTest(request, testOverseerrConnection, 'Overseerr', logger);
-}
+export const POST = connectionTestRoute(testOverseerrConnection, 'Overseerr', logger);
