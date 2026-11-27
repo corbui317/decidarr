@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { APP_THEMES, ANIMATION_STYLES, ANIMATION_SPEEDS } from './shared';
+import { preferenceContractSchema, spinHistoryPreferencesContractSchema } from './sync';
 
 export const spinHistoryPreferencesPatchSchema = z.object({
   enabled: z.boolean().optional(),
@@ -44,3 +45,20 @@ export const preferencesPutBodySchema = z
     message: 'No valid preference fields provided',
   });
 export type PreferencesPutBody = z.infer<typeof preferencesPutBodySchema>;
+
+export const preferencesGetResponseSchema = z.object({
+  preferences: preferenceContractSchema,
+  spinHistory: spinHistoryPreferencesContractSchema,
+});
+export type PreferencesGetResponse = z.infer<typeof preferencesGetResponseSchema>;
+
+export const preferencesPutResponseSchema = z.object({
+  success: z.boolean(),
+  preferences: preferenceContractSchema,
+});
+export type PreferencesPutResponse = z.infer<typeof preferencesPutResponseSchema>;
+
+export const preferencesPatchResponseSchema = z.object({
+  spinHistory: spinHistoryPreferencesContractSchema,
+});
+export type PreferencesPatchResponse = z.infer<typeof preferencesPatchResponseSchema>;

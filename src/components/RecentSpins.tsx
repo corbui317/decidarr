@@ -117,7 +117,7 @@ export default function RecentSpins({ refreshKey = 0, onReapply, onRevisit }: Re
               </p>
             </div>
             <div className="flex items-center gap-1 flex-shrink-0">
-              {entry.filtersSnapshot && onReapply && (
+              {Boolean(entry.filtersSnapshot) && onReapply && (
                 <button
                   type="button"
                   onClick={() => onReapply(entry)}
@@ -154,8 +154,9 @@ export default function RecentSpins({ refreshKey = 0, onReapply, onRevisit }: Re
   );
 }
 
-export function historyFiltersToFilters(snapshot?: Filters | Record<string, unknown>): Filters | null {
-  if (!snapshot) return null;
+export function historyFiltersToFilters(snapshotInput?: unknown): Filters | null {
+  if (!snapshotInput || typeof snapshotInput !== 'object') return null;
+  const snapshot = snapshotInput as Filters | Record<string, unknown>;
   if ('genres' in snapshot && Array.isArray(snapshot.genres)) {
     return snapshot as Filters;
   }
