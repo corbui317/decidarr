@@ -1,8 +1,23 @@
 import { timingSafeEqual } from 'crypto';
 import { getOrCreateSettings } from '@/lib/models/Settings';
 import { createLogger } from '@/lib/logger';
+import { isRateLimited } from '@/lib/security/rate-limit';
 
 const logger = createLogger('SetupSecret');
+
+/** DECIDARR_SETUP_SECRET must be at least this long while setup is incomplete. */
+export const MIN_SETUP_SECRET_LENGTH = 16;
+
+/**
+ * Wrong guesses against the setup secret, per client when TRUST_PROXY makes a client
+ * identifiable, plus a server-wide ceiling well above household use as a backstop when it
+ * does not. The correct secret is never checked against this limit.
+ */
+const SETUP_SECRET_RATE_LIMIT_CONFIG = {
+  windowMs: 15 * 60 * 1000,
+  maxAttempts: 5,
+  globalMaxAttempts: 50,
+};
 
 export function isSetupSecretRequired(): boolean {
   return process.env.NODE_ENV === 'production';
@@ -36,6 +51,18 @@ export function validateSetupSecret(provided: string | null | undefined): boolea
   return timingSafeEqual(a, b);
 }
 
+/**
+ * True when a request carries the correct setup secret while setup is incomplete, so a
+ * route's own sign-in rate limit can exempt it: the real admin must never be rate limited
+ * out of their own first-run setup by a flood of someone else's guesses.
+ */
+export async function isCorrectSetupSecret(request: Request): Promise<boolean> {
+  if (!(await isSetupIncomplete())) return false;
+  const expected = getConfiguredSetupSecret();
+  if (!expected || expected.length < MIN_SETUP_SECRET_LENGTH) return false;
+  return validateSetupSecret(extractSetupSecret(request));
+}
+
 export function setupSecretHeaderName(): string {
   return 'X-Decidarr-Setup-Secret';
 }
@@ -66,15 +93,37 @@ export async function assertSetupSecretAllowed(
     return { ok: true };
   }
 
-  const provided = extractSetupSecret(request);
-  if (!validateSetupSecret(provided)) {
+  if (expected.length < MIN_SETUP_SECRET_LENGTH) {
+    logger.error('DECIDARR_SETUP_SECRET is shorter than the minimum length', {
+      minLength: MIN_SETUP_SECRET_LENGTH,
+    });
     return {
       ok: false,
-      status: 403,
-      error: 'Invalid setup secret',
-      code: 'INVALID_SETUP_SECRET',
+      status: 503,
+      error: `DECIDARR_SETUP_SECRET must be at least ${MIN_SETUP_SECRET_LENGTH} characters.`,
+      code: 'SETUP_SECRET_TOO_SHORT',
     };
   }
 
-  return { ok: true };
+  const provided = extractSetupSecret(request);
+  if (validateSetupSecret(provided)) {
+    return { ok: true };
+  }
+
+  // The correct secret is never rate limited; only wrong guesses count against the limit.
+  if (isRateLimited(request, 'setup-secret', SETUP_SECRET_RATE_LIMIT_CONFIG)) {
+    return {
+      ok: false,
+      status: 429,
+      error: 'Too many requests. Please try again later.',
+      code: 'RATE_LIMITED',
+    };
+  }
+
+  return {
+    ok: false,
+    status: 403,
+    error: 'Invalid setup secret',
+    code: 'INVALID_SETUP_SECRET',
+  };
 }

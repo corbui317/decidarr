@@ -5,7 +5,9 @@ import { route } from '@/lib/request/route';
 export const POST = route(
   {
     access: 'public',
-    rateLimit: { scope: 'auth:login', windowMs: 15 * 60 * 1000, maxAttempts: 5 },
+    // Well above household use: this route always 410s, but still shares the same bounded,
+    // unspoofable policy as every other sign-in route so it cannot become an unlimited bucket.
+    rateLimit: { scope: 'auth:login', windowMs: 15 * 60 * 1000, maxAttempts: 5, globalMaxAttempts: 50 },
   },
   async () => {
     return NextResponse.json(
