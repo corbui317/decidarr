@@ -64,9 +64,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const getValidAccessToken = useCallback(async (): Promise<string | null> => {
-    const token = await getValidMobileAccessToken();
-    if (!token) setState('reauth_required');
-    return token;
+    try {
+      const token = await getValidMobileAccessToken();
+      if (!token) setState('reauth_required');
+      return token;
+    } catch {
+      // The refresh call failed transiently (offline, server error), not because the
+      // server rejected the refresh token, so this is not a sign-out condition.
+      return null;
+    }
   }, []);
 
   const startLogin = useCallback(async () => {
