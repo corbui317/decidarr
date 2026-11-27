@@ -61,6 +61,27 @@ describe('checkRateLimit store bound', () => {
     // The earliest keys were evicted, so hitting them again starts a fresh bucket.
     expect(checkRateLimit('key-0', { windowMs: 60_000, maxAttempts: 5 }).remaining).toBe(4);
   });
+
+  it('keeps a scope\'s global ceiling bucket from being evicted by a flood of distinct identities, while the store stays bounded', () => {
+    const policy = { windowMs: 60_000, maxAttempts: 1, globalMaxAttempts: 1_000_000 };
+
+    // Establish the ceiling bucket first, like a normal early request would.
+    expect(isRateLimited(request(), 'flood-scope', policy, 'first-client')).toBe(false);
+
+    // Flood with enough distinct targets to cycle the whole store well past its bound.
+    for (let i = 0; i < RATE_LIMIT_STORE_MAX_ENTRIES + 500; i++) {
+      isRateLimited(request(), 'flood-scope', policy, `flood-client-${i}`);
+    }
+
+    expect(rateLimitStoreSizeForTests()).toBeLessThanOrEqual(RATE_LIMIT_STORE_MAX_ENTRIES);
+
+    // A late distinct client still gets its own fresh bucket (the store stayed usable)...
+    expect(isRateLimited(request(), 'flood-scope', policy, 'late-client')).toBe(false);
+
+    // ...and the ceiling bucket kept counting throughout instead of being evicted and restarting.
+    const ceiling = checkRateLimit('flood-scope:__global__', { windowMs: 60_000, maxAttempts: 1_000_000 });
+    expect(ceiling.remaining).toBeLessThan(1_000_000 - RATE_LIMIT_STORE_MAX_ENTRIES);
+  });
 });
 
 describe('isRateLimited / enforceRateLimit', () => {
@@ -98,6 +119,36 @@ describe('isRateLimited / enforceRateLimit', () => {
     expect(isRateLimited(request(), 'scope-c', policy)).toBe(false);
     expect(isRateLimited(request(), 'scope-c', policy)).toBe(false);
     expect(isRateLimited(request(), 'scope-c', policy)).toBe(true);
+  });
+
+  it('applies both the target bucket and the trusted IP bucket, so rotating one cannot dodge the other', () => {
+    const policy = { windowMs: 60_000, maxAttempts: 1, globalMaxAttempts: 1_000 };
+    vi.stubEnv('TRUST_PROXY', 'true');
+
+    // Same target, rotating the forwarded IP: the target bucket still catches it.
+    expect(isRateLimited(request({ 'x-forwarded-for': '1.1.1.1' }), 'scope-e', policy, 'target-x')).toBe(false);
+    expect(isRateLimited(request({ 'x-forwarded-for': '2.2.2.2' }), 'scope-e', policy, 'target-x')).toBe(true);
+
+    // Same forwarded IP, rotating the target: the IP bucket still catches it.
+    expect(isRateLimited(request({ 'x-forwarded-for': '3.3.3.3' }), 'scope-e', policy, 'target-y')).toBe(false);
+    expect(isRateLimited(request({ 'x-forwarded-for': '3.3.3.3' }), 'scope-e', policy, 'target-z')).toBe(true);
+  });
+
+  it('counts a request against the global ceiling only when its own bucket allows it, so one over-limit client cannot starve another', () => {
+    const policy = { windowMs: 60_000, maxAttempts: 1, globalMaxAttempts: 3 };
+
+    // client-a's one allowed attempt spends 1 of the 3 shared ceiling slots.
+    expect(isRateLimited(request(), 'scope-f', policy, 'client-a')).toBe(false);
+    // Every further attempt is rejected by client-a's own bucket and never touches the ceiling.
+    for (let i = 0; i < 10; i++) {
+      expect(isRateLimited(request(), 'scope-f', policy, 'client-a')).toBe(true);
+    }
+
+    // An unidentified caller (no target, no trusted IP) only competes for the ceiling, which
+    // still has its remaining 2 slots: client-a's flood of rejected attempts did not drain it.
+    expect(isRateLimited(request(), 'scope-f', policy)).toBe(false);
+    expect(isRateLimited(request(), 'scope-f', policy)).toBe(false);
+    expect(isRateLimited(request(), 'scope-f', policy)).toBe(true);
   });
 
   it('enforceRateLimit returns the shared rate-limited error code', async () => {

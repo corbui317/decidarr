@@ -74,9 +74,9 @@ describe('Mobile auth hardening (spec #1 rules on the mobile routes)', () => {
   });
 
   describe('POST /api/mobile/auth/start', () => {
-    it('rate limits with the shared limiter and a spoofed X-Forwarded-For does not reset it', async () => {
+    it('a spoofed, rotating X-Forwarded-For cannot dodge the global ceiling without TRUST_PROXY (H4)', async () => {
       const statuses: number[] = [];
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < 51; i++) {
         const response = await startPost(
           startRequest(undefined, { 'x-forwarded-for': `10.0.0.${i}` })
         );
@@ -86,13 +86,13 @@ describe('Mobile auth hardening (spec #1 rules on the mobile routes)', () => {
         }
       }
 
-      expect(statuses.slice(0, 5)).toEqual([200, 200, 200, 200, 200]);
-      expect(statuses[5]).toBe(429);
+      expect(statuses.slice(0, 50)).toEqual(Array(50).fill(200));
+      expect(statuses[50]).toBe(429);
     });
 
-    it('rate limits one device and a spoofed X-Real-IP does not reset it without TRUST_PROXY (H4)', async () => {
+    it('a spoofed, rotating X-Real-IP cannot dodge the global ceiling without TRUST_PROXY (H4)', async () => {
       const statuses: number[] = [];
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < 51; i++) {
         const response = await startPost(
           startRequest(undefined, { 'x-real-ip': `203.0.113.${i}` })
         );
@@ -102,8 +102,23 @@ describe('Mobile auth hardening (spec #1 rules on the mobile routes)', () => {
         }
       }
 
-      expect(statuses.slice(0, 5)).toEqual([200, 200, 200, 200, 200]);
-      expect(statuses[5]).toBe(429);
+      expect(statuses.slice(0, 50)).toEqual(Array(50).fill(200));
+      expect(statuses[50]).toBe(429);
+    });
+
+    it('with TRUST_PROXY, one forwarded client exhausting its own budget does not block a different one', async () => {
+      vi.stubEnv('TRUST_PROXY', 'true');
+
+      let lastStatus = 0;
+      for (let i = 0; i < 6; i++) {
+        lastStatus = (
+          await startPost(startRequest(undefined, { 'x-forwarded-for': '198.51.100.9' }))
+        ).status;
+      }
+      expect(lastStatus).toBe(429);
+
+      const other = await startPost(startRequest(undefined, { 'x-forwarded-for': '198.51.100.50' }));
+      expect(other.status).toBe(200);
     });
 
     it('omits forwardUrl when the request origin does not match APP_URL', async () => {
