@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
+import { mobileAuthStartRequestSchema } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { MobileAuthCode } from '@/lib/models/MobileAuthCode';
 import { buildPlexAuthUrl, createAuthPin } from '@/lib/services/plex-oauth';
@@ -14,16 +14,11 @@ import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('API:MobileAuthStart');
 
-const bodyContract = z.object({
-  deviceId: z.string().min(8, 'deviceId is required'),
-  deviceName: z.string().optional(),
-});
-
 /** Same budget as the browser sign-in start (POST /api/auth/plex/start). */
 export const POST = route(
   {
     access: 'public',
-    body: bodyContract,
+    body: mobileAuthStartRequestSchema,
     // No per-guess target: a caller-chosen deviceId is not an attacked resource, and the
     // setup secret is a single shared one, so neither should become a bucket of its own.
     // Identity (when TRUST_PROXY makes it trustworthy) plus the ceiling well above household

@@ -1,5 +1,5 @@
 import type { ILibraryItem } from '@/lib/models/LibraryCache';
-import { DEFAULT_FILTERS } from '@/types/filters';
+import { DEFAULT_FILTERS } from '@decidarr/api-contracts';
 
 export const SAMPLE_LIBRARY_ITEMS: ILibraryItem[] = [
   {

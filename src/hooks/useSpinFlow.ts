@@ -3,9 +3,13 @@
 import { useState, useCallback } from 'react';
 import { selectionApi, spinHistoryApi, AnimationStyle } from '@/lib/api';
 import { resolveAnimationStyle, ResolvedAnimationStyle } from '@/components/animations';
-import { Filters } from '@/types/filters';
-import type { SelectionResultResponse } from '@/types/api/selection';
-import type { MediaType, MediaTypeWithEpisode, TvSelectionMode } from '@/types/shared';
+import {
+  Filters,
+  type SelectionResultResponse,
+  type MediaType,
+  type MediaTypeWithEpisode,
+  type TvSelectionMode,
+} from '@decidarr/api-contracts';
 
 export type SpinPhase = 'idle' | 'loading' | 'animating' | 'result';
 

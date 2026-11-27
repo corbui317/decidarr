@@ -164,14 +164,6 @@ export async function fetchPlexUser(authToken: string): Promise<PlexOAuthUser> {
   };
 }
 
-export interface PlexFriend {
-  id: string;
-  username: string;
-  thumb?: string;
-  hasServerAccess: boolean;
-  isApproved: boolean;
-}
-
 export async function fetchPlexFriends(authToken: string): Promise<
   Array<{ id: string; username: string; thumb?: string }>
 > {

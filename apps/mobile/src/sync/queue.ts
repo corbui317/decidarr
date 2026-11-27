@@ -3,24 +3,6 @@ import { getDatabase } from '@/db/database';
 
 export type QueueStatus = 'pending' | 'syncing' | 'failed' | 'conflict';
 
-export async function enqueueMutation(mutation: SyncMutation): Promise<void> {
-  const db = await getDatabase();
-  await db.runAsync(
-    `INSERT OR REPLACE INTO mutation_queue
-      (mutation_id, device_id, entity_type, entity_id, operation, base_revision, client_changed_at, payload, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
-    mutation.mutationId,
-    mutation.deviceId,
-    mutation.entityType,
-    mutation.entityId,
-    mutation.operation,
-    mutation.baseRevision,
-    mutation.clientChangedAt,
-    JSON.stringify(mutation.payload),
-    new Date().toISOString()
-  );
-}
-
 export async function getPendingMutations(): Promise<SyncMutation[]> {
   const db = await getDatabase();
   const rows = await db.getAllAsync<{

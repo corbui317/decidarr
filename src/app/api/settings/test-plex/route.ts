@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
+import { settingsTestPlexBodySchema, type PlexTestResponse } from '@decidarr/api-contracts';
 import { route, requireAdminSession } from '@/lib/request/route';
 import { DomainError } from '@/lib/request/errors';
 import { PlexService } from '@/lib/services/plex';
@@ -10,12 +10,7 @@ import { getOrCreateSettings } from '@/lib/models/Settings';
 
 const logger = createLogger('API:TestPlex');
 
-const bodyContract = z.object({
-  plexToken: z.string().min(1, 'Plex token is required'),
-  plexServerUrl: z.string().optional(),
-});
-
-export const POST = route({ access: 'public', body: bodyContract }, async ({ request, body }) => {
+export const POST = route({ access: 'public', body: settingsTestPlexBodySchema }, async ({ request, body }) => {
   const settings = await getOrCreateSettings();
 
   if (!settings.setupComplete) {
@@ -47,10 +42,8 @@ export const POST = route({ access: 'public', body: bodyContract }, async ({ req
 
   if (!validation.valid || !validation.user) {
     logger.warn('Plex token invalid', { error: validation.error });
-    return NextResponse.json({
-      valid: false,
-      error: 'Invalid Plex token',
-    });
+    const invalidResponse: PlexTestResponse = { valid: false, error: 'Invalid Plex token' };
+    return NextResponse.json(invalidResponse);
   }
 
   logger.info('Plex token valid', { username: validation.user.username });
@@ -91,7 +84,7 @@ export const POST = route({ access: 'public', body: bodyContract }, async ({ req
     }
   }
 
-  return NextResponse.json({
+  const response: PlexTestResponse = {
     valid: true,
     user: {
       username: validation.user.username,
@@ -105,5 +98,6 @@ export const POST = route({ access: 'public', body: bodyContract }, async ({ req
           libraryCount,
         }
       : null,
-  });
+  };
+  return NextResponse.json(response);
 });

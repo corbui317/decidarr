@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
+import { plexImageQuerySchema } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { DomainError } from '@/lib/request/errors';
 import { normalizeAndValidatePlexImagePath } from '@/lib/plex-image';
@@ -25,12 +25,7 @@ function isAllowedImageContentType(contentType: string): boolean {
   return mimeType !== undefined && ALLOWED_IMAGE_CONTENT_TYPES.has(mimeType);
 }
 
-const imageQuery = z.object({
-  path: z.string().min(1),
-  width: z.string().optional(),
-});
-
-export const GET = route({ access: 'user', query: imageQuery }, async ({ session, query }) => {
+export const GET = route({ access: 'user', query: plexImageQuerySchema }, async ({ session, query }) => {
   const normalizedPath = normalizeAndValidatePlexImagePath(query.path);
   if (!normalizedPath) {
     throw new DomainError('VALIDATION_FAILED', 'Invalid image path');

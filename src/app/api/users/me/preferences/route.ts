@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
+import { preferencesPatchBodySchema, preferencesPutBodySchema } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { DomainError } from '@/lib/request/errors';
 import { User } from '@/lib/models/User';
@@ -9,50 +9,9 @@ import {
   trimHistoryIfRetentionReduced,
 } from '@/lib/spin-history';
 import { emitSyncChange, toPreferenceContract } from '@/lib/sync/service';
-import { APP_THEMES, ANIMATION_STYLES, ANIMATION_SPEEDS } from '@/types/shared';
 
 // Reads the session and database on every request; never prerender at build time.
 export const dynamic = 'force-dynamic';
-
-const spinHistoryPatchSchema = z.object({
-  enabled: z.boolean().optional(),
-  retentionLimit: z.number().optional(),
-  storeFilterSnapshot: z.boolean().optional(),
-});
-
-const savedFiltersSchema = z.object({
-  genres: z.array(z.string()).optional(),
-  studios: z.array(z.string()).optional(),
-  contentRatings: z.array(z.string()).optional(),
-  collections: z.array(z.string()).optional(),
-  yearRange: z.object({ start: z.number().optional(), end: z.number().optional() }).optional(),
-  ratingRange: z.object({ min: z.number().optional(), max: z.number().optional() }).optional(),
-  ratingFilter: z.string().nullable().optional(),
-  unwatchedOnly: z.boolean().optional(),
-});
-
-const preferencesPatchBody = z
-  .object({
-    spinHistory: spinHistoryPatchSchema,
-  })
-  .refine((value) => Object.keys(value.spinHistory).length > 0, {
-    message: 'No valid preference fields provided',
-  });
-
-const preferencesPutBody = z
-  .object({
-    theme: z.enum(APP_THEMES).optional(),
-    defaultMediaType: z.enum(['movie', 'show']).optional(),
-    tvSelectionMode: z.enum(['show', 'episode']).optional(),
-    savedFilters: savedFiltersSchema.optional(),
-    selectedLibraries: z.array(z.string()).optional(),
-    animationStyle: z.enum(ANIMATION_STYLES).optional(),
-    animationSpeed: z.enum(ANIMATION_SPEEDS).optional(),
-    spinHistory: spinHistoryPatchSchema.optional(),
-  })
-  .refine((value) => Object.keys(value).length > 0, {
-    message: 'No valid preference fields provided',
-  });
 
 async function loadUser(userId: unknown) {
   const user = await User.findById(userId);
@@ -74,7 +33,7 @@ export const GET = route({ access: 'user' }, async ({ session }) => {
   });
 });
 
-export const PUT = route({ access: 'user', body: preferencesPutBody }, async ({ session, body }) => {
+export const PUT = route({ access: 'user', body: preferencesPutBodySchema }, async ({ session, body }) => {
   const user = await loadUser(session.userId);
 
   if (body.theme !== undefined) {
@@ -153,7 +112,7 @@ export const PUT = route({ access: 'user', body: preferencesPutBody }, async ({ 
   return NextResponse.json({ success: true, preferences: user.preferences });
 });
 
-export const PATCH = route({ access: 'user', body: preferencesPatchBody }, async ({ session, body }) => {
+export const PATCH = route({ access: 'user', body: preferencesPatchBodySchema }, async ({ session, body }) => {
   const user = await loadUser(session.userId);
   const { spinHistory: patch } = body;
 

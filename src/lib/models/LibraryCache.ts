@@ -1,6 +1,6 @@
 import mongoose, { Document, Model } from 'mongoose';
 import type { OverseerrAvailability } from '@/types/overseerr';
-import type { MediaType } from '@/types/shared';
+import type { MediaType } from '@decidarr/api-contracts';
 
 export interface ILibraryItem {
   plexId: string;

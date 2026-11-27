@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { selectionApi } from '@/lib/api';
-import { Filters, PoolCountResult } from '@/types/filters';
-import type { MediaType } from '@/types/shared';
+import { Filters, PoolCountResult, type MediaType } from '@decidarr/api-contracts';
 
 export interface UsePoolCountResult {
   poolCount: number | null;

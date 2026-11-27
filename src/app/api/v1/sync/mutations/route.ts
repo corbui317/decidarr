@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
+import { syncMutationsBodySchema } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { DomainError } from '@/lib/request/errors';
 import { User } from '@/lib/models/User';
@@ -8,9 +8,7 @@ import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('API:SyncMutations');
 
-const bodyContract = z.object({ mutations: z.array(z.unknown()) });
-
-export const POST = route({ access: 'user', body: bodyContract }, async ({ session, body }) => {
+export const POST = route({ access: 'user', body: syncMutationsBodySchema }, async ({ session, body }) => {
   if (session.credential !== 'bearer') {
     throw new DomainError('UNAUTHENTICATED');
   }

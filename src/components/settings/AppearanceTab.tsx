@@ -12,7 +12,7 @@ import {
   ANIMATION_SPEED_LABELS,
 } from '@/components/animations';
 import { THEME_CONFIG, AppTheme, useTheme } from '@/context/ThemeContext';
-import type { MediaType, TvSelectionMode } from '@/types/shared';
+import type { MediaType, TvSelectionMode } from '@decidarr/api-contracts';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { inputClass, inputStyle, labelClass } from './shared';
 

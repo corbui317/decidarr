@@ -1,27 +1,26 @@
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
+import {
+  watchedCreateBodySchema,
+  watchedPlexIdParamsSchema,
+  type WatchedStatusResponse,
+} from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { WatchedItem } from '@/lib/models/WatchedItem';
 import type { WatchedMediaType } from '@/lib/validation/watched';
 import { emitSyncChange, toWatchedContract } from '@/lib/sync/service';
 
-const plexIdParams = z.object({ plexId: z.string().min(1) });
-const watchedCreateBody = z.object({
-  mediaType: z.enum(['movie', 'show', 'episode']),
-  title: z.string().trim().min(1),
-});
-
-export const GET = route({ access: 'user', params: plexIdParams }, async ({ session, params }) => {
+export const GET = route({ access: 'user', params: watchedPlexIdParamsSchema }, async ({ session, params }) => {
   const item = await WatchedItem.findOne({
     userId: session.userId,
     plexId: params.plexId,
   }).lean();
 
-  return NextResponse.json({ watched: !!item });
+  const response: WatchedStatusResponse = { watched: !!item };
+  return NextResponse.json(response);
 });
 
 export const POST = route(
-  { access: 'admin', params: plexIdParams, body: watchedCreateBody },
+  { access: 'admin', params: watchedPlexIdParamsSchema, body: watchedCreateBodySchema },
   async ({ session, params, body }) => {
     const { mediaType, title } = body as { mediaType: WatchedMediaType; title: string };
 
@@ -43,7 +42,7 @@ export const POST = route(
   }
 );
 
-export const DELETE = route({ access: 'admin', params: plexIdParams }, async ({ session, params }) => {
+export const DELETE = route({ access: 'admin', params: watchedPlexIdParamsSchema }, async ({ session, params }) => {
   await WatchedItem.deleteOne({ userId: session.userId, plexId: params.plexId });
 
   await emitSyncChange(session.userId, 'watched', params.plexId, 'delete', null);

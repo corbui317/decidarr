@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
 import { route } from '@/lib/request/route';
+import { spinHistoryCreateBodySchema, spinHistoryListQuerySchema } from '@decidarr/api-contracts';
 import { SpinHistoryEntry } from '@/lib/models/SpinHistoryEntry';
 import {
   getSpinHistoryPreferences,
@@ -13,23 +13,6 @@ import { emitSyncChange, toSpinHistoryContract } from '@/lib/sync/service';
 // Reads the session and database on every request; never prerender at build time.
 export const dynamic = 'force-dynamic';
 
-const listQuery = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
-});
-
-const createBody = z.object({
-  plexId: z.string().min(1),
-  title: z.string().min(1),
-  mediaType: z.enum(['movie', 'show', 'episode']),
-  thumbPath: z.string().nullish(),
-  year: z.number().int().nullish(),
-  libraryIds: z.array(z.string()).default([]),
-  filtersSnapshot: z.unknown().optional(),
-  tvSelectionMode: z.enum(['show', 'episode']).nullish(),
-  poolSizeAtSpin: z.number().int().min(0).nullish(),
-});
-
 function withImageUrls<T extends { thumbPath?: string | null; posterUrl?: string | null }>(item: T) {
   const images = resolveItemImageUrls(item);
   return {
@@ -39,7 +22,7 @@ function withImageUrls<T extends { thumbPath?: string | null; posterUrl?: string
   };
 }
 
-export const GET = route({ access: 'user', query: listQuery }, async ({ session, query }) => {
+export const GET = route({ access: 'user', query: spinHistoryListQuerySchema }, async ({ session, query }) => {
   const { page, limit } = query;
   const filter = { userId: session.userId };
   const [items, total] = await Promise.all([
@@ -54,7 +37,7 @@ export const GET = route({ access: 'user', query: listQuery }, async ({ session,
   return NextResponse.json({ items: items.map(withImageUrls), total, page, pageSize: limit });
 });
 
-export const POST = route({ access: 'user', body: createBody }, async ({ session, body }) => {
+export const POST = route({ access: 'user', body: spinHistoryCreateBodySchema }, async ({ session, body }) => {
   const prefs = await getSpinHistoryPreferences(session.userId);
   if (!prefs.enabled) {
     return NextResponse.json({ skipped: true, reason: 'disabled' });

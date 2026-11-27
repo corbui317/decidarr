@@ -1,150 +1,79 @@
-import type {
-  MobileAuthExchangeResponse,
-  MobileAuthRefreshResponse,
-  MobileAuthStartResponse,
-  SyncBootstrapResponse,
-  SyncChangesResponse,
-  SyncMutation,
-  SyncMutationBatchResponse,
+import {
+  createApiClient,
+  createMobileTransport,
+  createPublicTransport,
+  ApiError,
+  type MobileAuthLogoutRequest,
+  type PreferenceContract,
+  type SelectionParameters,
+  type SpinHistoryCreateBody,
 } from '@decidarr/api-contracts';
 import { getApiBaseUrl } from './config';
+import {
+  getAccessToken,
+  getAccessTokenExpiresAt,
+  getOrCreateDeviceId,
+  getRefreshToken,
+  storeTokens,
+} from '@/auth/session';
 
-export class ApiError extends Error {
-  constructor(
-    message: string,
-    public status: number,
-    public code?: string
-  ) {
-    super(message);
-    this.name = 'ApiError';
+export { ApiError };
+
+const publicTransport = createPublicTransport({ baseUrl: getApiBaseUrl });
+const publicClient = createApiClient(publicTransport);
+
+async function refresh() {
+  const refreshToken = await getRefreshToken();
+  if (!refreshToken) return null;
+  const deviceId = await getOrCreateDeviceId();
+  try {
+    const result = await publicClient.mobileAuth.refresh({ refreshToken, deviceId });
+    await storeTokens(result.accessToken, result.refreshToken, Date.now() + result.expiresIn * 1000);
+    return result;
+  } catch (error) {
+    // Only the server actually rejecting the refresh token (401) means the session is dead.
+    // A network failure, a 5xx, or a transient 4xx like 429 rate limiting is not an invalid
+    // token, so it must not be swallowed into "sign out" - rethrow so the caller can tell
+    // the two apart.
+    if (error instanceof ApiError && error.status === 401) {
+      return null;
+    }
+    throw error;
   }
 }
 
-async function request<T>(
-  path: string,
-  options: {
-    method?: string;
-    body?: unknown;
-    accessToken?: string | null;
-  } = {}
-): Promise<T> {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
-  if (options.accessToken) {
-    headers.Authorization = `Bearer ${options.accessToken}`;
-  }
+const mobileTransport = createMobileTransport({
+  baseUrl: getApiBaseUrl,
+  getAccessToken,
+  getExpiresAt: getAccessTokenExpiresAt,
+  refresh,
+});
 
-  const response = await fetch(`${getApiBaseUrl()}${path}`, {
-    method: options.method ?? 'GET',
-    headers,
-    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
-  });
+const authenticatedClient = createApiClient(mobileTransport);
 
-  const data = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new ApiError(data.error || 'Request failed', response.status, data.code);
-  }
-
-  return data as T;
-}
+/** Reads the current access token, refreshing first if it is missing or close to expiry. */
+export const getValidAccessToken = mobileTransport.getValidAccessToken;
 
 export const mobileAuthApi = {
-  start: (deviceId: string, deviceName?: string) =>
-    request<MobileAuthStartResponse>('/mobile/auth/start', {
+  ...publicClient.mobileAuth,
+  // Sent best-effort with whatever access token is stored, without forcing a refresh,
+  // so the server can also revoke the session by device id.
+  logout: async (body: MobileAuthLogoutRequest = {}) => {
+    const accessToken = await getAccessToken();
+    return publicTransport.request<{ success: boolean }>('/mobile/auth/logout', {
       method: 'POST',
-      body: { deviceId, deviceName },
-    }),
-  exchange: (deviceCode: string, deviceId: string) =>
-    request<MobileAuthExchangeResponse>('/mobile/auth/exchange', {
-      method: 'POST',
-      body: { deviceCode, deviceId },
-    }),
-  refresh: (refreshToken: string, deviceId: string) =>
-    request<MobileAuthRefreshResponse>('/mobile/auth/refresh', {
-      method: 'POST',
-      body: { refreshToken, deviceId },
-    }),
-  logout: (accessToken: string, refreshToken?: string) =>
-    request<{ success: boolean }>('/mobile/auth/logout', {
-      method: 'POST',
-      accessToken,
-      body: { refreshToken },
-    }),
+      body,
+      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+    });
+  },
 };
 
-export const syncApi = {
-  bootstrap: (accessToken: string) =>
-    request<SyncBootstrapResponse>('/v1/sync/bootstrap', { accessToken }),
-  changes: (accessToken: string, cursor: string, limit = 100) =>
-    request<SyncChangesResponse>(
-      `/v1/sync/changes?cursor=${encodeURIComponent(cursor)}&limit=${limit}`,
-      { accessToken }
-    ),
-  mutations: (accessToken: string, mutations: SyncMutation[]) =>
-    request<SyncMutationBatchResponse>('/v1/sync/mutations', {
-      method: 'POST',
-      accessToken,
-      body: { mutations },
-    }),
-};
+export const syncApi = authenticatedClient.sync;
 
 export const coreApi = {
-  getSections: (accessToken: string) =>
-    request<{ sections: Array<{ id: string; title: string; type: string }> }>(
-      '/library/sections',
-      { accessToken }
-    ),
-  spin: (
-    accessToken: string,
-    body: {
-      libraryIds: string[];
-      mediaType: 'movie' | 'show';
-      filters: Record<string, unknown>;
-      tvSelectionMode?: 'show' | 'episode';
-    }
-  ) =>
-    request<{
-      item: {
-        title: string;
-        year?: number;
-        thumbPath?: string;
-        plexId: string;
-        mediaType: string;
-        playLinks?: { ios?: string; android?: string; web?: string };
-      };
-      poolSize: number;
-    }>('/selection/random', {
-      method: 'POST',
-      accessToken,
-      body,
-    }),
-  getPreferences: (accessToken: string) =>
-    request<{ preferences: Record<string, unknown> }>('/users/me/preferences', {
-      accessToken,
-    }),
-  updatePreferences: (accessToken: string, preferences: Record<string, unknown>) =>
-    request('/users/me/preferences', {
-      method: 'PUT',
-      accessToken,
-      body: preferences,
-    }),
-  markWatched: (
-    accessToken: string,
-    plexId: string,
-    mediaType: string,
-    title: string
-  ) =>
-    request(`/watched/${encodeURIComponent(plexId)}`, {
-      method: 'POST',
-      accessToken,
-      body: { mediaType, title },
-    }),
-  recordSpinHistory: (accessToken: string, entry: Record<string, unknown>) =>
-    request('/spin-history', {
-      method: 'POST',
-      accessToken,
-      body: entry,
-    }),
+  getSections: () => authenticatedClient.library.getSections(),
+  spin: (params: SelectionParameters) => authenticatedClient.selection.random(params),
+  updatePreferences: (preferences: Partial<PreferenceContract>) =>
+    authenticatedClient.preferences.update(preferences),
+  recordSpinHistory: (entry: SpinHistoryCreateBody) => authenticatedClient.spinHistory.create(entry),
 };

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
+import { libraryIdsQuerySchema } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { getAccessibleLibraryIds } from '@/lib/auth';
 import { getOrCreateSettings } from '@/lib/models/Settings';
@@ -11,11 +11,7 @@ export const dynamic = 'force-dynamic';
 
 const logger = createLogger('API:Collections');
 
-const collectionsQuery = z.object({
-  libraryIds: z.string().optional(),
-});
-
-export const GET = route({ access: 'user', query: collectionsQuery }, async ({ session, query }) => {
+export const GET = route({ access: 'user', query: libraryIdsQuerySchema }, async ({ session, query }) => {
   const ids = query.libraryIds?.split(',').filter(Boolean) ?? [];
   if (ids.length === 0) {
     return NextResponse.json({ collections: [] });
