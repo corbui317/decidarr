@@ -31,10 +31,11 @@ async function refresh() {
     await storeTokens(result.accessToken, result.refreshToken, Date.now() + result.expiresIn * 1000);
     return result;
   } catch (error) {
-    // Only a server rejection of the refresh token (4xx) means the session is dead.
-    // A network failure or a 5xx is a transient condition, not an invalid token, so it
-    // must not be swallowed into "sign out" - rethrow so the caller can tell the two apart.
-    if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
+    // Only the server actually rejecting the refresh token (401) means the session is dead.
+    // A network failure, a 5xx, or a transient 4xx like 429 rate limiting is not an invalid
+    // token, so it must not be swallowed into "sign out" - rethrow so the caller can tell
+    // the two apart.
+    if (error instanceof ApiError && error.status === 401) {
       return null;
     }
     throw error;

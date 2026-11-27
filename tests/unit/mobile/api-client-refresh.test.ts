@@ -48,6 +48,16 @@ describe('mobile api client refresh (offline vs. rejected token)', () => {
     await expect(getValidAccessToken()).rejects.toMatchObject({ status: 503 });
   });
 
+  it('does not sign the user out when the refresh endpoint returns a 429', async () => {
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      jsonResponse(429, { error: 'Too many requests' })
+    );
+
+    const { getValidAccessToken } = await import('@/api/client');
+
+    await expect(getValidAccessToken()).rejects.toMatchObject({ status: 429 });
+  });
+
   it('signs the user out when the server actually rejects the refresh token', async () => {
     (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
       jsonResponse(401, { error: 'Invalid refresh token', code: 'REFRESH_REJECTED' })
