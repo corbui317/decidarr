@@ -46,7 +46,7 @@ export const POST = route(
       const pin = await createAuthPin();
 
       const forwardUrl = resolveOAuthForwardUrl(request);
-      const authUrl = buildPlexAuthUrl(pin.code, { forwardUrl });
+      const authUrl = await buildPlexAuthUrl(pin.code, { forwardUrl });
 
       const cookieOptions = getOAuthCookieOptions();
       const cookieStore = await cookies();

@@ -7,10 +7,12 @@ import {
   authenticateTestSession,
   clearTestCookies,
   createJsonRequest,
+  TEST_SERVER_TOKEN,
 } from '../../helpers/auth';
 import {
   fakeIntegrations,
   plexResources,
+  plexSections,
   PLEX_TV,
   routes,
   TEST_PLEX_SERVER,
@@ -35,6 +37,8 @@ describe('Auth and setup API routes', () => {
         [`${PLEX_TV}/api/v2/user`]: () => Response.json({ id: 1, username: 'testuser', email: 'test@example.com' }),
         [`${PLEX_TV}/api/v2/resources`]: () =>
           plexResources([{ name: 'Home', clientIdentifier: 'machine-1', owned: true, uri: TEST_PLEX_SERVER }]),
+        [`${TEST_PLEX_SERVER}/identity`]: () => Response.json({ MediaContainer: { machineIdentifier: 'machine-1' } }),
+        [`${TEST_PLEX_SERVER}/library/sections`]: () => plexSections([{ id: '1', title: 'Movies', type: 'movie' }]),
       })
     ));
   });
@@ -47,15 +51,6 @@ describe('Auth and setup API routes', () => {
       expect(body.setupComplete).toBe(false);
     });
 
-    it('returns configured status after setup', async () => {
-      await seedConfiguredSettings();
-      const res = await statusGet(createJsonRequest('http://localhost/api/settings/status', 'GET'));
-      const body = await res.json();
-      expect(body.setupComplete).toBe(true);
-      expect(body.hasPlexToken).toBe(true);
-      expect(body.hasPlexServer).toBe(true);
-    });
-
     it('returns setupComplete false when DB flag is set but Plex token is missing', async () => {
       await seedPartialSettings();
       const res = await statusGet(createJsonRequest('http://localhost/api/settings/status', 'GET'));
@@ -66,9 +61,8 @@ describe('Auth and setup API routes', () => {
       expect(body.hasPlexServer).toBe(true);
     });
 
-    it('returns setupComplete true for OAuth-style setup with admin user token only', async () => {
+    it('returns setupComplete true once the Admin holds a server token', async () => {
       const settings = await getOrCreateSettings();
-      settings.plexToken = undefined;
       settings.plexServerUrl = 'http://192.168.1.10:32400';
       settings.plexMachineId = 'machine-1';
       settings.setupComplete = true;
@@ -161,34 +155,64 @@ describe('Auth and setup API routes', () => {
   });
 
   describe('POST /api/settings/test-plex', () => {
-    it('requires Plex token', async () => {
+    it('requires an Admin session', async () => {
+      await seedConfiguredSettings();
+      const req = createJsonRequest('http://localhost/api/settings/test-plex', 'POST', {
+        plexServerUrl: TEST_PLEX_SERVER,
+      });
+      const res = await testPlexPost(req as never);
+      expect(res.status).toBe(401);
+      expect(sent).toEqual([]);
+    });
+
+    it('requires a server URL', async () => {
+      await seedConfiguredSettings();
+      await authenticateTestSession();
       const req = createJsonRequest('http://localhost/api/settings/test-plex', 'POST', {});
       const res = await testPlexPost(req as never);
       expect(res.status).toBe(400);
     });
 
     it('rejects invalid server URL', async () => {
+      await seedConfiguredSettings();
+      await authenticateTestSession();
       const req = createJsonRequest('http://localhost/api/settings/test-plex', 'POST', {
-        plexToken: 'token',
         plexServerUrl: 'http://169.254.169.254:32400',
       });
       const res = await testPlexPost(req as never);
       expect(res.status).toBe(400);
+      expect(sent).toEqual([]);
     });
 
-    it('returns valid for good token', async () => {
+    it("tests the URL with the Admin's own server token", async () => {
+      await seedConfiguredSettings();
+      await authenticateTestSession();
       const req = createJsonRequest('http://localhost/api/settings/test-plex', 'POST', {
-        plexToken: 'valid-token',
+        plexServerUrl: TEST_PLEX_SERVER,
       });
       const res = await testPlexPost(req as never);
       const body = await res.json();
-      expect(body.valid).toBe(true);
-      expect(body.user.username).toBe('testuser');
-      expect(body.servers).toEqual([{ name: 'Home', uri: TEST_PLEX_SERVER }]);
-      expect(sent.map((r) => [r.url.pathname, r.headers.get('X-Plex-Token')])).toEqual([
-        ['/api/v2/user', 'valid-token'],
-        ['/api/v2/resources', 'valid-token'],
+      expect(body).toEqual({ valid: true, libraryCount: 1 });
+      expect(sent.map((r) => [r.url.toString(), r.headers.get('X-Plex-Token')])).toEqual([
+        [`${TEST_PLEX_SERVER}/identity`, null],
+        [`${TEST_PLEX_SERVER}/library/sections`, TEST_SERVER_TOKEN],
       ]);
+    });
+
+    it('reports a server that refuses the token as invalid', async () => {
+      await seedConfiguredSettings();
+      await authenticateTestSession();
+      fakeIntegrations(({ url }) =>
+        url.pathname === '/identity'
+          ? Response.json({ MediaContainer: { machineIdentifier: 'machine-1' } })
+          : new Response('Unauthorized', { status: 401 })
+      );
+      const req = createJsonRequest('http://localhost/api/settings/test-plex', 'POST', {
+        plexServerUrl: TEST_PLEX_SERVER,
+      });
+      const res = await testPlexPost(req as never);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({ valid: false });
     });
   });
 });

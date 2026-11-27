@@ -6,6 +6,7 @@ import { seedConfiguredSettings, seedTestUser } from '../helpers/auth';
 import { clearRateLimitStore } from '@/lib/security/rate-limit';
 import { getOrCreateSettings } from '@/lib/models/Settings';
 import { MobileAuthCode } from '@/lib/models/MobileAuthCode';
+import { User } from '@/lib/models/User';
 import { MobileRefreshToken } from '@/lib/models/MobileRefreshToken';
 import { runMigrations, resetMigrationStateForTests } from '@/lib/migrate';
 import { issueTokenPair } from '@/lib/mobile-auth/tokens';
@@ -340,6 +341,22 @@ describe('Mobile auth hardening (spec #1 rules on the mobile routes)', () => {
       await runMigrations();
       const again = await MobileAuthCode.findOne({ deviceCode: 'legacy-device-code' });
       expect(again?.plexAuthToken).toBe(before);
+    });
+
+    it('asks a device to sign in again when its user has no Plex server token', async () => {
+      const user = await seedTestUser();
+      const tokens = await issueTokenPair(user, DEVICE_ID);
+      await User.updateOne({ _id: user._id }, { $unset: { plexServerToken: 1 } });
+
+      const res = await refreshPost(
+        new NextRequest('http://localhost/api/mobile/auth/refresh', {
+          method: 'POST',
+          body: JSON.stringify({ refreshToken: tokens.refreshToken, deviceId: DEVICE_ID }),
+        })
+      );
+
+      expect(res.status).toBe(401);
+      expect((await res.json()).code).toBe('PLEX_SIGN_IN_REQUIRED');
     });
 
     it('refuses refresh after a DECIDARR_SECRET change without revoking anything', async () => {

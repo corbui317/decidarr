@@ -31,9 +31,14 @@ v3:<iv>:<tag>:<ciphertext>
 
 | Record type | Record id | Fields |
 |-------------|-----------|--------|
-| `settings` | `app-settings` | `plexToken`, `tmdbApiKey`, `tautulliApiKey`, `overseerrApiKey` |
-| `user` | the user's `_id` as hex | `plexToken` |
+| `settings` | `app-settings` | `tmdbApiKey`, `tautulliApiKey`, `overseerrApiKey` |
+| `user` | the user's `_id` as hex | `plexServerToken`, `plexAccountToken` |
 | `mobileAuthCode` | the code's `_id` as hex | `plexAuthToken` |
+
+`plexServerToken` is the user's access token for this install's Plex server; every Plex server call uses it.
+The unencrypted `plexServerMachineId` beside it names the server it was issued for, and the token is used only while `settings.plexMachineId` is that server.
+`plexAccountToken` is the Admin's plex.tv account token, kept because listing Friends needs it; a Friend never has one ([ADR 0002](adr/0002-per-server-plex-tokens.md)).
+`plexAuthToken` holds the plex.tv account token of a mobile sign-in only until the sign-in completes or the code expires.
 
 To add an encrypted field, call `encryptSecret(plaintext, { recordType, recordId, field })` and `decryptSecret(stored, sameLocation)`, and add the field to this table.
 Settings fields listed in `SETTINGS_SECRET_FIELDS` are encrypted on save when plaintext is assigned to them.
@@ -44,6 +49,11 @@ Before v3, `settings.encryptionKey` held a random data key, wrapped with a maste
 Values were encrypted with that data key as CryptoJS passphrase ciphertext or as `v2:<iv>:<tag>:<ciphertext>` (base64, no AAD).
 At startup the migration reads every such value and re-encrypts it as v3.
 The old `encryptionKey` and `jwtSecret` fields are left in the settings document, untouched.
+
+Before per-server tokens, `user.plexToken` held each user's plex.tv account token and `settings.plexToken` a settings-level Plex token, both encrypted with the same AAD scheme under the field name `plexToken`.
+After the format upgrade, the migration exchanges each `user.plexToken` for that user's `plexServerToken`, moves the Admin's to `plexAccountToken`, and removes the field; a Friend's account token is dropped.
+A token that cannot be decrypted, or whose exchange plex.tv cannot answer at that moment, is left as it is and tried again at the next start; meanwhile that user is asked to sign in again, which replaces it.
+`settings.plexToken` is removed once an Admin user exists and the value is readable.
 
 ## When a value cannot be decrypted
 

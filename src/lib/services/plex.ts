@@ -1,23 +1,9 @@
 import { createLogger } from '../logger';
-import { createIntegrationClient, type IntegrationClient } from '../integrations/client';
-import { getPlexClientHeaders, plexTvClient } from './plex-oauth';
+import { createIntegrationClient, IntegrationError, type IntegrationClient } from '../integrations/client';
+import { getPlexClientHeaders } from './plex-oauth';
 
 const logger = createLogger('PlexService');
 const PLEX_SERVER_TIMEOUT_MS = 15_000;
-
-export interface PlexUser {
-  id: string;
-  username: string;
-  email: string;
-  thumb?: string;
-}
-
-export interface PlexServer {
-  name: string;
-  clientIdentifier: string;
-  owned: boolean;
-  connections: { uri: string; local: boolean; relay: boolean }[];
-}
 
 export interface PlexLibrary {
   id: string;
@@ -99,98 +85,69 @@ export interface PlexItem {
   writers?: string[];
 }
 
-export class PlexService {
-  private serverUrl: string | null;
-  private machineId: string | null;
-  private plexTv: IntegrationClient;
-  private server: IntegrationClient | null;
+/** The Plex server refused the user's access token: only a new sign-in fixes it, so callers must not swallow it. */
+export function isPlexSignInRequired(err: unknown): boolean {
+  return err instanceof IntegrationError && err.integration === 'Plex' && err.status === 401;
+}
 
-  constructor(token: string, serverUrl: string | null = null, machineId: string | null = null) {
+/**
+ * The configured Plex server, reached with one user's access token for that server
+ * (never a plex.tv account token). A 401 from the server means that token stopped
+ * working, and surfaces as an IntegrationError with status 401 that callers map to
+ * "sign in again".
+ */
+/**
+ * The machine id of the Plex server at `serverUrl`, from /identity, which Plex answers without a
+ * token, so no user's token is sent to a server before it is known to be this install's. Null when
+ * nothing there answers as a Plex server.
+ */
+export function readPlexServerIdentity(serverUrl: string): Promise<string | null> {
+  return new PlexService(null, serverUrl).fetchMachineIdFromServer().catch(() => null);
+}
+
+export class PlexService {
+  private serverUrl: string;
+  private machineId: string | null;
+  private serverToken: string | null;
+  private server: Promise<IntegrationClient> | null = null;
+
+  /** A null token reaches only what Plex answers without one, such as /identity. */
+  constructor(serverToken: string | null, serverUrl: string, machineId: string | null = null) {
+    this.serverToken = serverToken;
     this.serverUrl = serverUrl;
     this.machineId = machineId;
-    this.plexTv = plexTvClient(token);
-    this.server = serverUrl
-      ? createIntegrationClient({
-          integration: 'Plex',
-          baseUrl: serverUrl,
-          auth: { header: 'X-Plex-Token', value: token },
-          headers: getPlexClientHeaders(),
-          timeoutMs: PLEX_SERVER_TIMEOUT_MS,
-        })
-      : null;
   }
 
-  private requireServer(): IntegrationClient {
-    if (!this.server) throw new Error('Server URL not set');
-    return this.server;
-  }
-
-  async validateToken(): Promise<{ valid: boolean; user?: PlexUser; error?: string }> {
-    try {
-      const response = await this.plexTv.request('/api/v2/user', {
-        headers: { 'X-Plex-Client-Identifier': 'decidarr' },
+  private client(): Promise<IntegrationClient> {
+    this.server ??= getPlexClientHeaders().then((headers) => {
+      const client = createIntegrationClient({
+        integration: 'Plex',
+        baseUrl: this.serverUrl,
+        auth: this.serverToken ? { header: 'X-Plex-Token', value: this.serverToken } : undefined,
+        headers,
+        timeoutMs: PLEX_SERVER_TIMEOUT_MS,
       });
-
-      if (!response.ok) {
-        logger.warn('Token validation failed', { status: response.status });
-        return { valid: false, error: 'Invalid token' };
-      }
-
-      const data = await response.json();
-      logger.info('Token validated', { username: data.username });
       return {
-        valid: true,
-        user: {
-          id: data.id,
-          username: data.username,
-          email: data.email,
-          thumb: data.thumb,
+        async request(path, options) {
+          const response = await client.request(path, options);
+          if (response.status === 401) {
+            await response.body?.cancel();
+            throw new IntegrationError('Plex', 'http_status', 'HTTP 401', 401);
+          }
+          return response;
         },
+        json: client.json,
       };
-    } catch (error) {
-      logger.error('Token validation error', { error: (error as Error).message });
-      return { valid: false, error: (error as Error).message };
-    }
-  }
-
-  async getServers(): Promise<PlexServer[]> {
-    const data = await this.plexTv.json<Record<string, unknown>[]>(
-      '/api/v2/resources?includeHttps=1&includeRelay=1'
-    );
-    const servers = data.filter((r: Record<string, unknown>) => r.provides === 'server');
-
-    logger.debug('Fetched servers', { count: servers.length });
-    return servers.map((server: Record<string, unknown>) => ({
-      name: server.name as string,
-      clientIdentifier: server.clientIdentifier as string,
-      owned: Boolean(server.owned),
-      connections: (server.connections as Record<string, unknown>[]).map((c) => ({
-        uri: c.uri as string,
-        local: c.local as boolean,
-        relay: c.relay as boolean,
-      })),
-    }));
-  }
-
-  getMachineId(): string | null {
-    return this.machineId;
-  }
-
-  setMachineId(machineId: string): void {
-    this.machineId = machineId;
+    });
+    return this.server;
   }
 
   // Fetch machineId directly from the Plex server's identity endpoint
   // This is more reliable than server discovery when the URL is manually entered
   async fetchMachineIdFromServer(): Promise<string | null> {
-    if (!this.server) {
-      logger.warn('Cannot fetch machineId: no server URL');
-      return null;
-    }
-
     try {
       logger.debug('Fetching machineId from server identity', { serverUrl: this.serverUrl });
-      const response = await this.server.request('/identity');
+      const response = await (await this.client()).request('/identity');
 
       if (!response.ok) {
         logger.warn('Failed to fetch server identity', { status: response.status });
@@ -209,13 +166,14 @@ export class PlexService {
       logger.warn('Server identity response missing machineIdentifier');
       return null;
     } catch (err) {
+      if (isPlexSignInRequired(err)) throw err;
       logger.error('Error fetching server identity', { error: (err as Error).message });
       return null;
     }
   }
 
   async getLibrarySections(): Promise<PlexLibrary[]> {
-    const server = this.requireServer();
+    const server = await this.client();
 
     logger.debug('Fetching library sections', { serverUrl: this.serverUrl });
     const response = await server.request('/library/sections');
@@ -241,7 +199,7 @@ export class PlexService {
   }
 
   async getLibraryItems(sectionId: string): Promise<PlexItem[]> {
-    const server = this.requireServer();
+    const server = await this.client();
 
     logger.debug('Fetching library items', { sectionId });
     const response = await server.request(`/library/sections/${sectionId}/all`);
@@ -259,7 +217,7 @@ export class PlexService {
   }
 
   async getItemMetadata(ratingKey: string): Promise<PlexItem> {
-    const server = this.requireServer();
+    const server = await this.client();
 
     logger.debug('Fetching item metadata', { ratingKey });
     const response = await server.request(`/library/metadata/${ratingKey}`);
@@ -275,7 +233,7 @@ export class PlexService {
   }
 
   async getShowEpisodes(showRatingKey: string): Promise<Record<string, unknown>[]> {
-    const server = this.requireServer();
+    const server = await this.client();
 
     logger.debug('Fetching show episodes', { showRatingKey });
     const response = await server.request(`/library/metadata/${showRatingKey}/allLeaves`);
@@ -344,7 +302,7 @@ export class PlexService {
   }
 
   async getCollections(sectionId: string): Promise<PlexCollection[]> {
-    const server = this.requireServer();
+    const server = await this.client();
 
     try {
       const response = await server.request(`/library/sections/${sectionId}/collections`);
@@ -366,13 +324,14 @@ export class PlexService {
         addedAt: c.addedAt ? new Date((c.addedAt as number) * 1000) : undefined,
       }));
     } catch (err) {
+      if (isPlexSignInRequired(err)) throw err;
       logger.error('Error fetching collections', { sectionId, error: (err as Error).message });
       return [];
     }
   }
 
   async getCollectionItems(collectionRatingKey: string): Promise<PlexItem[]> {
-    const server = this.requireServer();
+    const server = await this.client();
 
     try {
       const response = await server.request(`/library/collections/${collectionRatingKey}/children`);
@@ -388,6 +347,7 @@ export class PlexService {
       logger.debug('Fetched collection items', { collectionRatingKey, count: items.length });
       return items.map((item: Record<string, unknown>) => this.mapPlexItem(item));
     } catch (err) {
+      if (isPlexSignInRequired(err)) throw err;
       logger.error('Error fetching collection items', { collectionRatingKey, error: (err as Error).message });
       return [];
     }
@@ -395,7 +355,7 @@ export class PlexService {
 
   /** A library image, as the Plex server returns it; `path` is an already validated /library/ path. */
   async getImage(path: string, width?: number): Promise<Response> {
-    return this.requireServer().request(path, {
+    return (await this.client()).request(path, {
       headers: { Accept: 'image/*,*/*' },
       query: width === undefined ? undefined : { width },
     });

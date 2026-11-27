@@ -33,7 +33,10 @@ export interface ISettings extends Omit<Document, '_id'> {
   encryptionKey?: string;
 
   // Plex configuration
+  /** Pre-v2 single-user Plex token; only the upgrade reads it, then removes it (ADR 0002). */
   plexToken?: string;
+  /** This install's Plex client identifier, generated on first use (see getPlexClientId). */
+  plexClientId?: string;
   plexServerUrl?: string;
   plexUsername?: string;
   plexMachineId?: string;
@@ -76,14 +79,13 @@ export interface ISettings extends Omit<Document, '_id'> {
   updatedAt: Date;
 
   // Methods
-  getDecryptedPlexToken(): string | null;
   getDecryptedTmdbKey(): string | null;
   getDecryptedTautulliKey(): string | null;
   getDecryptedOverseerrKey(): string | null;
 }
 
 /** Settings fields that hold v3 ciphertext. Assigning plaintext to one encrypts it on save. */
-export const SETTINGS_SECRET_FIELDS = ['plexToken', 'tmdbApiKey', 'tautulliApiKey', 'overseerrApiKey'] as const;
+export const SETTINGS_SECRET_FIELDS = ['tmdbApiKey', 'tautulliApiKey', 'overseerrApiKey'] as const;
 export type SettingsSecretField = (typeof SETTINGS_SECRET_FIELDS)[number];
 
 export const SETTINGS_ID = 'app-settings';
@@ -95,8 +97,9 @@ const settingsSchema = new mongoose.Schema<ISettings>(
     // Legacy wrapped data key; read only to upgrade pre-v3 values.
     encryptionKey: { type: String },
 
-    // Plex configuration (encrypted)
+    // Plex configuration; plexToken is a legacy encrypted value the upgrade removes
     plexToken: { type: String },
+    plexClientId: { type: String },
     plexServerUrl: { type: String },
     plexUsername: { type: String },
     plexMachineId: { type: String },
@@ -165,9 +168,6 @@ function readSecret(settings: ISettings, field: SettingsSecretField): string | n
   }
 }
 
-settingsSchema.methods.getDecryptedPlexToken = function (this: ISettings) {
-  return readSecret(this, 'plexToken');
-};
 settingsSchema.methods.getDecryptedTmdbKey = function (this: ISettings) {
   return readSecret(this, 'tmdbApiKey');
 };

@@ -15,6 +15,7 @@ import { OfflineBanner } from '@/components/OfflineBanner';
 import type { PlexLibrarySection } from '@decidarr/api-contracts';
 import { coreApi } from '@/api/client';
 import { getCachedPreferences } from '@/db/database';
+import { requiresSignIn } from '@/sync/state';
 
 type LibrarySection = PlexLibrarySection;
 
@@ -41,6 +42,10 @@ export default function SettingsScreen() {
       setSections(
         response.sections.filter((s) => s.type === 'movie' || s.type === 'show')
       );
+    } catch (err) {
+      if (!requiresSignIn(err)) throw err;
+      Alert.alert('Sign in again', (err as Error).message);
+      await auth.logout(false);
     } finally {
       setLoading(false);
     }

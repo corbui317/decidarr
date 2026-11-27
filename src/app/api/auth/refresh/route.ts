@@ -13,15 +13,8 @@ export const POST = route({ access: 'user' }, async ({ session }) => {
     return NextResponse.json({ error: 'Session expired' }, { status: 401 });
   }
 
-  const plexService = new PlexService(session.plex.token);
-  const validation = await plexService.validateToken();
-
-  if (!validation.valid) {
-    return NextResponse.json(
-      { error: 'Your Plex session has expired. Please log in again.' },
-      { status: 401 }
-    );
-  }
+  // Proves the user's server access token still works; a refusal surfaces as "sign in again".
+  await new PlexService(session.plex.token, session.plex.serverUrl).getLibrarySections();
 
   user.tokenValidatedAt = new Date();
   await user.save();

@@ -55,6 +55,11 @@ describe('Plex OAuth API routes', () => {
     expect(body).toMatchObject({ pinId: 123, state: expect.stringMatching(/^[0-9a-f]{64}$/) });
     expect(new URLSearchParams(body.authUrl.split('#?')[1]).get('code')).toBe('pin-code');
     expect(body.authUrl.startsWith('https://app.plex.tv/auth#?')).toBe(true);
+    // The Plex sign-in prompt and the PIN both name this install's own client identifier.
+    const { plexClientId } = await getOrCreateSettings();
+    expect(plexClientId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(new URLSearchParams(body.authUrl.split('#?')[1]).get('clientID')).toBe(plexClientId);
+    expect(sent.map(({ headers }) => headers.get('X-Plex-Client-Identifier'))).toEqual([plexClientId]);
     expect(getTestCookie(OAUTH_STATE_COOKIE)).toBe(body.state);
     expect(getTestCookie(OAUTH_PIN_COOKIE)).toBe('123');
     expect(getTestCookie(OAUTH_PIN_CODE_COOKIE)).toBe('pin-code');

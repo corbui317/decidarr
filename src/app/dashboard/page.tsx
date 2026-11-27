@@ -31,7 +31,7 @@ import { usePoolCount } from '@/hooks/usePoolCount';
 import { useSpinFlow } from '@/hooks/useSpinFlow';
 
 export default function Dashboard() {
-  const { isAuthenticated, loading: authLoading } = useAuth();
+  const { isAuthenticated, loading: authLoading, logout } = useAuth();
   const router = useRouter();
 
   const [selectedLibraries, setSelectedLibraries] = useState<string[]>([]);
@@ -58,6 +58,7 @@ export default function Dashboard() {
     activeVariant,
     result,
     error,
+    signInRequired,
     stats,
     setError,
     handleSpin,
@@ -344,6 +345,14 @@ export default function Dashboard() {
                                  rounded-lg p-4 max-w-md text-center"
                         >
                           <p className="text-decidarr-error">{error}</p>
+                          {signInRequired && (
+                            <button
+                              onClick={logout}
+                              className="block mx-auto mt-3 px-4 py-2 bg-decidarr-primary text-decidarr-dark font-medium rounded-lg hover:opacity-90 transition-opacity"
+                            >
+                              Sign in again
+                            </button>
+                          )}
                           <button
                             onClick={() => setError(null)}
                             className="mt-2 text-sm text-gray-400 hover:text-white"

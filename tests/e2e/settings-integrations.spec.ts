@@ -51,4 +51,23 @@ test.describe('Settings integrations', () => {
     await page.getByRole('button', { name: 'Save' }).click();
     await expect(page.getByText('Overseerr settings saved')).toBeVisible();
   });
+
+  test("tests the Plex server with the Admin's own server token, with no token to enter", async ({ page }) => {
+    test.setTimeout(90000);
+
+    await page.goto('/');
+    await completeSetupWizard(page);
+
+    await page.getByTitle('Settings').click();
+    await page.getByRole('tab', { name: 'Integrations' }).click();
+    await page.getByRole('tab', { name: 'Plex' }).click();
+
+    await expect(page.getByText('Everyone reaches this server with their own Plex sign-in.')).toBeVisible();
+    await expect(page.getByLabel(/Plex Token/i)).toHaveCount(0);
+    await expect(page.getByLabel('Server URL')).not.toHaveValue('');
+
+    // The fake Plex server answers only the per-server access token sign-in stored.
+    await page.getByRole('button', { name: 'Test Connection' }).click();
+    await expect(page.getByText('Connected: 1 library found')).toBeVisible();
+  });
 });
