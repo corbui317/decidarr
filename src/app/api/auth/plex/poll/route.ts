@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { timingSafeEqual } from 'crypto';
-import { z } from 'zod';
+import { plexPollQuerySchema } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import {
   pollAuthPin,
@@ -43,9 +43,7 @@ function statesMatch(expected: string, provided: string): boolean {
   return timingSafeEqual(a, b);
 }
 
-const queryContract = z.object({ state: z.string().optional() });
-
-export const GET = route({ access: 'public', query: queryContract }, async ({ request, query }) => {
+export const GET = route({ access: 'public', query: plexPollQuerySchema }, async ({ request, query }) => {
   try {
     const setupCheck = await assertSetupSecretAllowed(request);
     if (!setupCheck.ok) {

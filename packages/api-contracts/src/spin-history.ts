@@ -1,5 +1,8 @@
 import { z } from 'zod';
-import { mediaTypeWithEpisodeSchema, tvSelectionModeSchema } from './shared';
+import { mediaTypeWithEpisodeSchema, mongoIdSchema, tvSelectionModeSchema } from './shared';
+
+export const spinHistoryEntryParamsSchema = z.object({ id: mongoIdSchema });
+export type SpinHistoryEntryParams = z.infer<typeof spinHistoryEntryParamsSchema>;
 
 export const spinHistoryListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),

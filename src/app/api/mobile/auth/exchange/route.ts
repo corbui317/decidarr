@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
-import { AUTH_CODE_TTL_SECONDS } from '@decidarr/api-contracts';
+import { AUTH_CODE_TTL_SECONDS, mobileAuthExchangeRequestSchema } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { MobileAuthCode } from '@/lib/models/MobileAuthCode';
 import { User } from '@/lib/models/User';
@@ -22,12 +21,7 @@ const EXCHANGE_RATE_LIMIT_CONFIG = {
   maxAttempts: 60,
 };
 
-const bodyContract = z.object({
-  deviceCode: z.string().min(1, 'deviceCode and deviceId are required'),
-  deviceId: z.string().min(1, 'deviceCode and deviceId are required'),
-});
-
-export const POST = route({ access: 'public', body: bodyContract }, async ({ body }) => {
+export const POST = route({ access: 'public', body: mobileAuthExchangeRequestSchema }, async ({ body }) => {
   try {
     const deviceCode = body.deviceCode.trim();
     const deviceId = body.deviceId.trim();

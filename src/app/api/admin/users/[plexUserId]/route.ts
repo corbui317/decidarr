@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
+import { adminUserApprovalBodySchema, adminUserApprovalParamsSchema } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { getOrCreateSettings } from '@/lib/models/Settings';
 import { User } from '@/lib/models/User';
@@ -7,11 +7,8 @@ import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('API:AdminUserToggle');
 
-const bodyContract = z.object({ approved: z.boolean() });
-const paramsContract = z.object({ plexUserId: z.string() });
-
 export const PUT = route(
-  { access: 'admin', body: bodyContract, params: paramsContract },
+  { access: 'admin', body: adminUserApprovalBodySchema, params: adminUserApprovalParamsSchema },
   async ({ body, params }) => {
     const { plexUserId } = params;
     const { approved } = body;

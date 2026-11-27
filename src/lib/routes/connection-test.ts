@@ -1,15 +1,10 @@
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
+import { connectionTestBodySchema } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { assertSafeServiceUrl } from '@/lib/security/service-url';
 import type { Logger } from '@/lib/logger';
 
 export type ConnectionTestResult = { success: boolean; error?: string; [key: string]: unknown };
-
-const bodyContract = z.object({
-  url: z.string().min(1, 'URL and API key are required'),
-  apiKey: z.string().min(1, 'URL and API key are required'),
-});
 
 /**
  * An admin-only connection test for an already-configured integration (Overseerr,
@@ -21,7 +16,7 @@ export function connectionTestRoute(
   serviceName: string,
   logger: Logger
 ) {
-  return route({ access: 'admin', body: bodyContract }, async ({ body }) => {
+  return route({ access: 'admin', body: connectionTestBodySchema }, async ({ body }) => {
     const { url, apiKey } = body;
 
     const urlCheck = await assertSafeServiceUrl(url);

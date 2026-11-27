@@ -8,6 +8,15 @@ export const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
 export const AUTH_CODE_TTL_SECONDS = 600;
 export const SYNC_CHANGE_RETENTION_DAYS = 90;
 
+export const syncChangesQuerySchema = z.object({
+  cursor: z.string().optional(),
+  limit: z.string().optional(),
+});
+export type SyncChangesQuery = z.infer<typeof syncChangesQuerySchema>;
+
+export const syncMutationsBodySchema = z.object({ mutations: z.array(z.unknown()) });
+export type SyncMutationsBody = z.infer<typeof syncMutationsBodySchema>;
+
 export const syncEntityTypeSchema = z.enum(['preference', 'watched', 'spin_history']);
 export type SyncEntityType = z.infer<typeof syncEntityTypeSchema>;
 

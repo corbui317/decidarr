@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const mobileAuthStartRequestSchema = z.object({
-  deviceId: z.string(),
+  deviceId: z.string().min(8, 'deviceId is required'),
   deviceName: z.string().optional(),
 });
 export type MobileAuthStartRequest = z.infer<typeof mobileAuthStartRequestSchema>;
@@ -15,8 +15,8 @@ export const mobileAuthStartResponseSchema = z.object({
 export type MobileAuthStartResponse = z.infer<typeof mobileAuthStartResponseSchema>;
 
 export const mobileAuthExchangeRequestSchema = z.object({
-  deviceCode: z.string(),
-  deviceId: z.string(),
+  deviceCode: z.string().min(1, 'deviceCode and deviceId are required'),
+  deviceId: z.string().min(1, 'deviceCode and deviceId are required'),
 });
 export type MobileAuthExchangeRequest = z.infer<typeof mobileAuthExchangeRequestSchema>;
 
@@ -38,8 +38,8 @@ export const mobileAuthExchangeResponseSchema = z.object({
 export type MobileAuthExchangeResponse = z.infer<typeof mobileAuthExchangeResponseSchema>;
 
 export const mobileAuthRefreshRequestSchema = z.object({
-  refreshToken: z.string(),
-  deviceId: z.string(),
+  refreshToken: z.string().min(1, 'refreshToken and deviceId are required'),
+  deviceId: z.string().min(1, 'refreshToken and deviceId are required'),
 });
 export type MobileAuthRefreshRequest = z.infer<typeof mobileAuthRefreshRequestSchema>;
 

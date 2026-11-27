@@ -1,5 +1,9 @@
 import { z } from 'zod';
 
+/** A MongoDB ObjectId: 24 hex characters. Checked by shape only, not by a live lookup. */
+export const mongoIdSchema = z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid id');
+export type MongoId = z.infer<typeof mongoIdSchema>;
+
 export const APP_THEMES = ['dark', 'light', 'vegas', 'macao', 'poker'] as const;
 export const appThemeSchema = z.enum(APP_THEMES);
 export type AppTheme = z.infer<typeof appThemeSchema>;

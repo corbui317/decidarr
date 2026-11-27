@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
+import { settingsTestPlexBodySchema } from '@decidarr/api-contracts';
 import { route, requireAdminSession } from '@/lib/request/route';
 import { DomainError } from '@/lib/request/errors';
 import { PlexService } from '@/lib/services/plex';
@@ -10,12 +10,7 @@ import { getOrCreateSettings } from '@/lib/models/Settings';
 
 const logger = createLogger('API:TestPlex');
 
-const bodyContract = z.object({
-  plexToken: z.string().min(1, 'Plex token is required'),
-  plexServerUrl: z.string().optional(),
-});
-
-export const POST = route({ access: 'public', body: bodyContract }, async ({ request, body }) => {
+export const POST = route({ access: 'public', body: settingsTestPlexBodySchema }, async ({ request, body }) => {
   const settings = await getOrCreateSettings();
 
   if (!settings.setupComplete) {

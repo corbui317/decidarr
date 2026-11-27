@@ -1,17 +1,15 @@
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
+import { settingsTestTmdbBodySchema } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { createLogger } from '@/lib/logger';
 import { TMDbService } from '@/lib/services/tmdb';
 
 const logger = createLogger('API:TestTmdb');
 
-const bodyContract = z.object({ apiKey: z.string().min(1, 'TMDB API key is required') });
-
 // POST /api/settings/test-tmdb - Test TMDB API key
 // Open endpoint (no session required) - the API key being tested IS the credential.
 // This is needed during wizard setup when there is no session yet.
-export const POST = route({ access: 'public', body: bodyContract }, async ({ body }) => {
+export const POST = route({ access: 'public', body: settingsTestTmdbBodySchema }, async ({ body }) => {
   const { apiKey } = body;
 
   logger.debug('Testing TMDB API key');

@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
 import { route } from '@/lib/request/route';
 import { DomainError } from '@/lib/request/errors';
 import { invalidateAccessibleLibraryCache } from '@/lib/auth';
@@ -7,7 +6,7 @@ import { createLogger } from '@/lib/logger';
 import { findCredentialsNeedingReentry } from '@/lib/migrate';
 import { assertSafeServiceUrl } from '@/lib/security/service-url';
 import { getOrCreateSettings } from '@/lib/models/Settings';
-import { APP_THEMES, ANIMATION_STYLES, ANIMATION_SPEEDS } from '@decidarr/api-contracts';
+import { APP_THEMES, ANIMATION_STYLES, ANIMATION_SPEEDS, settingsUpdateBodySchema } from '@decidarr/api-contracts';
 
 // Reads the session and database on every request; never prerender at build time.
 export const dynamic = 'force-dynamic';
@@ -20,45 +19,6 @@ const maskValue = (value: string | undefined): string | null => {
   if (value.length <= 8) return '****';
   return value.substring(0, 4) + '****' + value.substring(value.length - 4);
 };
-
-const putBodyContract = z.object({
-  plex: z
-    .object({
-      token: z.string().optional(),
-      serverUrl: z.string().optional(),
-    })
-    .optional(),
-  tmdb: z
-    .object({
-      apiKey: z.string().optional(),
-    })
-    .optional(),
-  syncFrequencyHours: z.number().optional(),
-  overseerr: z
-    .object({
-      url: z.string().optional(),
-      apiKey: z.string().optional(),
-      filterEnabled: z.boolean().optional(),
-    })
-    .optional(),
-  tautulli: z
-    .object({
-      url: z.string().optional(),
-      apiKey: z.string().optional(),
-      enabled: z.boolean().optional(),
-      syncIntervalMinutes: z.number().optional(),
-    })
-    .optional(),
-  uiPreferences: z
-    .object({
-      theme: z.string().optional(),
-      defaultMediaType: z.string().optional(),
-      tvSelectionMode: z.string().optional(),
-      animationStyle: z.string().optional(),
-      animationSpeed: z.string().optional(),
-    })
-    .optional(),
-});
 
 async function settingsResponseBody(settings: Awaited<ReturnType<typeof getOrCreateSettings>>) {
   const plexToken = settings.getDecryptedPlexToken();
@@ -114,7 +74,7 @@ export const GET = route({ access: 'admin' }, async () => {
   return NextResponse.json(await settingsResponseBody(settings));
 });
 
-export const PUT = route({ access: 'admin', body: putBodyContract }, async ({ body }) => {
+export const PUT = route({ access: 'admin', body: settingsUpdateBodySchema }, async ({ body }) => {
   const settings = await getOrCreateSettings();
   let plexServerUrlChanged = false;
 
