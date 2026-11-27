@@ -275,8 +275,9 @@ async function ensurePlexMachineId(settings: ISettings, users: IUser[]): Promise
 /**
  * Exchanges every stored plex.tv account token (written before ADR 0002) for that user's
  * access token to this install's server, keeps the Admin's account token, and drops a
- * Friend's. A user whose token cannot be read, or whose exchange plex.tv cannot answer
- * now, keeps exactly what is stored and is retried at the next start; meanwhile they are
+ * Friend's. A user whose token cannot be read, or whose exchange gets anything from
+ * plex.tv but a refusal of that token (401), keeps exactly what is stored and is retried
+ * at the next start; meanwhile they are
  * asked to sign in again. Their other data is never touched. Each user's write lands only
  * if their stored token is still the one that was read, so a sign-in in between wins and
  * a second or interrupted run picks up exactly the users not yet done.
@@ -307,8 +308,9 @@ async function exchangeAccountTokens(settings: ISettings): Promise<void> {
       const servers = await fetchPlexServers(accountToken);
       serverToken = servers.find((server) => server.clientIdentifier === settings.plexMachineId)?.accessToken ?? null;
     } catch (err) {
-      if (!(err instanceof IntegrationError) || err.unavailable) {
-        // plex.tv cannot answer now: keep every remaining token for the next start rather than wait on each.
+      if (!(err instanceof IntegrationError && err.status === 401)) {
+        // Anything short of plex.tv refusing the token (unreachable, rate-limited, timed out, unreadable)
+        // keeps every remaining token for the next start rather than wait on each.
         signInAgain.push(...users.slice(index).map((u) => u.plexUsername || u.plexUserId));
         break;
       }
