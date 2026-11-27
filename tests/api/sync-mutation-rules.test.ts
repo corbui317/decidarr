@@ -133,6 +133,62 @@ describe('sync mutations follow the same user-data rules as REST', () => {
     });
   });
 
+  describe('mutation bookkeeping', () => {
+    it('answers a replayed mutation id as a duplicate without writing again', async () => {
+      const admin = await seedTestUser();
+      const mark = syncMutation({
+        mutationId: 'mark-once',
+        entityType: 'watched',
+        entityId: 'movie-1',
+        payload: { mediaType: 'movie', title: 'Movie One' },
+      });
+
+      await postSyncMutations(admin, [mark]);
+      const res = await postSyncMutations(admin, [mark]);
+
+      expect((await res.json()).results).toEqual([{ mutationId: 'mark-once', status: 'duplicate', revision: 1 }]);
+      expect(await SyncChange.countDocuments({ userId: admin._id })).toBe(1);
+    });
+
+    it('answers a stale base revision as a conflict, and a deleted entity as deleted', async () => {
+      const admin = await seedTestUser();
+      const payload = { mediaType: 'movie', title: 'Movie One' };
+      await postSyncMutations(admin, [
+        syncMutation({ entityType: 'watched', entityId: 'movie-1', payload }),
+        syncMutation({ entityType: 'watched', entityId: 'movie-1', payload, baseRevision: 1 }),
+        syncMutation({ entityType: 'watched', entityId: 'movie-2', payload }),
+        syncMutation({ entityType: 'watched', operation: 'delete', entityId: 'movie-2', baseRevision: 1 }),
+      ]);
+
+      const res = await postSyncMutations(admin, [
+        syncMutation({ mutationId: 'stale', entityType: 'watched', entityId: 'movie-1', payload, baseRevision: 1 }),
+        syncMutation({ mutationId: 'gone', entityType: 'watched', entityId: 'movie-2', payload, baseRevision: 1 }),
+      ]);
+
+      expect((await res.json()).results).toEqual([
+        { mutationId: 'stale', status: 'conflict', reason: 'revision_mismatch', serverRevision: 2, serverValue: null },
+        { mutationId: 'gone', status: 'conflict', reason: 'deleted', serverRevision: 2, serverValue: null },
+      ]);
+      expect(await WatchedItem.countDocuments({ userId: admin._id })).toBe(1);
+    });
+
+    it("rejects a preference mutation naming another user, and an operation REST does not offer", async () => {
+      const admin = await seedTestUser();
+
+      const res = await postSyncMutations(admin, [
+        syncMutation({ mutationId: 'other-user', entityId: '65a000000000000000000099', payload: { theme: 'light' } }),
+        syncMutation({ mutationId: 'delete-prefs', operation: 'delete', entityId: admin._id.toString() }),
+      ]);
+
+      const { results } = await res.json();
+      expect(results.map((r: { mutationId: string; status: string; code?: string }) => [r.mutationId, r.status, r.code])).toEqual([
+        ['other-user', 'rejected', 'VALIDATION_FAILED'],
+        ['delete-prefs', 'rejected', 'VALIDATION_FAILED'],
+      ]);
+      expect(await SyncChange.countDocuments()).toBe(0);
+    });
+  });
+
   describe('spin history created through sync', () => {
     it('trims to the retention limit and tells clients about the trimmed entry', async () => {
       const user = await seedTestUser({ spinHistory: { retentionLimit: 2 } });

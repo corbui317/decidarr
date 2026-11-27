@@ -4,7 +4,7 @@ import { runMigrations } from '@/lib/migrate';
 import { createLogger } from '@/lib/logger';
 import { checkRateLimit, getClientIp, RateLimitConfig } from '@/lib/security/rate-limit';
 import { configuredAppOrigin } from '@/lib/security/oauth-redirect';
-import { DomainError, errorResponse, ValidationIssue } from './errors';
+import { DomainError, errorResponse, parseContract } from './errors';
 import { resolveSession, Session } from './session';
 
 const logger = createLogger('API');
@@ -67,16 +67,7 @@ function assertSameOrigin(request: Request): void {
 }
 
 function parseWith<C extends Contract>(contract: C, value: unknown): Parsed<C> {
-  if (!contract) return undefined as Parsed<C>;
-  const result = contract.safeParse(value);
-  if (!result.success) {
-    const issues: ValidationIssue[] = result.error.issues.map((issue) => ({
-      path: issue.path.map(String).join('.'),
-      message: issue.message,
-    }));
-    throw new DomainError('VALIDATION_FAILED', undefined, issues);
-  }
-  return result.data as Parsed<C>;
+  return (contract ? parseContract(contract, value) : undefined) as Parsed<C>;
 }
 
 async function readJson(request: Request): Promise<unknown> {

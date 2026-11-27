@@ -7,6 +7,7 @@ import {
   seedConfiguredSettings,
   seedTestUser,
 } from '../helpers/auth';
+import { syncMutation } from '../helpers/sync';
 import { issueTokenPair } from '@/lib/mobile-auth/tokens';
 import { clearRateLimitStore } from '@/lib/security/rate-limit';
 import { IUser } from '@/lib/models/User';
@@ -73,7 +74,9 @@ describe('v1 sync routes: auth and input rejection', () => {
 
     it('POST /api/v1/sync/mutations rejects a cookie-authenticated session', async () => {
       await authenticateTestSession({ user });
-      const req = createJsonRequest('http://localhost/api/v1/sync/mutations', 'POST', { mutations: [] });
+      const req = createJsonRequest('http://localhost/api/v1/sync/mutations', 'POST', {
+        mutations: [syncMutation({ entityId: user._id.toString(), payload: { theme: 'dark' } })],
+      });
       const res = await mutationsPost(req);
       expect(res.status).toBe(401);
     });
@@ -101,7 +104,7 @@ describe('v1 sync routes: auth and input rejection', () => {
       const res = await mutationsPost(req);
       expect(res.status).toBe(200);
       const body = await res.json();
-      expect(body.results).toHaveLength(1);
+      expect(body.results).toEqual([{ mutationId: 'mutation-1', status: 'applied', revision: 1 }]);
     });
   });
 

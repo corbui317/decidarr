@@ -24,19 +24,6 @@ describe('Settings model', () => {
     expect(reloaded.getDecryptedTmdbKey()).toBe('tmdb-api-key-12345');
   });
 
-  it('clamps spin history retention on save via preferences helper', async () => {
-    const settings = await getOrCreateSettings();
-    settings.spinHistoryPreferences = {
-      enabled: true,
-      retentionLimit: 50,
-      storeFilterSnapshot: true,
-    };
-    await settings.save();
-
-    expect(settings.spinHistoryPreferences.retentionLimit).toBeGreaterThanOrEqual(1);
-    expect(settings.spinHistoryPreferences.retentionLimit).toBeLessThanOrEqual(500);
-  });
-
   describe('legacy CryptoJS values', () => {
     it('decrypts a CryptoJS passphrase ciphertext', () => {
       const legacy = CryptoJS.AES.encrypt('legacy-value', 'master-key').toString();

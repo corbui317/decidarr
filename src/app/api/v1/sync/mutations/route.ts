@@ -3,21 +3,11 @@ import { syncMutationsBodySchema } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { DomainError } from '@/lib/request/errors';
 import { User } from '@/lib/models/User';
-import { applyMutations, validateMutationBatch } from '@/lib/sync/service';
-import { createLogger } from '@/lib/logger';
-
-const logger = createLogger('API:SyncMutations');
+import { applyMutations } from '@/lib/sync/service';
 
 export const POST = route({ access: 'user', body: syncMutationsBodySchema }, async ({ session, body }) => {
   if (session.credential !== 'bearer') {
     throw new DomainError('UNAUTHENTICATED');
-  }
-
-  let mutations;
-  try {
-    mutations = validateMutationBatch(body.mutations);
-  } catch (err) {
-    throw new DomainError('VALIDATION_FAILED', (err as Error).message);
   }
 
   const user = await User.findById(session.userId);
@@ -25,11 +15,5 @@ export const POST = route({ access: 'user', body: syncMutationsBodySchema }, asy
     throw new DomainError('UNAUTHENTICATED');
   }
 
-  try {
-    const result = await applyMutations(user, mutations);
-    return NextResponse.json(result);
-  } catch (error) {
-    logger.error('Sync mutations failed', { error: (error as Error)?.message });
-    throw error;
-  }
+  return NextResponse.json(await applyMutations(user, body.mutations));
 });
