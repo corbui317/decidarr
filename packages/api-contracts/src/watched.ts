@@ -16,3 +16,12 @@ export const watchedCreateBodySchema = z.object({
   title: z.string().trim().min(1),
 });
 export type WatchedCreateBody = z.infer<typeof watchedCreateBodySchema>;
+
+export const watchedListResponseSchema = z.object({
+  items: z.array(z.unknown()),
+  pagination: z.unknown(),
+});
+export type WatchedListResponse = z.infer<typeof watchedListResponseSchema>;
+
+export const watchedStatusResponseSchema = z.object({ watched: z.boolean() });
+export type WatchedStatusResponse = z.infer<typeof watchedStatusResponseSchema>;

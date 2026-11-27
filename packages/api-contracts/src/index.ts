@@ -11,4 +11,7 @@ export * from './selection';
 export * from './sync';
 export * from './mobile-auth';
 export * from './spin-history';
+export * from './auth';
+export * from './tautulli';
+export * from './overseerr';
 export * from './client';

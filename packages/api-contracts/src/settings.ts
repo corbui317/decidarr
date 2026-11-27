@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { appThemeSchema, mediaTypeSchema, tvSelectionModeSchema, animationStyleSchema, animationSpeedSchema } from './shared';
 
 export const settingsUpdateBodySchema = z.object({
   plex: z
@@ -53,3 +54,95 @@ export const settingsTestTmdbBodySchema = z.object({
   apiKey: z.string().min(1, 'TMDB API key is required'),
 });
 export type SettingsTestTmdbBody = z.infer<typeof settingsTestTmdbBodySchema>;
+
+export const settingsResponseSchema = z.object({
+  setupComplete: z.boolean(),
+  /** Stored credentials that cannot be decrypted with the current keys; kept until re-entered. */
+  credentialsNeedingReentry: z.array(z.string()),
+  plex: z.object({
+    serverUrl: z.string().nullable(),
+    username: z.string().nullable(),
+    machineId: z.string().nullable(),
+    hasToken: z.boolean(),
+    tokenMasked: z.string().nullable(),
+  }),
+  tmdb: z.object({
+    hasKey: z.boolean(),
+    keyMasked: z.string().nullable(),
+  }),
+  tautulli: z.object({
+    url: z.string().nullable(),
+    enabled: z.boolean(),
+    hasKey: z.boolean(),
+    keyMasked: z.string().nullable(),
+    syncIntervalMinutes: z.number(),
+    lastSync: z.string().nullable(),
+  }),
+  overseerr: z.object({
+    url: z.string().nullable(),
+    filterEnabled: z.boolean(),
+    hasKey: z.boolean(),
+    keyMasked: z.string().nullable(),
+    lastSyncAt: z.string().nullable(),
+    lastSyncOk: z.boolean(),
+  }),
+  syncFrequencyHours: z.number(),
+  uiPreferences: z.object({
+    theme: appThemeSchema,
+    defaultMediaType: mediaTypeSchema,
+    tvSelectionMode: tvSelectionModeSchema,
+    animationStyle: animationStyleSchema,
+    animationSpeed: animationSpeedSchema,
+  }),
+});
+export type SettingsResponse = z.infer<typeof settingsResponseSchema>;
+
+export const settingsUpdateResponseSchema = z.object({
+  success: z.boolean(),
+  settings: settingsResponseSchema,
+});
+export type SettingsUpdateResponse = z.infer<typeof settingsUpdateResponseSchema>;
+
+export const settingsStatusResponseSchema = z.object({
+  setupComplete: z.boolean(),
+  hasPlexToken: z.boolean(),
+  hasPlexServer: z.boolean(),
+  hasTmdbKey: z.boolean(),
+  setupSecretRequired: z.boolean(),
+});
+export type SettingsStatusResponse = z.infer<typeof settingsStatusResponseSchema>;
+
+export const settingsSetupResponseSchema = z.object({
+  success: z.boolean(),
+  message: z.string(),
+});
+export type SettingsSetupResponse = z.infer<typeof settingsSetupResponseSchema>;
+
+export const plexTestResponseSchema = z.object({
+  valid: z.boolean(),
+  error: z.string().optional(),
+  user: z
+    .object({
+      username: z.string(),
+      email: z.string().optional(),
+      thumb: z.string().optional(),
+    })
+    .optional(),
+  servers: z.array(z.object({ name: z.string(), uri: z.string() })).optional(),
+  serverTest: z
+    .object({
+      valid: z.boolean(),
+      libraryCount: z.number(),
+    })
+    .nullable()
+    .optional(),
+});
+export type PlexTestResponse = z.infer<typeof plexTestResponseSchema>;
+
+export const tmdbTestResponseSchema = z.object({
+  valid: z.boolean(),
+  error: z.string().optional(),
+  message: z.string().optional(),
+  imageBaseUrl: z.string().nullable().optional(),
+});
+export type TmdbTestResponse = z.infer<typeof tmdbTestResponseSchema>;

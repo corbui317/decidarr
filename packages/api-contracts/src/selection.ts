@@ -95,3 +95,9 @@ export const selectionRequestBodySchema = z.object({
   tvSelectionMode: z.enum(['show', 'episode']).optional(),
 });
 export type SelectionRequestBody = z.infer<typeof selectionRequestBodySchema>;
+
+export const awardCategorySchema = z.object({ id: z.string(), name: z.string(), icon: z.string() });
+export type AwardCategory = z.infer<typeof awardCategorySchema>;
+
+export const awardCategoriesResponseSchema = z.object({ categories: z.array(awardCategorySchema) });
+export type AwardCategoriesResponse = z.infer<typeof awardCategoriesResponseSchema>;

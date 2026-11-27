@@ -1,4 +1,4 @@
-import type { SelectionParameters, SelectionResultResponse } from './selection';
+import type { SelectionParameters, SelectionResultResponse, AwardCategoriesResponse } from './selection';
 import type { PoolCountResult } from './filters';
 import type { PreferenceContract } from './sync';
 import type {
@@ -16,7 +16,48 @@ import type {
   MobileAuthStartRequest,
   MobileAuthStartResponse,
 } from './mobile-auth';
-import type { SpinHistoryCreateBody } from './spin-history';
+import type {
+  SpinHistoryCreateBody,
+  SpinHistoryCreateResponse,
+  SpinHistoryListResponse,
+  SpinHistoryDeleteResponse,
+  SpinHistoryClearAllResponse,
+} from './spin-history';
+import type {
+  PreferencesGetResponse,
+  PreferencesPutResponse,
+  PreferencesPatchBody,
+  PreferencesPatchResponse,
+} from './preferences';
+import type { AdminUsersListResponse, AdminUserApprovalResponse } from './admin';
+import type {
+  LibrarySectionsResponse,
+  LibraryItemsResponse,
+  LibraryGenresResponse,
+  LibraryYearsResponse,
+  LibraryStudiosResponse,
+  LibraryFilterOptionsResponse,
+  LibraryCollectionsResponse,
+} from './library';
+import type { WatchedListResponse, WatchedStatusResponse, WatchedCreateBody } from './watched';
+import type {
+  SettingsResponse,
+  SettingsUpdateResponse,
+  SettingsUpdateBody,
+  SettingsStatusResponse,
+  SettingsSetupResponse,
+  SettingsSetupBody,
+  PlexTestResponse,
+  TmdbTestResponse,
+} from './settings';
+import type { TautulliTestResponse, TautulliSyncResponse } from './tautulli';
+import type { OverseerrTestResponse, OverseerrStatusResponse } from './overseerr';
+import type {
+  AuthMeResponse,
+  PlexLoginStartResponse,
+  PlexLoginPollResponse,
+  RefreshSessionResponse,
+} from './auth';
 
 /** The one error shape both the web and mobile clients throw on a non-2xx response. */
 export class ApiError extends Error {
@@ -209,6 +250,15 @@ export function createMobileTransport(opts: MobileTransportOptions): MobileTrans
  */
 export function createApiClient(transport: Transport) {
   return {
+    auth: {
+      getCurrentUser: () => transport.request<AuthMeResponse>('/auth/me'),
+      startPlexLogin: (headers?: Record<string, string>) =>
+        transport.request<PlexLoginStartResponse>('/auth/plex/start', { method: 'POST', headers }),
+      pollPlexLogin: (state: string) =>
+        transport.request<PlexLoginPollResponse>('/auth/plex/poll', { query: { state } }),
+      refreshSession: () => transport.request<RefreshSessionResponse>('/auth/refresh', { method: 'POST' }),
+      logout: () => transport.request<{ message: string }>('/auth/logout', { method: 'DELETE' }),
+    },
     mobileAuth: {
       start: (body: MobileAuthStartRequest) =>
         transport.request<MobileAuthStartResponse>('/mobile/auth/start', { method: 'POST', body }),
@@ -234,26 +284,97 @@ export function createApiClient(transport: Transport) {
         transport.request<SelectionResultResponse>('/selection/random', { method: 'POST', body: params }),
       poolCount: (params: Omit<SelectionParameters, 'tvSelectionMode'>, signal?: AbortSignal) =>
         transport.request<PoolCountResult>('/selection/pool-count', { method: 'POST', body: params, signal }),
+      getAwardCategories: () =>
+        transport.request<AwardCategoriesResponse>('/selection/awards/categories'),
     },
     spinHistory: {
+      list: (page = 1, limit = 20) =>
+        transport.request<SpinHistoryListResponse>('/spin-history', { query: { page, limit } }),
       create: (payload: SpinHistoryCreateBody) =>
-        transport.request<{ entry?: unknown; skipped?: boolean; reason?: string }>('/spin-history', {
+        transport.request<SpinHistoryCreateResponse>('/spin-history', {
           method: 'POST',
           body: payload,
         }),
+      delete: (id: string) =>
+        transport.request<SpinHistoryDeleteResponse>(`/spin-history/${id}`, { method: 'DELETE' }),
+      clearAll: () =>
+        transport.request<SpinHistoryClearAllResponse>('/spin-history', { method: 'DELETE' }),
     },
     preferences: {
+      get: () => transport.request<PreferencesGetResponse>('/users/me/preferences'),
       update: (preferences: Partial<PreferenceContract>) =>
-        transport.request<{ success: boolean; preferences: PreferenceContract }>('/users/me/preferences', {
+        transport.request<PreferencesPutResponse>('/users/me/preferences', {
           method: 'PUT',
           body: preferences,
         }),
+      updateSpinHistory: (spinHistory: PreferencesPatchBody['spinHistory']) =>
+        transport.request<PreferencesPatchResponse>('/users/me/preferences', {
+          method: 'PATCH',
+          body: { spinHistory },
+        }),
+    },
+    admin: {
+      listUsers: () => transport.request<AdminUsersListResponse>('/admin/users'),
+      setApproved: (plexUserId: string, approved: boolean) =>
+        transport.request<AdminUserApprovalResponse>(`/admin/users/${encodeURIComponent(plexUserId)}`, {
+          method: 'PUT',
+          body: { approved },
+        }),
     },
     library: {
-      getSections: () =>
-        transport.request<{ sections: Array<{ id: string; title: string; type: string }> }>(
-          '/library/sections'
+      getSections: () => transport.request<LibrarySectionsResponse>('/library/sections'),
+      getItems: (id: string, forceRefresh = false) =>
+        transport.request<LibraryItemsResponse>(`/library/${id}/items?forceRefresh=${forceRefresh}`),
+      getGenres: (libraryIds: string[]) =>
+        transport.request<LibraryGenresResponse>(`/library/genres?libraryIds=${libraryIds.join(',')}`),
+      getYears: (libraryIds: string[]) =>
+        transport.request<LibraryYearsResponse>(`/library/years?libraryIds=${libraryIds.join(',')}`),
+      getStudios: () => transport.request<LibraryStudiosResponse>('/library/studios'),
+      getFilterOptions: (libraryIds: string[]) =>
+        transport.request<LibraryFilterOptionsResponse>(
+          `/library/filter-options?libraryIds=${libraryIds.join(',')}`
         ),
+      getCollections: (libraryIds: string[]) =>
+        transport.request<LibraryCollectionsResponse>(
+          `/library/collections?libraryIds=${libraryIds.join(',')}`
+        ),
+    },
+    watched: {
+      getAll: (mediaType?: string, page = 1, limit = 50) =>
+        transport.request<WatchedListResponse>(
+          `/watched?mediaType=${mediaType || ''}&page=${page}&limit=${limit}`
+        ),
+      getStatus: (plexId: string) =>
+        transport.request<WatchedStatusResponse>(`/watched/${encodeURIComponent(plexId)}`),
+      markWatched: (plexId: string, body: WatchedCreateBody) =>
+        transport.request<unknown>(`/watched/${plexId}`, { method: 'POST', body }),
+      markUnwatched: (plexId: string) =>
+        transport.request<unknown>(`/watched/${plexId}`, { method: 'DELETE' }),
+    },
+    settings: {
+      getSettings: () => transport.request<SettingsResponse>('/settings'),
+      getStatus: () => transport.request<SettingsStatusResponse>('/settings/status'),
+      updateSettings: (body: SettingsUpdateBody) =>
+        transport.request<SettingsUpdateResponse>('/settings', { method: 'PUT', body }),
+      setup: (body: SettingsSetupBody) =>
+        transport.request<SettingsSetupResponse>('/settings/setup', { method: 'POST', body }),
+      testPlex: (plexToken: string, plexServerUrl?: string) =>
+        transport.request<PlexTestResponse>('/settings/test-plex', {
+          method: 'POST',
+          body: { plexToken, plexServerUrl },
+        }),
+      testTmdb: (apiKey: string) =>
+        transport.request<TmdbTestResponse>('/settings/test-tmdb', { method: 'POST', body: { apiKey } }),
+    },
+    tautulli: {
+      test: (url: string, apiKey: string) =>
+        transport.request<TautulliTestResponse>('/tautulli/test', { method: 'POST', body: { url, apiKey } }),
+      sync: () => transport.request<TautulliSyncResponse>('/tautulli/sync', { method: 'POST' }),
+    },
+    overseerr: {
+      test: (url: string, apiKey: string) =>
+        transport.request<OverseerrTestResponse>('/overseerr/test', { method: 'POST', body: { url, apiKey } }),
+      getStatus: () => transport.request<OverseerrStatusResponse>('/overseerr/status'),
     },
   };
 }
