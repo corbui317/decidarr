@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { selectionApi, spinHistoryApi, AnimationStyle } from '@/lib/api';
+import { selectionApi, spinHistoryApi, AnimationStyle, isAuthError } from '@/lib/api';
 import { resolveAnimationStyle, ResolvedAnimationStyle } from '@/components/animations';
 import { Filters } from '@/types/filters';
 import type { SelectionResultResponse } from '@/types/api/selection';
@@ -31,6 +31,8 @@ export function useSpinFlow({
   const [activeVariant, setActiveVariant] = useState<ResolvedAnimationStyle>('slots');
   const [result, setResult] = useState<SelectionResultResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** The error is a refused session or Plex token: only signing in again helps. */
+  const [signInRequired, setSignInRequired] = useState(false);
   const [stats, setStats] = useState<{ totalMatches: number } | null>(null);
 
   const handleSpin = useCallback(async () => {
@@ -38,6 +40,7 @@ export function useSpinFlow({
 
     setPhase('loading');
     setError(null);
+    setSignInRequired(false);
     setResult(null);
     setPendingResult(null);
 
@@ -76,8 +79,10 @@ export function useSpinFlow({
 
       setPhase('animating');
     } catch (err) {
-      // Check if it's an ApiError with a code
-      if (err instanceof Error && 'code' in err) {
+      if (isAuthError(err)) {
+        setSignInRequired(true);
+        setError(err.message);
+      } else if (err instanceof Error && 'code' in err) {
         const apiError = err as { code?: string; message: string };
         if (apiError.code === 'NO_ITEMS_IN_LIBRARIES' || apiError.code === 'NO_ITEMS_MATCH_FILTERS') {
           setError('No items found matching your criteria');
@@ -127,6 +132,7 @@ export function useSpinFlow({
     activeVariant,
     result,
     error,
+    signInRequired,
     stats,
     setError,
     setResult,

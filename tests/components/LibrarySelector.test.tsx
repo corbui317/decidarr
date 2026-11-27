@@ -15,6 +15,8 @@ vi.mock('@/lib/api', () => ({
   isAuthError: vi.fn().mockReturnValue(false),
 }));
 
+vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ logout: vi.fn() }) }));
+
 describe('LibrarySelector', () => {
   const onSelect = vi.fn();
   const onMediaTypeChange = vi.fn();
