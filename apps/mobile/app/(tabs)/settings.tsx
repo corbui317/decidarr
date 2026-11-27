@@ -12,15 +12,12 @@ import { Redirect } from 'expo-router';
 import { useAuth } from '@/auth/AuthProvider';
 import { useSync } from '@/sync/SyncProvider';
 import { OfflineBanner } from '@/components/OfflineBanner';
+import type { PlexLibrarySection } from '@decidarr/api-contracts';
 import { coreApi } from '@/api/client';
 import { getCachedPreferences } from '@/db/database';
 import { requiresSignIn } from '@/sync/state';
 
-interface LibrarySection {
-  id: string;
-  title: string;
-  type: string;
-}
+type LibrarySection = PlexLibrarySection;
 
 export default function SettingsScreen() {
   const auth = useAuth();
@@ -41,7 +38,7 @@ export default function SettingsScreen() {
 
     setLoading(true);
     try {
-      const response = await coreApi.getSections(token);
+      const response = await coreApi.getSections();
       setSections(
         response.sections.filter((s) => s.type === 'movie' || s.type === 'show')
       );
@@ -76,7 +73,7 @@ export default function SettingsScreen() {
     const token = await auth.getValidAccessToken();
     if (!token) return;
 
-    await coreApi.updatePreferences(token, { selectedLibraries: selected });
+    await coreApi.updatePreferences({ selectedLibraries: selected });
     await sync.syncNow();
     Alert.alert('Saved', 'Library selection updated.');
   };

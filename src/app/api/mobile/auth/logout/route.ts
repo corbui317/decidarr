@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
+import { mobileAuthLogoutRequestSchema } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { requireMobileUser, extractBearerToken } from '@/lib/mobile-auth/context';
 import { revokeRefreshToken, redactToken, verifyAccessToken } from '@/lib/mobile-auth/tokens';
@@ -7,9 +7,7 @@ import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('API:MobileAuthLogout');
 
-const bodyContract = z.object({ refreshToken: z.string().optional() });
-
-export const POST = route({ access: 'public', body: bodyContract }, async ({ request, body }) => {
+export const POST = route({ access: 'public', body: mobileAuthLogoutRequestSchema }, async ({ request, body }) => {
   try {
     const refreshToken = body.refreshToken?.trim() || undefined;
 

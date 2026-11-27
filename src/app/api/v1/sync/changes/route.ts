@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
 import { route } from '@/lib/request/route';
 import { DomainError } from '@/lib/request/errors';
 import { getChanges } from '@/lib/sync/service';
-import { SYNC_SCHEMA_VERSION } from '@decidarr/api-contracts';
+import { SYNC_SCHEMA_VERSION, syncChangesQuerySchema } from '@decidarr/api-contracts';
 import { createLogger } from '@/lib/logger';
 
 // Reads the session and database on every request; never prerender at build time.
@@ -11,12 +10,7 @@ export const dynamic = 'force-dynamic';
 
 const logger = createLogger('API:SyncChanges');
 
-const queryContract = z.object({
-  cursor: z.string().optional(),
-  limit: z.string().optional(),
-});
-
-export const GET = route({ access: 'user', query: queryContract }, async ({ session, query }) => {
+export const GET = route({ access: 'user', query: syncChangesQuerySchema }, async ({ session, query }) => {
   if (session.credential !== 'bearer') {
     throw new DomainError('UNAUTHENTICATED');
   }

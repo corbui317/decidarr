@@ -20,11 +20,15 @@ import FilterPanel from '@/components/FilterPanel';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import RecentSpins, { historyFiltersToFilters } from '@/components/RecentSpins';
 import { PlexItem } from '@/components/animations';
-import { Filters, DEFAULT_FILTERS } from '@/types/filters';
+import {
+  Filters,
+  DEFAULT_FILTERS,
+  type SelectionResultResponse,
+  type MediaType,
+  type TvSelectionMode,
+} from '@decidarr/api-contracts';
 import { usePoolCount } from '@/hooks/usePoolCount';
 import { useSpinFlow } from '@/hooks/useSpinFlow';
-import type { SelectionResultResponse } from '@/types/api/selection';
-import type { MediaType, TvSelectionMode } from '@/types/shared';
 
 export default function Dashboard() {
   const { isAuthenticated, loading: authLoading, logout } = useAuth();

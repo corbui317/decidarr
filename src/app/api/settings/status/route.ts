@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import type { SettingsStatusResponse } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { getOrCreateSettings } from '@/lib/models/Settings';
 import { User, USER_TOKEN_FIELDS, userTokenLocation } from '@/lib/models/User';
@@ -40,11 +41,12 @@ export const GET = route({ access: 'public' }, async () => {
   const hasPlexServer = !!settings.plexServerUrl;
   const setupComplete = settings.setupComplete && hasPlexToken && hasPlexServer;
 
-  return NextResponse.json({
+  const response: SettingsStatusResponse = {
     setupComplete,
     hasPlexToken,
     hasPlexServer,
     hasTmdbKey: !!settings.getDecryptedTmdbKey(),
     setupSecretRequired: !setupComplete && isSetupSecretRequired() && !!getConfiguredSetupSecret(),
-  });
+  };
+  return NextResponse.json(response);
 });

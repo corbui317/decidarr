@@ -1,5 +1,5 @@
 import mongoose, { Document, Model, Types } from 'mongoose';
-import type { MediaTypeWithEpisode, TvSelectionMode } from '@/types/shared';
+import type { MediaTypeWithEpisode, TvSelectionMode } from '@decidarr/api-contracts';
 
 export interface ISpinHistoryEntry extends Document {
   userId: Types.ObjectId;

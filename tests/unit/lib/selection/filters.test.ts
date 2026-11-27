@@ -7,7 +7,7 @@ import {
   filterUnwatched,
 } from '@/lib/selection/filters';
 import { SAMPLE_LIBRARY_ITEMS } from '../../../fixtures/library-items';
-import { DEFAULT_FILTERS } from '@/types/filters';
+import { DEFAULT_FILTERS } from '@decidarr/api-contracts';
 
 describe('applyItemFilters', () => {
   it('filters by genre', () => {

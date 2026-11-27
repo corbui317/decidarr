@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { libraryApi, isAuthError } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import LoadingSpinner from './LoadingSpinner';
-import type { MediaType } from '@/types/shared';
+import type { MediaType } from '@decidarr/api-contracts';
 
 interface Section {
   id: string;

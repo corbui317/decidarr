@@ -9,6 +9,7 @@ import {
   Alert,
 } from 'react-native';
 import { Redirect } from 'expo-router';
+import { DEFAULT_FILTERS, type SelectionParameters } from '@decidarr/api-contracts';
 import { useAuth } from '@/auth/AuthProvider';
 import { useSync } from '@/sync/SyncProvider';
 import { OfflineBanner } from '@/components/OfflineBanner';
@@ -71,29 +72,29 @@ export default function SpinScreen() {
         throw new Error('Select at least one library in Settings.');
       }
 
-      const response = await coreApi.spin(token, {
+      const response = await coreApi.spin({
         libraryIds,
         mediaType: (prefs?.defaultMediaType as 'movie' | 'show') ?? 'movie',
-        filters: (prefs?.savedFilters as Record<string, unknown>) ?? {},
+        filters: (prefs?.savedFilters as SelectionParameters['filters']) ?? DEFAULT_FILTERS,
         tvSelectionMode: prefs?.tvSelectionMode as 'show' | 'episode' | undefined,
       });
 
       setResult({
-        title: response.item.title,
-        year: response.item.year,
-        plexId: response.item.plexId,
-        mediaType: response.item.mediaType,
-        playLinks: response.item.playLinks,
+        title: response.selection.title,
+        year: response.selection.year,
+        plexId: response.selection.plexId,
+        mediaType: response.selection.type,
+        playLinks: response.playLinks ?? undefined,
       });
 
-      await coreApi.recordSpinHistory(token, {
-        plexId: response.item.plexId,
-        title: response.item.title,
-        mediaType: response.item.mediaType,
-        thumbPath: response.item.thumbPath,
-        year: response.item.year,
+      await coreApi.recordSpinHistory({
+        plexId: response.selection.plexId,
+        title: response.selection.title,
+        mediaType: response.selection.type as 'movie' | 'show' | 'episode',
+        thumbPath: response.selection.thumbPath,
+        year: response.selection.year,
         libraryIds,
-        poolSizeAtSpin: response.poolSize,
+        poolSizeAtSpin: response.stats.totalMatches,
       });
     } catch (err) {
       if (requiresSignIn(err)) {

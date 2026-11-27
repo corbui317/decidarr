@@ -39,8 +39,22 @@ export default defineConfig({
         test: {
           name: 'unit-api',
           include: ['tests/unit/**/*.test.ts', 'tests/api/**/*.test.ts'],
+          exclude: ['tests/unit/mobile/**'],
           environment: 'node',
           setupFiles: ['./vitest.setup.ts', './tests/setup-db.ts', './tests/setup-integrations.ts'],
+        },
+      },
+      {
+        extends: true,
+        resolve: {
+          alias: {
+            '@': path.resolve(__dirname, 'apps/mobile/src'),
+          },
+        },
+        test: {
+          name: 'mobile',
+          include: ['tests/unit/mobile/**/*.test.ts'],
+          environment: 'node',
         },
       },
       {

@@ -10,7 +10,7 @@ import {
   ReactNode,
 } from 'react';
 import { settingsApi, authApi, userPreferencesApi } from '@/lib/api';
-import type { AppTheme } from '@/types/shared';
+import type { AppTheme } from '@decidarr/api-contracts';
 
 export type { AppTheme };
 

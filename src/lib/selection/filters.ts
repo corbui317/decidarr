@@ -1,4 +1,4 @@
-import type { Filters, FilterBreakdown, DataStats } from '@/types/filters';
+import type { Filters, FilterBreakdown, DataStats } from '@decidarr/api-contracts';
 import type { ILibraryItem } from '@/lib/models/LibraryCache';
 import type { OverseerrAvailability } from '@/types/overseerr';
 import { isPlexSignInRequired } from '@/lib/services/plex';

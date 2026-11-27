@@ -1,13 +1,15 @@
 import mongoose, { Document, Model, Types } from 'mongoose';
 import { decryptSecret, encryptSecret, isCurrentCiphertext } from '../secrets';
-import type {
-  AppTheme,
-  MediaType,
-  TvSelectionMode,
-  AnimationStyle,
-  AnimationSpeed,
-} from '@/types/shared';
-import { APP_THEMES, ANIMATION_STYLES, ANIMATION_SPEEDS } from '@/types/shared';
+import {
+  APP_THEMES,
+  ANIMATION_STYLES,
+  ANIMATION_SPEEDS,
+  type AppTheme,
+  type MediaType,
+  type TvSelectionMode,
+  type AnimationStyle,
+  type AnimationSpeed,
+} from '@decidarr/api-contracts';
 
 export interface ISpinHistoryPreferences {
   enabled: boolean;

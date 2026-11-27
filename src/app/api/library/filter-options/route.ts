@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
+import { libraryIdsQuerySchema } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { getAccessibleLibraryIds } from '@/lib/auth';
 import { getOrCreateSettings } from '@/lib/models/Settings';
@@ -8,11 +8,7 @@ import { LibraryCache } from '@/lib/models/LibraryCache';
 // Reads the session and database on every request; never prerender at build time.
 export const dynamic = 'force-dynamic';
 
-const filterOptionsQuery = z.object({
-  libraryIds: z.string().optional(),
-});
-
-export const GET = route({ access: 'user', query: filterOptionsQuery }, async ({ session, query }) => {
+export const GET = route({ access: 'user', query: libraryIdsQuerySchema }, async ({ session, query }) => {
   const libraryIds = query.libraryIds?.split(',') ?? [];
 
   if (libraryIds.length === 0) {

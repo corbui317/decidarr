@@ -9,13 +9,12 @@ import { TMDbService } from '@/lib/services/tmdb';
 import { createLogger } from '@/lib/logger';
 import { applyFullFilters, fetchCollectionItemIds } from '@/lib/selection/filters';
 import { sanitizeLibraryItemForClient } from '@/lib/plex-image';
-import { selectionRequestBody } from '@/lib/validation/selection-contract';
-import type { SelectionResultResponse } from '@/types/api/selection';
-import type { SelectionError } from '@/types/shared';
+import { selectionRequestBodySchema } from '@decidarr/api-contracts';
+import type { SelectionResultResponse, SelectionError } from '@decidarr/api-contracts';
 
 const logger = createLogger('API:Random');
 
-export const POST = route({ access: 'user', body: selectionRequestBody }, async ({ session, body }) => {
+export const POST = route({ access: 'user', body: selectionRequestBodySchema }, async ({ session, body }) => {
   const { libraryIds, mediaType, filters, tvSelectionMode } = body;
 
   if (libraryIds.length === 0) {

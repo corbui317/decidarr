@@ -1,17 +1,15 @@
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
+import { settingsTestTmdbBodySchema, type TmdbTestResponse } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { createLogger } from '@/lib/logger';
 import { TMDbService } from '@/lib/services/tmdb';
 
 const logger = createLogger('API:TestTmdb');
 
-const bodyContract = z.object({ apiKey: z.string().min(1, 'TMDB API key is required') });
-
 // POST /api/settings/test-tmdb - Test TMDB API key
 // Open endpoint (no session required) - the API key being tested IS the credential.
 // This is needed during wizard setup when there is no session yet.
-export const POST = route({ access: 'public', body: bodyContract }, async ({ body }) => {
+export const POST = route({ access: 'public', body: settingsTestTmdbBodySchema }, async ({ body }) => {
   const { apiKey } = body;
 
   logger.debug('Testing TMDB API key');
@@ -19,16 +17,15 @@ export const POST = route({ access: 'public', body: bodyContract }, async ({ bod
 
   if (!result.valid) {
     logger.warn('TMDB API key invalid');
-    return NextResponse.json({
-      valid: false,
-      error: 'Invalid TMDB API key',
-    });
+    const invalidResponse: TmdbTestResponse = { valid: false, error: 'Invalid TMDB API key' };
+    return NextResponse.json(invalidResponse);
   }
 
   logger.info('TMDB API key valid');
-  return NextResponse.json({
+  const response: TmdbTestResponse = {
     valid: true,
     message: 'TMDB API key is valid',
     imageBaseUrl: result.imageBaseUrl,
-  });
+  };
+  return NextResponse.json(response);
 });

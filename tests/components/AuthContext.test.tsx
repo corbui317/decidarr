@@ -38,6 +38,7 @@ describe('AuthContext', () => {
       hasPlexToken: false,
       hasPlexServer: false,
       hasTmdbKey: false,
+      setupSecretRequired: false,
     });
 
     render(
@@ -58,6 +59,7 @@ describe('AuthContext', () => {
       hasPlexToken: true,
       hasPlexServer: true,
       hasTmdbKey: false,
+      setupSecretRequired: false,
     });
     vi.mocked(authApi.getCurrentUser).mockResolvedValue({
       user: {
@@ -88,6 +90,7 @@ describe('AuthContext', () => {
       hasPlexToken: true,
       hasPlexServer: true,
       hasTmdbKey: false,
+      setupSecretRequired: false,
     });
     vi.mocked(authApi.getCurrentUser).mockRejectedValue(new Error('Unauthorized'));
 
@@ -118,6 +121,7 @@ describe('AuthContext', () => {
         hasPlexToken: true,
         hasPlexServer: true,
         hasTmdbKey: false,
+        setupSecretRequired: false,
       });
       vi.mocked(authApi.refreshSession).mockResolvedValue({ success: true, expiresAt: NOW + 7 * DAY });
     });

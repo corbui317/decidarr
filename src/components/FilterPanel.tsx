@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { libraryApi, selectionApi, PlexCollection } from '@/lib/api';
-import { Filters, DataStats } from '@/types/filters';
+import { Filters, DataStats } from '@decidarr/api-contracts';
 import PoolCountDisplay from './filters/PoolCountDisplay';
 import QuickFilters from './filters/QuickFilters';
 import CollectionsFilter from './filters/CollectionsFilter';
