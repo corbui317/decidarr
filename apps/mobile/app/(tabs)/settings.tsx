@@ -14,6 +14,7 @@ import { useSync } from '@/sync/SyncProvider';
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { coreApi } from '@/api/client';
 import { getCachedPreferences } from '@/db/database';
+import { requiresSignIn } from '@/sync/state';
 
 interface LibrarySection {
   id: string;
@@ -44,6 +45,10 @@ export default function SettingsScreen() {
       setSections(
         response.sections.filter((s) => s.type === 'movie' || s.type === 'show')
       );
+    } catch (err) {
+      if (!requiresSignIn(err)) throw err;
+      Alert.alert('Sign in again', (err as Error).message);
+      await auth.logout(false);
     } finally {
       setLoading(false);
     }

@@ -14,7 +14,7 @@ import { useSync } from '@/sync/SyncProvider';
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { SpinResult } from '@/components/SpinResult';
 import { coreApi } from '@/api/client';
-import { canSpin } from '@/sync/state';
+import { canSpin, requiresSignIn } from '@/sync/state';
 import { getCachedPreferences } from '@/db/database';
 
 interface SpinResultData {
@@ -41,10 +41,6 @@ export default function SpinScreen() {
       }
     })();
   }, [sync.lastSyncAt]);
-
-  if (!auth.user) {
-    return <Redirect href="/login" />;
-  }
 
   const spinAllowed = canSpin(sync.state, auth.isOnline);
 
@@ -100,11 +96,22 @@ export default function SpinScreen() {
         poolSizeAtSpin: response.poolSize,
       });
     } catch (err) {
+      if (requiresSignIn(err)) {
+        // Signing out keeps the local cache and takes the user to the sign-in screen.
+        Alert.alert('Sign in again', (err as Error).message);
+        await auth.logout(false);
+        return;
+      }
       setError((err as Error).message);
     } finally {
       setSpinning(false);
     }
   }, [auth, libraries, spinAllowed]);
+
+  // After every hook, so signing out from a spin re-renders with the same hooks.
+  if (!auth.user) {
+    return <Redirect href="/login" />;
+  }
 
   return (
     <View style={styles.container}>
