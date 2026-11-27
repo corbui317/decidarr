@@ -1,12 +1,10 @@
-import { cookies, headers } from 'next/headers';
+import { cookies } from 'next/headers';
 import { connectDB } from './db';
 import { getOrCreateSettings, ISettings } from './models/Settings';
 import { IUser, User } from './models/User';
 import { deriveKey } from './secrets';
 import { PlexService } from './services/plex';
 import { createLogger } from './logger';
-import { runMigrations } from './migrate';
-import { verifyAccessToken } from './mobile-auth/tokens';
 import { SessionError } from './auth-errors';
 import { verifySessionJwt } from './security/session-jwt';
 
@@ -33,72 +31,6 @@ export interface SessionPayload {
 }
 
 const SESSION_COOKIE = 'decidarr_session';
-
-export async function getPlexCredentials(): Promise<{
-  plexToken: string | null;
-  plexServerUrl: string | null;
-  plexUsername: string | null;
-}> {
-  try {
-    const ctx = await requireUser();
-    return {
-      plexToken: ctx.plexToken,
-      plexServerUrl: ctx.plexServerUrl,
-      plexUsername: ctx.user.plexUsername || null,
-    };
-  } catch {
-    return { plexToken: null, plexServerUrl: null, plexUsername: null };
-  }
-}
-
-export async function getSettings(): Promise<ISettings> {
-  await connectDB();
-  await runMigrations();
-  return getOrCreateSettings();
-}
-
-export async function validateSession(): Promise<boolean> {
-  try {
-    await requireUser();
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function parseBearerSession(): Promise<SessionPayload | null> {
-  try {
-    const headerStore = await headers();
-    const authHeader = headerStore.get('authorization');
-    if (!authHeader?.startsWith('Bearer ')) return null;
-
-    const token = authHeader.slice(7).trim();
-    if (!token) return null;
-
-    const payload = await verifyAccessToken(token);
-    return {
-      sub: payload.sub,
-      plexUserId: payload.plexUserId,
-      isAdmin: payload.isAdmin,
-      sessionVersion: payload.sessionVersion,
-      exp: payload.exp,
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function parseSession(): Promise<SessionPayload> {
-  await connectDB();
-  await runMigrations();
-
-  const bearerPayload = await parseBearerSession();
-  if (bearerPayload) {
-    return bearerPayload;
-  }
-
-  return readCookieSession();
-}
 
 /** Verifies the web session cookie. Throws SessionError when it is missing or invalid. */
 export async function readCookieSession(): Promise<SessionPayload> {
@@ -127,10 +59,6 @@ export async function readCookieSession(): Promise<SessionPayload> {
   }
 
   return payload;
-}
-
-export async function requireUser(): Promise<AuthContext> {
-  return authContextForSession(await parseSession());
 }
 
 /**
@@ -179,15 +107,6 @@ export async function authContextForSession(payload: SessionPayload): Promise<Au
     isAdmin: user.isAdmin,
     expiresAt: payload.exp * 1000, // Convert to milliseconds
   };
-}
-
-export async function requireAdmin(): Promise<AuthContext> {
-  const ctx = await requireUser();
-  if (!ctx.isAdmin) {
-    logger.warn('Admin auth failed', { sub: ctx.user._id.toString() });
-    throw new SessionError('FORBIDDEN');
-  }
-  return ctx;
 }
 
 const sectionsCache = new Map<string, { ids: string[]; expiresAt: number }>();
