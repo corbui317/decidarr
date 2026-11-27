@@ -141,14 +141,16 @@ export function plexLibraryItems(
     contentRating?: string;
     studio?: string;
     rating?: number;
+    thumbPath?: string;
     type?: string;
   }[]
 ): Response {
   return Response.json({
     MediaContainer: {
-      Metadata: items.map(({ plexId, genres, type, ...rest }) => ({
+      Metadata: items.map(({ plexId, genres, thumbPath, type, ...rest }) => ({
         ratingKey: plexId,
         type: type ?? 'movie',
+        thumb: thumbPath,
         Genre: genres?.map((tag) => ({ tag })),
         ...rest,
       })),

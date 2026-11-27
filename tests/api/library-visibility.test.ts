@@ -16,7 +16,7 @@ import {
   plexSections,
   TEST_PLEX_SERVER,
 } from '../helpers/fake-integrations';
-import type { ILibraryItem } from '@/lib/models/LibraryCache';
+import { LibraryCache, type ILibraryItem } from '@/lib/models/LibraryCache';
 import type { IUser } from '@/lib/models/User';
 
 import { GET as itemsGet } from '@/app/api/library/[id]/items/route';
@@ -165,5 +165,38 @@ describe('Library visibility follows each user\'s own Plex view', () => {
     await signInAs(friend);
     expect(await poolCount()).toMatchObject({ totalItems: FRIEND_VIEW.length });
     expect(titles((await loadItems()).items)).toEqual(titles(FRIEND_VIEW));
+  });
+
+  it('rebuilds each user\'s view from Plex on upgrade, never serving a cache filled before visibility sets existed', async () => {
+    // An install upgraded from a single shared cache that the Admin's view filled.
+    await LibraryCache.create({
+      plexMachineId: 'machine-1',
+      libraryId: 'lib-1',
+      libraryName: 'Movies',
+      mediaType: 'movie',
+      items: ADMIN_VIEW,
+      lastSyncedAt: new Date(),
+      expiresAt: new Date(Date.now() + 86400000),
+    });
+
+    await signInAs(friend);
+    expect(await poolCount()).toMatchObject({ totalItems: FRIEND_VIEW.length });
+
+    await signInAs(admin);
+    expect(await poolCount()).toMatchObject({ totalItems: ADMIN_VIEW.length });
+  });
+
+  it("re-syncs a user whose view names items the shared metadata lost, so another user's sync never shrinks it", async () => {
+    await signInAs(admin);
+    await loadItems();
+    await signInAs(friend);
+    await loadItems();
+
+    // The shared metadata expires and is removed; the Friend syncs first and refills it with their view only.
+    await LibraryCache.deleteMany({});
+    await loadItems({ forceRefresh: true });
+
+    await signInAs(admin);
+    expect(await poolCount()).toMatchObject({ totalItems: ADMIN_VIEW.length });
   });
 });

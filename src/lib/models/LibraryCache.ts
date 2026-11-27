@@ -41,7 +41,6 @@ export interface ILibraryCache extends Document {
   expiresAt: Date;
   createdAt: Date;
   updatedAt: Date;
-  isExpired(): boolean;
 }
 
 const libraryItemSchema = new mongoose.Schema<ILibraryItem>(
@@ -93,10 +92,6 @@ const libraryCacheSchema = new mongoose.Schema<ILibraryCache>(
 
 libraryCacheSchema.index({ plexMachineId: 1, libraryId: 1 }, { unique: true });
 libraryCacheSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
-
-libraryCacheSchema.methods.isExpired = function (): boolean {
-  return new Date() > this.expiresAt;
-};
 
 export const LibraryCache: Model<ILibraryCache> =
   mongoose.models.LibraryCache || mongoose.model<ILibraryCache>('LibraryCache', libraryCacheSchema);
