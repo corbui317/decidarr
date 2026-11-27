@@ -145,7 +145,7 @@ interface CreateSpinHistoryBody {
 **Shipped files:**
 
 - `src/lib/models/SpinHistoryEntry.ts`
-- `src/lib/spin-history.ts`
+- `src/lib/user-data/spin-history.ts` (through the user-data store, `src/lib/user-data/`)
 - `src/app/api/spin-history/route.ts`, `[id]/route.ts`
 - `src/app/api/users/me/preferences/route.ts`
 - `src/app/dashboard/page.tsx`
@@ -168,7 +168,7 @@ interface CreateSpinHistoryBody {
 
 **Automated:**
 
-- `tests/unit/lib/spin-history.test.ts` (sanitization, retention, preferences)
+- `tests/unit/lib/user-data/spin-history.test.ts` (sanitization, retention, preferences)
 - `tests/api/spin-history.test.ts` (CRUD, isolation for cookie and bearer clients, retention trim, preferences PATCH)
 - `tests/api/request-route.test.ts` (Session seam, error codes, Origin check, pinned JWT algorithm)
 - `tests/components/RecentSpins.test.tsx` (list, reapply, delete)
