@@ -131,6 +131,31 @@ export function plexMetadata(items: { ratingKey: string; title: string; year?: n
   return Response.json({ MediaContainer: { Metadata: items } });
 }
 
+/** A Plex server's full listing of a library section, as /library/sections/<id>/all returns it. */
+export function plexLibraryItems(
+  items: {
+    plexId: string;
+    title: string;
+    year?: number;
+    genres?: string[];
+    contentRating?: string;
+    studio?: string;
+    rating?: number;
+    type?: string;
+  }[]
+): Response {
+  return Response.json({
+    MediaContainer: {
+      Metadata: items.map(({ plexId, genres, type, ...rest }) => ({
+        ratingKey: plexId,
+        type: type ?? 'movie',
+        Genre: genres?.map((tag) => ({ tag })),
+        ...rest,
+      })),
+    },
+  });
+}
+
 export interface FakePlexTvOptions {
   /** The PIN that POST /api/v2/pins creates. */
   pin?: { id: number; code: string };
