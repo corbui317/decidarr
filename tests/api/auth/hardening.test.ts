@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 import { clearDatabase } from '../../helpers/mongo';
 import { authenticateTestSession, clearTestCookies, createJsonRequest, seedConfiguredSettings } from '../../helpers/auth';
 import { clearRateLimitStore } from '@/lib/security/rate-limit';
+import { getOrCreateSettings } from '@/lib/models/Settings';
 import { fakeIntegrations, fakePlexTv } from '../../helpers/fake-integrations';
 
 import { POST as plexStartPost } from '@/app/api/auth/plex/start/route';
@@ -58,6 +59,51 @@ describe('Auth hardening', () => {
 
       expect(meResponse.status).toBe(200);
       expect(body.user.id).toBe(user._id.toString());
+    });
+
+    it('never rate limits a correct setup secret on /api/auth/plex/start, even after wrong guesses exhaust the shared ceiling', async () => {
+      const settings = await getOrCreateSettings();
+      settings.setupComplete = false;
+      await settings.save();
+      vi.stubEnv('DECIDARR_SETUP_SECRET', 'the-real-setup-secret-123');
+
+      const makeRequest = (secret?: string) =>
+        plexStartPost(
+          new Request('http://localhost/api/auth/plex/start', {
+            method: 'POST',
+            headers: secret ? { 'X-Decidarr-Setup-Secret': secret } : {},
+          })
+        );
+
+      for (let i = 0; i < 51; i++) {
+        await makeRequest(`wrong-guess-${i}`);
+      }
+
+      const allowed = await makeRequest('the-real-setup-secret-123');
+      expect(allowed.status).toBe(200);
+    });
+
+    it('never rate limits a correct setup secret on /api/auth/plex/start under TRUST_PROXY, even after wrong guesses from the same IP exhaust its per-client limit', async () => {
+      const settings = await getOrCreateSettings();
+      settings.setupComplete = false;
+      await settings.save();
+      vi.stubEnv('DECIDARR_SETUP_SECRET', 'the-real-setup-secret-123');
+      vi.stubEnv('TRUST_PROXY', 'true');
+
+      const makeRequest = (secret?: string) =>
+        plexStartPost(
+          new Request('http://localhost/api/auth/plex/start', {
+            method: 'POST',
+            headers: { 'x-forwarded-for': '203.0.113.77', ...(secret ? { 'X-Decidarr-Setup-Secret': secret } : {}) },
+          })
+        );
+
+      for (let i = 0; i < 6; i++) {
+        await makeRequest(`wrong-guess-${i}`);
+      }
+
+      const allowed = await makeRequest('the-real-setup-secret-123');
+      expect(allowed.status).toBe(200);
     });
 
     it('returns 429 after exhausting the global ceiling on /api/auth/plex/start', async () => {

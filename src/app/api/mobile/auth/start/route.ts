@@ -9,7 +9,7 @@ import {
   redactToken,
 } from '@/lib/mobile-auth/tokens';
 import { resolveOAuthForwardUrl } from '@/lib/security/oauth-redirect';
-import { assertSetupSecretAllowed } from '@/lib/security/setup-secret';
+import { assertSetupSecretAllowed, isCorrectSetupSecret } from '@/lib/security/setup-secret';
 import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('API:MobileAuthStart');
@@ -23,7 +23,14 @@ export const POST = route(
     // setup secret is a single shared one, so neither should become a bucket of its own.
     // Identity (when TRUST_PROXY makes it trustworthy) plus the ceiling well above household
     // use are this route's only protection.
-    rateLimit: { scope: 'mobile-auth:start', windowMs: 15 * 60 * 1000, maxAttempts: 5, globalMaxAttempts: 50 },
+    rateLimit: {
+      scope: 'mobile-auth:start',
+      windowMs: 15 * 60 * 1000,
+      maxAttempts: 5,
+      globalMaxAttempts: 50,
+      // The correct setup secret is never rate limited; only wrong guesses count here.
+      bypass: isCorrectSetupSecret,
+    },
   },
   async ({ request, body }) => {
     try {

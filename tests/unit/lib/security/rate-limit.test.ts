@@ -62,6 +62,36 @@ describe('checkRateLimit store bound', () => {
     expect(checkRateLimit('key-0', { windowMs: 60_000, maxAttempts: 5 }).remaining).toBe(4);
   });
 
+  it('does not evict a freshly-reset entry as if it were still the oldest', () => {
+    vi.useFakeTimers();
+    try {
+      checkRateLimit('A', { windowMs: 10, maxAttempts: 5 }); // oldest insertion, short window
+      checkRateLimit('B', { windowMs: 100_000, maxAttempts: 5 }); // second oldest, long window
+      checkRateLimit('B', { windowMs: 100_000, maxAttempts: 5 }); // B now has 2 hits recorded
+
+      vi.advanceTimersByTime(20); // A's window has expired; B's has not
+
+      // Restarting A's expired window must make it the newest entry, not leave it in its old,
+      // oldest insertion position.
+      checkRateLimit('A', { windowMs: 10, maxAttempts: 5 });
+
+      // Fill the store to exactly its bound (A and B already occupy 2 of the slots).
+      for (let i = 0; i < RATE_LIMIT_STORE_MAX_ENTRIES - 2; i++) {
+        checkRateLimit(`filler-${i}`, { windowMs: 100_000, maxAttempts: 5 });
+      }
+
+      // One more hit forces exactly one eviction: the true oldest surviving entry, B.
+      checkRateLimit('trigger-eviction', { windowMs: 100_000, maxAttempts: 5 });
+
+      // A survived and keeps counting from its restarted window.
+      expect(checkRateLimit('A', { windowMs: 10, maxAttempts: 5 }).remaining).toBe(3);
+      // B was evicted, so its count restarts from zero instead of continuing from 2 hits.
+      expect(checkRateLimit('B', { windowMs: 100_000, maxAttempts: 5 }).remaining).toBe(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps a scope\'s global ceiling bucket from being evicted by a flood of distinct identities, while the store stays bounded', () => {
     const policy = { windowMs: 60_000, maxAttempts: 1, globalMaxAttempts: 1_000_000 };
 

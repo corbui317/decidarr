@@ -80,6 +80,9 @@ function recordHit(key: string, windowMs: number): RateLimitEntry {
   const now = Date.now();
   const entry = store.get(key);
   if (!entry || entry.resetAt <= now) {
+    // Delete before re-inserting: a `set` on a key the Map already has keeps that key's old
+    // insertion position, so a just-restarted window would still look like the oldest entry.
+    store.delete(key);
     evictOldestIfFull();
     const newEntry: RateLimitEntry = { count: 1, resetAt: now + windowMs };
     store.set(key, newEntry);

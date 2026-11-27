@@ -11,7 +11,7 @@ import {
   getOAuthCookieOptions,
 } from '@/lib/services/plex-oauth';
 import { createLogger } from '@/lib/logger';
-import { assertSetupSecretAllowed } from '@/lib/security/setup-secret';
+import { assertSetupSecretAllowed, isCorrectSetupSecret } from '@/lib/security/setup-secret';
 import { resolveOAuthForwardUrl } from '@/lib/security/oauth-redirect';
 
 const logger = createLogger('API:PlexAuthStart');
@@ -23,7 +23,14 @@ export const POST = route(
     // would just be a smaller, easier-to-exhaust copy of the global ceiling and could lock
     // the real admin out. Identity (when TRUST_PROXY makes it trustworthy) plus the ceiling
     // well above household use are this route's only protection.
-    rateLimit: { scope: 'auth:start', windowMs: 15 * 60 * 1000, maxAttempts: 5, globalMaxAttempts: 50 },
+    rateLimit: {
+      scope: 'auth:start',
+      windowMs: 15 * 60 * 1000,
+      maxAttempts: 5,
+      globalMaxAttempts: 50,
+      // The correct setup secret is never rate limited; only wrong guesses count here.
+      bypass: isCorrectSetupSecret,
+    },
   },
   async ({ request }) => {
     try {

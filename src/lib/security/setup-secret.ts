@@ -51,6 +51,18 @@ export function validateSetupSecret(provided: string | null | undefined): boolea
   return timingSafeEqual(a, b);
 }
 
+/**
+ * True when a request carries the correct setup secret while setup is incomplete, so a
+ * route's own sign-in rate limit can exempt it: the real admin must never be rate limited
+ * out of their own first-run setup by a flood of someone else's guesses.
+ */
+export async function isCorrectSetupSecret(request: Request): Promise<boolean> {
+  if (!(await isSetupIncomplete())) return false;
+  const expected = getConfiguredSetupSecret();
+  if (!expected || expected.length < MIN_SETUP_SECRET_LENGTH) return false;
+  return validateSetupSecret(extractSetupSecret(request));
+}
+
 export function setupSecretHeaderName(): string {
   return 'X-Decidarr-Setup-Secret';
 }

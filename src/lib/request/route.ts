@@ -21,6 +21,12 @@ export interface RateLimitPolicy extends CoreRateLimitPolicy {
    * raw request, since this runs before body parsing.
    */
   target?: (request: Request) => string | undefined;
+  /**
+   * Skips this rate limit entirely for a request that already proves it is not an attacker,
+   * such as one carrying the correct setup secret while setup is incomplete. Unlike `target`,
+   * a bypassed request is never counted, so it cannot be used to spend down any bucket either.
+   */
+  bypass?: (request: Request) => boolean | Promise<boolean>;
 }
 
 type Contract = z.ZodType | undefined;
@@ -131,8 +137,9 @@ export function route<
       await runMigrations();
 
       if (spec.rateLimit) {
-        const { scope, target, ...policy } = spec.rateLimit;
-        if (isRateLimited(request, scope, policy, target?.(request))) {
+        const { scope, target, bypass, ...policy } = spec.rateLimit;
+        const bypassed = bypass ? await bypass(request) : false;
+        if (!bypassed && isRateLimited(request, scope, policy, target?.(request))) {
           throw new DomainError('RATE_LIMITED');
         }
       }
