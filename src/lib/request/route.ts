@@ -2,7 +2,7 @@ import type { z } from 'zod';
 import { connectDB } from '@/lib/db';
 import { runMigrations } from '@/lib/migrate';
 import { createLogger } from '@/lib/logger';
-import { checkRateLimit, getClientIp, RateLimitConfig } from '@/lib/security/rate-limit';
+import { isRateLimited, RateLimitPolicy as CoreRateLimitPolicy } from '@/lib/security/rate-limit';
 import { configuredAppOrigin } from '@/lib/security/oauth-redirect';
 import { DomainError, errorResponse, ValidationIssue } from './errors';
 import { resolveSession, Session } from './session';
@@ -12,9 +12,21 @@ const logger = createLogger('API');
 /** Who may call a route: anyone, any Admin or Friend, or the Admin only. */
 export type Access = 'public' | 'user' | 'admin';
 
-export interface RateLimitPolicy extends RateLimitConfig {
+export interface RateLimitPolicy extends CoreRateLimitPolicy {
   /** Names the bucket, so two routes never share counts. */
   scope: string;
+  /**
+   * Identifies what is being attacked, when that identifies one of many concurrent
+   * instances (a PIN, a device code) rather than a single shared resource. Read from the
+   * raw request, since this runs before body parsing.
+   */
+  target?: (request: Request) => string | undefined;
+  /**
+   * Skips this rate limit entirely for a request that already proves it is not an attacker,
+   * such as one carrying the correct setup secret while setup is incomplete. Unlike `target`,
+   * a bypassed request is never counted, so it cannot be used to spend down any bucket either.
+   */
+  bypass?: (request: Request) => boolean | Promise<boolean>;
 }
 
 type Contract = z.ZodType | undefined;
@@ -125,8 +137,9 @@ export function route<
       await runMigrations();
 
       if (spec.rateLimit) {
-        const { scope, ...config } = spec.rateLimit;
-        if (!checkRateLimit(`${scope}:${getClientIp(request)}`, config).allowed) {
+        const { scope, target, bypass, ...policy } = spec.rateLimit;
+        const bypassed = bypass ? await bypass(request) : false;
+        if (!bypassed && isRateLimited(request, scope, policy, target?.(request))) {
           throw new DomainError('RATE_LIMITED');
         }
       }

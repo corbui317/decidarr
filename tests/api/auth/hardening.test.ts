@@ -1,13 +1,15 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { clearDatabase } from '../../helpers/mongo';
-import { clearTestCookies } from '../../helpers/auth';
+import { authenticateTestSession, clearTestCookies, createJsonRequest, seedConfiguredSettings } from '../../helpers/auth';
 import { clearRateLimitStore } from '@/lib/security/rate-limit';
+import { getOrCreateSettings } from '@/lib/models/Settings';
 import { fakeIntegrations, fakePlexTv } from '../../helpers/fake-integrations';
 
 import { POST as plexStartPost } from '@/app/api/auth/plex/start/route';
 import { GET as plexPollGet } from '@/app/api/auth/plex/poll/route';
 import { POST as loginPost } from '@/app/api/auth/login/route';
+import { GET as meGet } from '@/app/api/auth/me/route';
 
 describe('Auth hardening', () => {
   beforeEach(async () => {
@@ -22,46 +24,125 @@ describe('Auth hardening', () => {
   });
 
   describe('Rate limiting', () => {
-    it('returns 429 after multiple rapid attempts on /api/auth/login', async () => {
+    it('returns 429 after exhausting the global ceiling on /api/auth/login', async () => {
+      // No TRUST_PROXY and no client-supplied identity: these requests are indistinguishable,
+      // so only the per-endpoint global ceiling (not a shared per-client bucket) applies.
       const makeRequest = () => loginPost(new Request('http://localhost/api/auth/login', { method: 'POST' }));
 
       const responses = [];
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < 51; i++) {
         responses.push(await makeRequest());
       }
 
       const statuses = responses.map((r) => r.status);
-      const rateLimitedCount = statuses.filter((s) => s === 429).length;
+      expect(statuses.slice(0, 50)).toEqual(Array(50).fill(410));
+      expect(statuses[50]).toBe(429);
 
-      expect(rateLimitedCount).toBeGreaterThan(0);
-
-      const rateLimitedResponse = responses.find((r) => r.status === 429);
-      if (rateLimitedResponse) {
-        const body = await rateLimitedResponse.json();
-        expect(body.error).toMatch(/try again later/i);
-        expect(body.code).toBe('RATE_LIMITED');
-      }
+      const rateLimitedResponse = responses[50];
+      const body = await rateLimitedResponse.json();
+      expect(body.error).toMatch(/try again later/i);
+      expect(body.code).toBe('RATE_LIMITED');
     });
 
-    it('returns 429 after multiple rapid login attempts on /api/auth/plex/start', async () => {
+    it('never signs out or blocks an already signed-in user once the shared ceiling is exhausted', async () => {
+      await seedConfiguredSettings();
+      const { user } = await authenticateTestSession();
+
+      const makeLoginAttempt = () =>
+        loginPost(new Request('http://localhost/api/auth/login', { method: 'POST' }));
+      for (let i = 0; i < 51; i++) {
+        await makeLoginAttempt();
+      }
+
+      const meResponse = await meGet(createJsonRequest('http://localhost/api/auth/me', 'GET'));
+      const body = await meResponse.json();
+
+      expect(meResponse.status).toBe(200);
+      expect(body.user.id).toBe(user._id.toString());
+    });
+
+    it('never rate limits a correct setup secret on /api/auth/plex/start, even after wrong guesses exhaust the shared ceiling', async () => {
+      const settings = await getOrCreateSettings();
+      settings.setupComplete = false;
+      await settings.save();
+      vi.stubEnv('DECIDARR_SETUP_SECRET', 'the-real-setup-secret-123');
+
+      const makeRequest = (secret?: string) =>
+        plexStartPost(
+          new Request('http://localhost/api/auth/plex/start', {
+            method: 'POST',
+            headers: secret ? { 'X-Decidarr-Setup-Secret': secret } : {},
+          })
+        );
+
+      for (let i = 0; i < 51; i++) {
+        await makeRequest(`wrong-guess-${i}`);
+      }
+
+      const allowed = await makeRequest('the-real-setup-secret-123');
+      expect(allowed.status).toBe(200);
+    });
+
+    it('never rate limits a correct setup secret on /api/auth/plex/start under TRUST_PROXY, even after wrong guesses from the same IP exhaust its per-client limit', async () => {
+      const settings = await getOrCreateSettings();
+      settings.setupComplete = false;
+      await settings.save();
+      vi.stubEnv('DECIDARR_SETUP_SECRET', 'the-real-setup-secret-123');
+      vi.stubEnv('TRUST_PROXY', 'true');
+
+      const makeRequest = (secret?: string) =>
+        plexStartPost(
+          new Request('http://localhost/api/auth/plex/start', {
+            method: 'POST',
+            headers: { 'x-forwarded-for': '203.0.113.77', ...(secret ? { 'X-Decidarr-Setup-Secret': secret } : {}) },
+          })
+        );
+
+      for (let i = 0; i < 6; i++) {
+        await makeRequest(`wrong-guess-${i}`);
+      }
+
+      const allowed = await makeRequest('the-real-setup-secret-123');
+      expect(allowed.status).toBe(200);
+    });
+
+    it('returns 429 after exhausting the global ceiling on /api/auth/plex/start', async () => {
       const makeRequest = () => plexStartPost(new Request('http://localhost/api/auth/plex/start', { method: 'POST' }));
 
       const responses = [];
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < 51; i++) {
         responses.push(await makeRequest());
       }
 
       const statuses = responses.map((r) => r.status);
       const rateLimitedCount = statuses.filter((s) => s === 429).length;
-
       expect(rateLimitedCount).toBeGreaterThan(0);
 
-      const rateLimitedResponse = responses.find((r) => r.status === 429);
-      if (rateLimitedResponse) {
-        const body = await rateLimitedResponse.json();
-        expect(body.error).toMatch(/try again later/i);
-        expect(body.code).toBe('RATE_LIMITED');
+      const rateLimitedResponse = responses.find((r) => r.status === 429)!;
+      const body = await rateLimitedResponse.json();
+      expect(body.error).toMatch(/try again later/i);
+      expect(body.code).toBe('RATE_LIMITED');
+    });
+
+    it('with TRUST_PROXY=true, uses the forwarded client IP to rate limit /api/auth/plex/start per client', async () => {
+      vi.stubEnv('TRUST_PROXY', 'true');
+      const makeRequest = (ip: string) =>
+        plexStartPost(
+          new Request('http://localhost/api/auth/plex/start', {
+            method: 'POST',
+            headers: { 'x-forwarded-for': ip },
+          })
+        );
+
+      const statuses: number[] = [];
+      for (let i = 0; i < 6; i++) {
+        statuses.push((await makeRequest('203.0.113.9')).status);
       }
+      expect(statuses.slice(0, 5)).toEqual([200, 200, 200, 200, 200]);
+      expect(statuses[5]).toBe(429);
+
+      // A different forwarded client IP gets its own bucket.
+      expect((await makeRequest('203.0.113.42')).status).toBe(200);
     });
 
     it('allows normal OAuth polling without rate limiting', async () => {

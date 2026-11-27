@@ -75,9 +75,9 @@ describe('Mobile auth hardening (spec #1 rules on the mobile routes)', () => {
   });
 
   describe('POST /api/mobile/auth/start', () => {
-    it('rate limits with the shared limiter and a spoofed X-Forwarded-For does not reset it', async () => {
+    it('a spoofed, rotating X-Forwarded-For cannot dodge the global ceiling without TRUST_PROXY (H4)', async () => {
       const statuses: number[] = [];
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < 51; i++) {
         const response = await startPost(
           startRequest(undefined, { 'x-forwarded-for': `10.0.0.${i}` })
         );
@@ -87,8 +87,39 @@ describe('Mobile auth hardening (spec #1 rules on the mobile routes)', () => {
         }
       }
 
-      expect(statuses.slice(0, 5)).toEqual([200, 200, 200, 200, 200]);
-      expect(statuses[5]).toBe(429);
+      expect(statuses.slice(0, 50)).toEqual(Array(50).fill(200));
+      expect(statuses[50]).toBe(429);
+    });
+
+    it('a spoofed, rotating X-Real-IP cannot dodge the global ceiling without TRUST_PROXY (H4)', async () => {
+      const statuses: number[] = [];
+      for (let i = 0; i < 51; i++) {
+        const response = await startPost(
+          startRequest(undefined, { 'x-real-ip': `203.0.113.${i}` })
+        );
+        statuses.push(response.status);
+        if (response.status === 429) {
+          expect((await response.json()).code).toBe('RATE_LIMITED');
+        }
+      }
+
+      expect(statuses.slice(0, 50)).toEqual(Array(50).fill(200));
+      expect(statuses[50]).toBe(429);
+    });
+
+    it('with TRUST_PROXY, one forwarded client exhausting its own budget does not block a different one', async () => {
+      vi.stubEnv('TRUST_PROXY', 'true');
+
+      let lastStatus = 0;
+      for (let i = 0; i < 6; i++) {
+        lastStatus = (
+          await startPost(startRequest(undefined, { 'x-forwarded-for': '198.51.100.9' }))
+        ).status;
+      }
+      expect(lastStatus).toBe(429);
+
+      const other = await startPost(startRequest(undefined, { 'x-forwarded-for': '198.51.100.50' }));
+      expect(other.status).toBe(200);
     });
 
     it('omits forwardUrl when the request origin does not match APP_URL', async () => {
@@ -112,6 +143,47 @@ describe('Mobile auth hardening (spec #1 rules on the mobile routes)', () => {
 
       expect(response.status).toBe(200);
       expect(body.authUrl).toContain('forwardUrl=https%3A%2F%2Fdecidarr.example.com%2F');
+    });
+
+    it('never rate limits a correct setup secret, even after wrong guesses exhaust the shared ceiling', async () => {
+      const settings = await getOrCreateSettings();
+      settings.setupComplete = false;
+      await settings.save();
+      vi.stubEnv('DECIDARR_SETUP_SECRET', 'the-real-setup-secret-123');
+
+      for (let i = 0; i < 51; i++) {
+        await startPost(startRequest(undefined, { 'X-Decidarr-Setup-Secret': `wrong-guess-${i}` }));
+      }
+
+      const allowed = await startPost(
+        startRequest(undefined, { 'X-Decidarr-Setup-Secret': 'the-real-setup-secret-123' })
+      );
+      expect(allowed.status).toBe(200);
+    });
+
+    it('never rate limits a correct setup secret under TRUST_PROXY, even after wrong guesses from the same IP exhaust its per-client limit', async () => {
+      const settings = await getOrCreateSettings();
+      settings.setupComplete = false;
+      await settings.save();
+      vi.stubEnv('DECIDARR_SETUP_SECRET', 'the-real-setup-secret-123');
+      vi.stubEnv('TRUST_PROXY', 'true');
+
+      for (let i = 0; i < 6; i++) {
+        await startPost(
+          startRequest(undefined, {
+            'x-forwarded-for': '203.0.113.77',
+            'X-Decidarr-Setup-Secret': `wrong-guess-${i}`,
+          })
+        );
+      }
+
+      const allowed = await startPost(
+        startRequest(undefined, {
+          'x-forwarded-for': '203.0.113.77',
+          'X-Decidarr-Setup-Secret': 'the-real-setup-secret-123',
+        })
+      );
+      expect(allowed.status).toBe(200);
     });
 
     it('requires the setup secret before setup is complete, like the browser sign-in', async () => {
