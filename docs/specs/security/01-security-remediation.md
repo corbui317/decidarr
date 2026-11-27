@@ -181,7 +181,7 @@ interface PlexImageQuery {
 
 | Method | Path | Auth (target) | SSRF validation |
 |--------|------|---------------|-----------------|
-| POST | `/api/settings/test-plex` | Public only when setup incomplete **and** valid setup secret; otherwise `requireAdmin()` | `assertSafeServiceUrl()` |
+| POST | `/api/settings/test-plex` | `access: 'admin'` (ADR 0002: tests this install's own server with the Admin's own token) | `assertSafeServiceUrl()` |
 | POST | `/api/tautulli/test` | `requireAdmin()` | `assertSafeServiceUrl()` |
 | POST | `/api/overseerr/test` | `requireAdmin()` (already) | `assertSafeServiceUrl()` |
 | PUT | `/api/settings` | `requireAdmin()` | Validate `plex.serverUrl`, `tautulli.url`, `overseerr.url` before save |
