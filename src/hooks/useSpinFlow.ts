@@ -1,13 +1,12 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { selectionApi, spinHistoryApi, AnimationStyle, isAuthError } from '@/lib/api';
+import { selectionApi, AnimationStyle, isAuthError } from '@/lib/api';
 import { resolveAnimationStyle, ResolvedAnimationStyle } from '@/components/animations';
 import {
   Filters,
   type SelectionResultResponse,
   type MediaType,
-  type MediaTypeWithEpisode,
   type TvSelectionMode,
 } from '@decidarr/api-contracts';
 
@@ -59,27 +58,10 @@ export function useSpinFlow({
         tvSelectionMode: mediaType === 'show' ? tvSelectionMode : undefined,
       });
 
-      const selectionResult = data;
-      setPendingResult(selectionResult);
-      setStats(selectionResult.stats);
-
-      const { selection } = selectionResult;
-      spinHistoryApi
-        .create({
-          plexId: selection.plexId,
-          title: selection.title,
-          mediaType: selection.type as MediaTypeWithEpisode,
-          thumbPath: selection.thumbPath,
-          year: selection.year,
-          libraryIds: selectedLibraries,
-          filtersSnapshot: filters,
-          tvSelectionMode: mediaType === 'show' ? tvSelectionMode : undefined,
-          poolSizeAtSpin: selectionResult.stats?.totalMatches,
-        })
-        .then(() => onHistoryRecorded?.())
-        .catch(() => {
-          // History recording is non-critical - fail silently
-        });
+      setPendingResult(data);
+      setStats(data.stats);
+      // The server recorded this spin in the user's history before answering.
+      onHistoryRecorded?.();
 
       setPhase('animating');
     } catch (err) {

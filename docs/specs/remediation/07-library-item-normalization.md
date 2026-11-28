@@ -46,7 +46,7 @@ Selection flow:
 
 1. `LibraryCache.find({ plexMachineId, libraryId: { $in } })`
 2. `caches.flatMap(c => c.items)`
-3. `applyFullFilters(allItems, ...)` in memory
+3. the selection pool's predicates (`src/lib/selection/pool.ts`) in memory
 
 ### Target
 
@@ -107,7 +107,7 @@ interface ILibraryItemDoc {
 { plexMachineId: 1, libraryId: 1, overseerrStatus: 1 }
 ```
 
-Use compound indexes aligned to actual filter query patterns from `src/lib/selection/filters.ts` — profile before over-indexing.
+Use compound indexes aligned to actual filter query patterns from `src/lib/selection/pool.ts` — profile before over-indexing.
 
 ### Modified: `LibraryCache`
 
@@ -137,9 +137,9 @@ Public routes unchanged; internal data access changes.
 
 ### Selection query strategy (phase 1)
 
-**Option A — hybrid:** Mongo prefilter on indexed fields (year range, contentRating, overseerrStatus, libraryId), then `applyFullFilters` in memory on reduced set.
+**Option A — hybrid:** Mongo prefilter on indexed fields (year range, contentRating, overseerrStatus, libraryId), then the selection pool's predicates in memory on reduced set.
 
-**Option B — full pipeline:** Port `applyFullFilters` predicates to `$match` stages where possible.
+**Option B — full pipeline:** Port the selection pool's predicates to `$match` stages where possible.
 
 Start with Option A for lower risk; document Option B as follow-up.
 
@@ -191,7 +191,7 @@ None required if API response shapes unchanged.
 - `src/app/api/library/filter-options/route.ts`
 - `src/app/api/selection/random/route.ts`
 - `src/app/api/selection/pool-count/route.ts`
-- `src/lib/selection/filters.ts` (optional query builders)
+- `src/lib/selection/pool.ts` (optional query builders)
 
 **Create:**
 

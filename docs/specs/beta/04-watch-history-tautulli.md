@@ -158,7 +158,7 @@ Indexes: `{ userId: 1, plexId: 1 }` unique; `{ userId: 1 }`; `{ plexUserId: 1, p
 **Automated:**
 
 - `tests/api/watched.test.ts`
-- `tests/unit/lib/selection/filters.test.ts` (unwatched filter)
+- `tests/api/selection-pool-parity.test.ts` (unwatched filter)
 
 **Gaps:** `tests/api/tautulli/sync` — no dedicated test file.
 

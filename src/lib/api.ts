@@ -17,7 +17,6 @@ export type {
   PreferenceContract as UserPreferences,
   SpinHistoryPreferencesContract as SpinHistoryPreferences,
   SpinHistoryEntryResponse as SpinHistoryEntry,
-  SpinHistoryCreateBody as CreateSpinHistoryPayload,
   PlexCollection,
   SettingsResponse,
   SettingsStatusResponse,
@@ -208,7 +207,6 @@ export const tautulliApi = {
 
 export const spinHistoryApi = {
   list: client.spinHistory.list,
-  create: client.spinHistory.create,
   delete: client.spinHistory.delete,
   clearAll: () => client.spinHistory.clearAll(),
 };

@@ -86,16 +86,6 @@ export default function SpinScreen() {
         mediaType: response.selection.type,
         playLinks: response.playLinks ?? undefined,
       });
-
-      await coreApi.recordSpinHistory({
-        plexId: response.selection.plexId,
-        title: response.selection.title,
-        mediaType: response.selection.type as 'movie' | 'show' | 'episode',
-        thumbPath: response.selection.thumbPath,
-        year: response.selection.year,
-        libraryIds,
-        poolSizeAtSpin: response.stats.totalMatches,
-      });
     } catch (err) {
       if (requiresSignIn(err)) {
         // Signing out keeps the local cache and takes the user to the sign-in screen.
