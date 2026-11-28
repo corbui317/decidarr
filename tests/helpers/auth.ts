@@ -51,6 +51,8 @@ export async function seedTestUser(overrides?: {
   plexUsername?: string;
   isAdmin?: boolean;
   isApproved?: boolean;
+  /** This user's access token for the configured Plex server; defaults to TEST_SERVER_TOKEN. */
+  serverToken?: string;
   spinHistory?: {
     enabled?: boolean;
     retentionLimit?: number;
@@ -72,7 +74,7 @@ export async function seedTestUser(overrides?: {
       preferences: {},
     });
     user.setPlexTokens({
-      serverToken: TEST_SERVER_TOKEN,
+      serverToken: overrides?.serverToken ?? TEST_SERVER_TOKEN,
       accountToken: user.isAdmin ? TEST_ACCOUNT_TOKEN : null,
       // Seeded before settings name a server, the token is for the one seedConfiguredSettings() names.
       machineId: settings.plexMachineId ?? 'machine-1',

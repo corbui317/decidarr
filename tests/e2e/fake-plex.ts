@@ -9,11 +9,13 @@ import {
   PLEX_TV,
   defaultServerToken,
   fakePlexTv,
+  plexLibraryItems,
   plexMetadata,
   plexSections,
   routes,
   type FakeHandler,
 } from '../helpers/fake-integrations';
+import { LEGACY_LIBRARY_ITEMS } from '../helpers/legacy-install-seed';
 import { E2E_PLEX_SERVER_URL, E2E_PLEX_TV_URL } from './e2e-env';
 
 export const E2E_MACHINE_ID = 'e2e-machine';
@@ -26,7 +28,7 @@ const plexTv = fakePlexTv({
 const plexLibrary = routes({
   [`${E2E_PLEX_SERVER_URL}/identity`]: () => Response.json({ MediaContainer: { machineIdentifier: E2E_MACHINE_ID } }),
   [`${E2E_PLEX_SERVER_URL}/library/sections`]: () => plexSections([{ id: '1', title: 'Movies', type: 'movie' }]),
-  [`${E2E_PLEX_SERVER_URL}/library/sections/1/all`]: () => plexMetadata([]),
+  [`${E2E_PLEX_SERVER_URL}/library/sections/1/all`]: () => plexLibraryItems(LEGACY_LIBRARY_ITEMS),
   [`${E2E_PLEX_SERVER_URL}/library/sections/1/collections`]: () => plexMetadata([]),
 });
 
@@ -34,7 +36,7 @@ const plexLibrary = routes({
 export const E2E_SERVER_TOKEN = defaultServerToken(E2E_MACHINE_ID);
 
 /**
- * The library above, plus details for any item a spin picks (the specs seed the items into the library cache).
+ * The library above, holding the movies the legacy install cached, plus details for any item a spin picks.
  * Like a real Plex server it answers only its own access token, so a plex.tv account token gets a 401.
  */
 const plexServer: FakeHandler = (request) => {

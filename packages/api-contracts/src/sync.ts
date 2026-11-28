@@ -14,9 +14,6 @@ export const syncChangesQuerySchema = z.object({
 });
 export type SyncChangesQuery = z.infer<typeof syncChangesQuerySchema>;
 
-export const syncMutationsBodySchema = z.object({ mutations: z.array(z.unknown()) });
-export type SyncMutationsBody = z.infer<typeof syncMutationsBodySchema>;
-
 export const syncEntityTypeSchema = z.enum(['preference', 'watched', 'spin_history']);
 export type SyncEntityType = z.infer<typeof syncEntityTypeSchema>;
 
@@ -39,17 +36,29 @@ export interface SyncChange<T = unknown> {
   data: T | null;
 }
 
-/** The payload type varies by entityType; see PreferenceContract, WatchedContract, SpinHistoryContract. */
-export interface SyncMutation<T = unknown> {
-  mutationId: string;
-  deviceId: string;
-  entityType: SyncEntityType;
-  entityId: string;
-  operation: 'upsert' | 'delete';
-  baseRevision: number | null;
-  clientChangedAt: string;
-  payload: T;
-}
+/**
+ * One change a client made. The payload is the body the matching REST route takes
+ * (preference upsert: PreferencesPutBody, watched upsert: WatchedCreateBody,
+ * spin_history upsert: SpinHistoryCreateBody); the server checks it per mutation.
+ * For a watched item `entityId` is its plexId, for a preference the user's own id, and
+ * for a new spin history entry any id the client chose (the server assigns the real one).
+ */
+export const syncMutationSchema = z.object({
+  mutationId: z.string().min(1).max(200),
+  deviceId: z.string().min(1).max(200),
+  entityType: syncEntityTypeSchema,
+  entityId: z.string().min(1).max(200),
+  operation: z.enum(['upsert', 'delete']),
+  baseRevision: z.number().int().min(0).nullable(),
+  clientChangedAt: z.iso.datetime({ offset: true }),
+  payload: z.unknown(),
+});
+export type SyncMutation = z.infer<typeof syncMutationSchema>;
+
+export const syncMutationsBodySchema = z.object({
+  mutations: z.array(syncMutationSchema).min(1).max(MAX_MUTATION_BATCH_SIZE),
+});
+export type SyncMutationsBody = z.infer<typeof syncMutationsBodySchema>;
 
 export const spinHistoryPreferencesContractSchema = z.object({
   enabled: z.boolean(),
@@ -135,15 +144,24 @@ export const syncChangesResponseSchema = z.object({
 export type SyncChangesResponse = z.infer<typeof syncChangesResponseSchema>;
 
 export const mutationResultSchema = z.discriminatedUnion('status', [
-  z.object({ mutationId: z.string(), status: z.literal('applied'), revision: z.number() }),
+  z.object({
+    mutationId: z.string(),
+    status: z.literal('applied'),
+    /** The entity's revision after the write; 0 when nothing was written (spin history turned off). */
+    revision: z.number(),
+    /** The server-assigned id of a spin history entry the mutation created. */
+    entityId: z.string().optional(),
+  }),
   z.object({ mutationId: z.string(), status: z.literal('duplicate'), revision: z.number() }),
   z.object({
     mutationId: z.string(),
     status: z.literal('conflict'),
-    reason: z.enum(['revision_mismatch', 'deleted', 'validation']),
+    reason: z.enum(['revision_mismatch', 'deleted']),
     serverRevision: z.number().nullable(),
     serverValue: z.unknown(),
   }),
+  /** Refused exactly as the REST route refuses it: the same `code` and `error` as its error body. */
+  z.object({ mutationId: z.string(), status: z.literal('rejected'), code: z.string(), error: z.string() }),
 ]);
 export type MutationResult = z.infer<typeof mutationResultSchema>;
 

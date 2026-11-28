@@ -90,7 +90,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       for (const item of result.results) {
         if (item.status === 'applied' || item.status === 'duplicate') {
           await removeMutation(item.mutationId);
-        } else if (item.status === 'conflict') {
+        } else {
+          // A conflict, or a rejection by the same rules the web app follows: retrying cannot help.
           await updateMutationStatus(item.mutationId, 'conflict');
           setSyncStateLocal('conflict');
         }

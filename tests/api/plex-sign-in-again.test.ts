@@ -3,9 +3,8 @@ import { NextRequest } from 'next/server';
 import { clearDatabase } from '../helpers/mongo';
 import { seedConfiguredSettings, authenticateTestSession, clearTestCookies, createJsonRequest } from '../helpers/auth';
 import { SAMPLE_LIBRARY_ITEMS } from '../fixtures/library-items';
-import { fakeIntegrations, plexSections, TEST_PLEX_SERVER } from '../helpers/fake-integrations';
+import { fakeIntegrations, plexLibraryItems, plexSections, TEST_PLEX_SERVER } from '../helpers/fake-integrations';
 import { getOrCreateSettings } from '@/lib/models/Settings';
-import { LibraryCache } from '@/lib/models/LibraryCache';
 
 import { GET as collectionsGet } from '@/app/api/library/collections/route';
 import { POST as randomPost } from '@/app/api/selection/random/route';
@@ -13,26 +12,18 @@ import { POST as poolCountPost } from '@/app/api/selection/pool-count/route';
 import { POST as fetchMachineIdPost } from '@/app/api/settings/fetch-machine-id/route';
 
 /**
- * A Plex server that lists the user's libraries but answers every other request with
- * `status`: a 401 is what a server sends once the user's access token stops working.
+ * A Plex server that lists the user's libraries and their items but answers every other request
+ * with `status`: a 401 is what a server sends once the user's access token stops working.
  */
 function fakeServerAnswering(status: number) {
-  return fakeIntegrations((request) =>
-    request.url.href === `${TEST_PLEX_SERVER}/library/sections`
-      ? plexSections([{ id: 'lib-1', title: 'Movies', type: 'movie' }])
-      : new Response('refused', { status })
-  );
-}
-
-async function seedLibraryCache() {
-  await LibraryCache.create({
-    plexMachineId: 'machine-1',
-    libraryId: 'lib-1',
-    libraryName: 'Movies',
-    mediaType: 'movie',
-    items: SAMPLE_LIBRARY_ITEMS,
-    lastSyncedAt: new Date(),
-    expiresAt: new Date(Date.now() + 86400000),
+  return fakeIntegrations((request) => {
+    if (request.url.href === `${TEST_PLEX_SERVER}/library/sections`) {
+      return plexSections([{ id: 'lib-1', title: 'Movies', type: 'movie' }]);
+    }
+    if (request.url.href === `${TEST_PLEX_SERVER}/library/sections/lib-1/all`) {
+      return plexLibraryItems(SAMPLE_LIBRARY_ITEMS);
+    }
+    return new Response('refused', { status });
   });
 }
 
@@ -49,7 +40,6 @@ describe('A Plex server refusing the user\'s access token', () => {
     clearTestCookies();
     await seedConfiguredSettings();
     await authenticateTestSession();
-    await seedLibraryCache();
   });
 
   it('asks the user to sign in again when listing collections', async () => {

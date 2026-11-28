@@ -8,9 +8,9 @@ import {
   createJsonRequest,
 } from '../../helpers/auth';
 import { SAMPLE_LIBRARY_ITEMS } from '../../fixtures/library-items';
-import { LibraryCache } from '@/lib/models/LibraryCache';
 import {
   fakeIntegrations,
+  plexLibraryItems,
   plexMetadata,
   plexSections,
   routes,
@@ -26,11 +26,12 @@ import { POST as poolCountPost } from '@/app/api/selection/pool-count/route';
 
 const SAMPLE_TITLES = SAMPLE_LIBRARY_ITEMS.map((item) => item.title);
 
-/** The seeded Plex server: one movie library holding the sample items, and a two-item collection. */
-function fakePlexServer() {
+/** The seeded Plex server: one movie library holding `items`, and a two-item collection. */
+function fakePlexServer(items = SAMPLE_LIBRARY_ITEMS) {
   return fakeIntegrations(
     routes({
       [`${TEST_PLEX_SERVER}/library/sections`]: () => plexSections([{ id: 'lib-1', title: 'Movies', type: 'movie' }]),
+      [`${TEST_PLEX_SERVER}/library/sections/lib-1/all`]: () => plexLibraryItems(items),
       ...Object.fromEntries(
         SAMPLE_LIBRARY_ITEMS.map(({ plexId, title, year }) => [
           `${TEST_PLEX_SERVER}/library/metadata/${plexId}`,
@@ -44,18 +45,6 @@ function fakePlexServer() {
         ]),
     })
   );
-}
-
-async function seedLibraryCache() {
-  await LibraryCache.create({
-    plexMachineId: 'machine-1',
-    libraryId: 'lib-1',
-    libraryName: 'Movies',
-    mediaType: 'movie',
-    items: SAMPLE_LIBRARY_ITEMS,
-    lastSyncedAt: new Date(),
-    expiresAt: new Date(Date.now() + 86400000),
-  });
 }
 
 describe('Selection API routes', () => {
@@ -90,7 +79,8 @@ describe('Selection API routes', () => {
       expect(res.status).toBe(401);
     });
 
-    it('returns 404 when library cache empty', async () => {
+    it('returns 404 when the library is empty', async () => {
+      fakePlexServer([]);
       const req = createJsonRequest('http://localhost/api/selection/random', 'POST', {
         libraryIds: ['lib-1'],
         mediaType: 'movie',
@@ -100,7 +90,6 @@ describe('Selection API routes', () => {
     });
 
     it('returns 404 when filters match nothing', async () => {
-      await seedLibraryCache();
       const req = createJsonRequest('http://localhost/api/selection/random', 'POST', {
         libraryIds: ['lib-1'],
         mediaType: 'movie',
@@ -111,7 +100,6 @@ describe('Selection API routes', () => {
     });
 
     it('returns selection on success', async () => {
-      await seedLibraryCache();
       const req = createJsonRequest('http://localhost/api/selection/random', 'POST', {
         libraryIds: ['lib-1'],
         mediaType: 'movie',
@@ -138,7 +126,6 @@ describe('Selection API routes', () => {
     });
 
     it('returns matching count consistent with filters', async () => {
-      await seedLibraryCache();
       const req = createJsonRequest('http://localhost/api/selection/pool-count', 'POST', {
         libraryIds: ['lib-1'],
         mediaType: 'movie',
@@ -151,7 +138,6 @@ describe('Selection API routes', () => {
     });
 
     it('reports emptyReason for impossible genre filter', async () => {
-      await seedLibraryCache();
       const req = createJsonRequest('http://localhost/api/selection/pool-count', 'POST', {
         libraryIds: ['lib-1'],
         mediaType: 'movie',
@@ -164,7 +150,6 @@ describe('Selection API routes', () => {
     });
 
     it('parity: pool count matches random eligibility with unwatched filter', async () => {
-      await seedLibraryCache();
       await WatchedItem.create({
         userId: authenticatedUserId,
         plexId: '1',
@@ -194,7 +179,6 @@ describe('Selection API routes', () => {
     });
 
     it('parity: pool count matches random eligibility with collection filter', async () => {
-      await seedLibraryCache();
 
       const poolReq = createJsonRequest('http://localhost/api/selection/pool-count', 'POST', {
         libraryIds: ['lib-1'],
