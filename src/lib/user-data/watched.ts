@@ -68,3 +68,59 @@ export async function unmarkWatched(actor: UserDataActor, plexId: unknown): Prom
   await WatchedItem.deleteOne({ userId: actor.userId, plexId: id });
   return { revision: await emitSyncChange(actor.userId, 'watched', id, 'delete', null) };
 }
+
+export interface TautulliImportItem {
+  plexId: string;
+  mediaType: 'movie' | 'show';
+  title: string;
+  watchedAt: Date;
+  plexUserId: number;
+  plexUsername: string;
+}
+
+/**
+ * Imports one play from Tautulli. Only writes, and only emits a sync change, when the
+ * stored play actually differs, so re-importing an unchanged history does not flood the
+ * sync change feed.
+ */
+export async function importWatchedFromTautulli(
+  actor: UserDataActor,
+  item: TautulliImportItem
+): Promise<{ changed: boolean }> {
+  const id = parsePlexId(item.plexId);
+  const { mediaType, title } = parseContract(watchedCreateBodySchema, {
+    mediaType: item.mediaType,
+    title: item.title,
+  });
+
+  const existing = await WatchedItem.findOne({ userId: actor.userId, plexId: id });
+  if (
+    existing &&
+    existing.source === 'tautulli' &&
+    existing.mediaType === mediaType &&
+    existing.title === title &&
+    existing.watchedAt.getTime() === item.watchedAt.getTime() &&
+    existing.plexUserId === item.plexUserId &&
+    existing.plexUsername === item.plexUsername
+  ) {
+    return { changed: false };
+  }
+
+  const updated = (await WatchedItem.findOneAndUpdate(
+    { userId: actor.userId, plexId: id },
+    {
+      $set: {
+        mediaType,
+        title,
+        watchedAt: item.watchedAt,
+        source: 'tautulli',
+        plexUserId: item.plexUserId,
+        plexUsername: item.plexUsername,
+      },
+      $setOnInsert: { userId: actor.userId, plexId: id, markedManually: false },
+    },
+    { upsert: true, new: true }
+  ))!;
+  await emitSyncChange(actor.userId, 'watched', id, 'upsert', toWatchedContract(updated));
+  return { changed: true };
+}
