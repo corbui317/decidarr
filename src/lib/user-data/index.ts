@@ -15,7 +15,13 @@ export interface UserDataActor {
 }
 
 export { updatePreferences, toPreferenceContract } from './preferences';
-export { markWatched, unmarkWatched, toWatchedContract } from './watched';
+export {
+  markWatched,
+  unmarkWatched,
+  toWatchedContract,
+  importWatchedFromTautulli,
+  type TautulliImportItem,
+} from './watched';
 export {
   recordSpin,
   deleteSpin,
