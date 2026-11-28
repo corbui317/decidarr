@@ -15,6 +15,7 @@ import {
   plexLibraryItems,
   plexSections,
   TEST_PLEX_SERVER,
+  TMDB,
 } from '../helpers/fake-integrations';
 import { LibraryCache, type ILibraryItem } from '@/lib/models/LibraryCache';
 import { LibraryVisibility } from '@/lib/models/LibraryVisibility';
@@ -39,15 +40,30 @@ const RESTRICTED_TITLES = ['The Room', 'Parasite', 'No Rating Movie'];
  * The Plex server, which answers each user with what their own server token lets them see,
  * as Plex does for a Friend with label or content-rating restrictions.
  */
-function fakeRestrictedPlex(views: Record<string, ILibraryItem[]>, plex: { listing: 'up' | 'unreachable' | 'failing' } = { listing: 'up' }) {
-  return fakeIntegrations(({ url, headers }) => {
+interface FakePlexControl {
+  listing: 'up' | 'unreachable' | 'failing';
+  /** Runs while a listing is in flight, after Plex has decided what the user sees. */
+  whileListing?: () => void | Promise<void>;
+  /** Runs on each TMDb request (TMDb finds nothing). */
+  onTmdb?: () => void;
+}
+
+function fakeRestrictedPlex(views: Record<string, ILibraryItem[]>, plex: FakePlexControl = { listing: 'up' }) {
+  return fakeIntegrations(async ({ url, headers }) => {
+    if (url.origin === TMDB) {
+      plex.onTmdb?.();
+      return Response.json({ results: [] });
+    }
     // A large library's listing can time out or fail while Plex still answers its section list.
     if (url.pathname.endsWith('/all') && plex.listing === 'unreachable') throw new TypeError('fetch failed');
     if (url.pathname.endsWith('/all') && plex.listing === 'failing') return new Response('busy', { status: 503 });
     const view = views[headers.get('X-Plex-Token') ?? ''];
     if (url.origin !== TEST_PLEX_SERVER || !view) return new Response('unauthorized', { status: 401 });
     if (url.pathname === '/library/sections') return plexSections([{ id: 'lib-1', title: 'Movies', type: 'movie' }]);
-    if (url.pathname === '/library/sections/lib-1/all') return plexLibraryItems(view);
+    if (url.pathname === '/library/sections/lib-1/all') {
+      await plex.whileListing?.();
+      return plexLibraryItems(view);
+    }
     const plexId = url.pathname.match(/^\/library\/metadata\/(\w+)$/)?.[1];
     const item = view.find((candidate) => candidate.plexId === plexId);
     return item ? plexLibraryItems([item]) : new Response('not found', { status: 404 });
@@ -216,7 +232,7 @@ describe('A restriction the Admin tightens in Plex reaches the Friend within the
   let admin: IUser;
   let friend: IUser;
   let views: Record<string, ILibraryItem[]>;
-  let plex: { listing: 'up' | 'unreachable' | 'failing' };
+  let plex: FakePlexControl;
   let sent: { url: URL; headers: Headers }[];
 
   /** Only Old Classic (PG) stays shared with the Friend; Inception and Hidden Gem Film become restricted. */
@@ -303,6 +319,68 @@ describe('A restriction the Admin tightens in Plex reaches the Friend within the
 
     await signInAs(admin);
     expect(await poolCount()).toMatchObject({ totalItems: ADMIN_VIEW.length });
+  });
+
+  it('measures the bound from when Plex was asked, not from when a slow sync finished enriching', async () => {
+    await seedConfiguredSettings({ tmdbApiKey: 'tmdb-test-key-abcdefgh' });
+    let enrichmentSlow = true;
+    plex.onTmdb = () => {
+      if (enrichmentSlow) advance(50_000);
+      enrichmentSlow = false;
+    };
+    await signInAs(friend);
+    expect(titles((await loadItems()).items)).toEqual(titles(FRIEND_VIEW));
+
+    // Listed at T, written at T + 50 s; the Admin tightens right after the listing.
+    views[FRIEND_SERVER_TOKEN] = TIGHTENED_VIEW;
+    advance(VISIBILITY_BOUND_MS - 50_000 + 1);
+
+    expect(titles((await loadItems()).items)).toEqual(titles(TIGHTENED_VIEW));
+  });
+
+  it('measures a confirmation from when its listing was requested, not from when it returned', async () => {
+    await signInAs(friend);
+    await loadItems();
+    advance(VISIBILITY_BOUND_MS + 1);
+
+    plex.whileListing = () => {
+      plex.whileListing = undefined;
+      advance(50_000);
+    };
+    expect(titles((await loadItems()).items)).toEqual(titles(FRIEND_VIEW));
+
+    views[FRIEND_SERVER_TOKEN] = TIGHTENED_VIEW;
+    advance(VISIBILITY_BOUND_MS - 50_000 + 1);
+
+    expect(titles((await loadItems()).items)).toEqual(titles(TIGHTENED_VIEW));
+  });
+
+  it('never lets a slow sync that listed before a restriction change overwrite a newer confirmation', async () => {
+    await signInAs(friend);
+    await loadItems();
+    advance(VISIBILITY_BOUND_MS + 1);
+
+    let release!: () => void;
+    let listed!: () => void;
+    const stalled = new Promise<void>((resolve) => (release = resolve));
+    const reached = new Promise<void>((resolve) => (listed = resolve));
+    plex.whileListing = async () => {
+      plex.whileListing = undefined;
+      listed();
+      await stalled;
+    };
+    // A forced refresh lists the Friend's current view, then stalls before storing it.
+    const slowRefresh = loadItems({ forceRefresh: true });
+    await reached;
+
+    views[FRIEND_SERVER_TOKEN] = TIGHTENED_VIEW;
+    advance(1_000);
+    expect(await poolCount()).toMatchObject({ totalItems: TIGHTENED_VIEW.length });
+
+    release();
+    await slowRefresh;
+    expect(await poolCount()).toMatchObject({ totalItems: TIGHTENED_VIEW.length });
+    expect(titles((await loadItems()).items)).toEqual(titles(TIGHTENED_VIEW));
   });
 
   it.each(['unreachable', 'failing'] as const)("serves no title Plex has not confirmed for the Friend once the bound has passed while Plex is %s", async (listing) => {
