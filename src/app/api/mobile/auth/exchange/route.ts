@@ -76,40 +76,61 @@ export const POST = route(
       await authCode.save();
     }
 
-    const loginResult = await completePlexLogin(plexToken);
-    if (!loginResult.success || !loginResult.user) {
-      return NextResponse.json(
-        { error: loginResult.error || 'Login failed', code: loginResult.code || 'AUTH_FAILED' },
-        { status: loginResult.status || 401 }
+    // Claim the code atomically before any Plex login or token issuance, so two concurrent
+    // exchanges of the same device code can never both mint a token pair: only the request
+    // whose update actually matches a not-yet-exchanged document wins. Released below unless
+    // this exchange actually succeeds, so a pending authorization or a transient login
+    // failure stays retryable exactly as it was before this code existed.
+    const claimed = await MobileAuthCode.findOneAndUpdate(
+      { _id: authCode._id, exchangedAt: { $exists: false } },
+      { $set: { exchangedAt: new Date() } }
+    );
+    if (!claimed) {
+      return NextResponse.json({ error: 'Authorization code already used' }, { status: 401 });
+    }
+
+    try {
+      const loginResult = await completePlexLogin(plexToken);
+      if (!loginResult.success || !loginResult.user) {
+        await MobileAuthCode.updateOne({ _id: authCode._id }, { $unset: { exchangedAt: 1 } });
+        return NextResponse.json(
+          { error: loginResult.error || 'Login failed', code: loginResult.code || 'AUTH_FAILED' },
+          { status: loginResult.status || 401 }
+        );
+      }
+
+      const user = await User.findById(loginResult.user.id);
+      if (!user) {
+        await MobileAuthCode.updateOne({ _id: authCode._id }, { $unset: { exchangedAt: 1 } });
+        return NextResponse.json({ error: 'User not found' }, { status: 500 });
+      }
+
+      await backfillSyncRevisions(user._id);
+
+      const tokens = await issueTokenPair(user, deviceId, authCode.deviceName);
+      // The Plex token now lives (encrypted) on the user; the one-time code no longer needs
+      // it. exchangedAt was already set by the claim above.
+      await MobileAuthCode.updateOne(
+        { _id: authCode._id },
+        { $set: { userId: user._id }, $unset: { plexAuthToken: 1 } }
       );
+
+      logger.info('Mobile auth exchanged', {
+        userId: user._id.toString(),
+        deviceId,
+        deviceCode: redactToken(deviceCode),
+      });
+
+      return NextResponse.json({
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresIn: tokens.expiresIn,
+        user: loginResult.user,
+      });
+    } catch (err) {
+      await MobileAuthCode.updateOne({ _id: authCode._id }, { $unset: { exchangedAt: 1 } });
+      throw err;
     }
-
-    const user = await User.findById(loginResult.user.id);
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 500 });
-    }
-
-    await backfillSyncRevisions(user._id);
-
-    const tokens = await issueTokenPair(user, deviceId, authCode.deviceName);
-    authCode.exchangedAt = new Date();
-    authCode.userId = user._id;
-    // The Plex token now lives (encrypted) on the user; the one-time code no longer needs it.
-    authCode.plexAuthToken = undefined;
-    await authCode.save();
-
-    logger.info('Mobile auth exchanged', {
-      userId: user._id.toString(),
-      deviceId,
-      deviceCode: redactToken(deviceCode),
-    });
-
-    return NextResponse.json({
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      expiresIn: tokens.expiresIn,
-      user: loginResult.user,
-    });
   } catch (err) {
     const msg = (err as Error).message;
     if (msg === 'PLEX_UNAVAILABLE') {

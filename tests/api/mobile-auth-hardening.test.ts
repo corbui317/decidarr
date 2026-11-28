@@ -300,6 +300,29 @@ describe('Mobile auth hardening (spec #1 rules on the mobile routes)', () => {
       expect(response.status).toBe(401);
       expect((await response.json()).error).toBe('Device mismatch');
     });
+
+    it('claims a device code atomically so concurrent exchanges cannot both mint tokens', async () => {
+      const user = await seedTestUser({ plexUsername: 'mobileuser' });
+      vi.mocked(completePlexLogin).mockResolvedValue({
+        success: true,
+        user: { id: user._id.toString(), username: 'mobileuser', isAdmin: true },
+      });
+
+      const deviceCode = await startDeviceCode();
+      const [first, second] = await Promise.all([
+        exchangePost(exchangeRequest(deviceCode)),
+        exchangePost(exchangeRequest(deviceCode)),
+      ]);
+
+      const statuses = [first.status, second.status].sort();
+      expect(statuses).toEqual([200, 401]);
+
+      const winner = first.status === 200 ? first : second;
+      const tokens = await winner.json();
+      expect(tokens.accessToken).toBeTruthy();
+
+      expect(await MobileRefreshToken.countDocuments({ userId: user._id })).toBe(1);
+    });
   });
 
   describe('typed session errors on bearer routes', () => {
