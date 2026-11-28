@@ -6,7 +6,7 @@ import {
   SPIN_HISTORY_MIN_RETENTION,
   SPIN_HISTORY_MAX_RETENTION,
   SPIN_HISTORY_DEFAULT_RETENTION,
-} from '@/lib/spin-history';
+} from '@/lib/user-data/spin-history';
 
 describe('normalizeRetentionLimit', () => {
   it('returns default for invalid input', () => {

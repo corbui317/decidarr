@@ -1,147 +1,28 @@
 import crypto from 'crypto';
 import { Types } from 'mongoose';
-import type {
-  PreferenceContract,
-  SpinHistoryContract,
-  SyncChange,
-  SyncEntityType,
-  SyncMutation,
-  WatchedContract,
-  MutationResult,
-  SYNC_SCHEMA_VERSION,
-} from '@decidarr/api-contracts';
-import { SYNC_CHANGE_RETENTION_DAYS, MAX_MUTATION_BATCH_SIZE } from '@decidarr/api-contracts';
+import type { SyncChange, SyncMutation, MutationResult, SYNC_SCHEMA_VERSION } from '@decidarr/api-contracts';
+import { SYNC_CHANGE_RETENTION_DAYS } from '@decidarr/api-contracts';
 import { SyncChange as SyncChangeModel } from '@/lib/models/SyncChange';
 import { SyncEntityRevision } from '@/lib/models/SyncEntityRevision';
 import { AppliedSyncMutation } from '@/lib/models/AppliedSyncMutation';
 import { WatchedItem } from '@/lib/models/WatchedItem';
 import { SpinHistoryEntry } from '@/lib/models/SpinHistoryEntry';
 import { IUser } from '@/lib/models/User';
+import { DomainError } from '@/lib/request/errors';
+import {
+  deleteSpin,
+  markWatched,
+  recordSpin,
+  toPreferenceContract,
+  toSpinHistoryContract,
+  toWatchedContract,
+  unmarkWatched,
+  updatePreferences,
+  type UserDataActor,
+} from '@/lib/user-data';
 import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('Sync');
-
-function generateCursor(): string {
-  return crypto.randomBytes(16).toString('hex');
-}
-
-export async function getNextRevision(
-  userId: Types.ObjectId,
-  entityType: SyncEntityType,
-  entityId: string
-): Promise<number> {
-  const existing = await SyncEntityRevision.findOne({ userId, entityType, entityId });
-  if (existing) {
-    existing.revision += 1;
-    existing.updatedAt = new Date();
-    existing.deletedAt = undefined;
-    await existing.save();
-    return existing.revision;
-  }
-
-  await SyncEntityRevision.create({
-    userId,
-    entityType,
-    entityId,
-    revision: 1,
-  });
-  return 1;
-}
-
-export async function emitSyncChange(
-  userId: Types.ObjectId,
-  entityType: SyncEntityType,
-  entityId: string,
-  operation: 'upsert' | 'delete',
-  data: unknown | null
-): Promise<void> {
-  const revision = await getNextRevision(userId, entityType, entityId);
-
-  if (operation === 'delete') {
-    await SyncEntityRevision.updateOne(
-      { userId, entityType, entityId },
-      { deletedAt: new Date() }
-    );
-  }
-
-  await SyncChangeModel.create({
-    userId,
-    cursor: generateCursor(),
-    entityType,
-    entityId,
-    operation,
-    revision,
-    changedAt: new Date(),
-    data,
-  });
-}
-
-export function toPreferenceContract(user: IUser): PreferenceContract {
-  return {
-    theme: user.preferences?.theme,
-    selectedLibraries: user.preferences?.selectedLibraries,
-    defaultMediaType: user.preferences?.defaultMediaType,
-    tvSelectionMode: user.preferences?.tvSelectionMode,
-    animationStyle: user.preferences?.animationStyle,
-    animationSpeed: user.preferences?.animationSpeed,
-    savedFilters: user.preferences?.savedFilters,
-    spinHistory: user.preferences?.spinHistory
-      ? {
-          enabled: user.preferences.spinHistory.enabled ?? true,
-          retentionLimit: user.preferences.spinHistory.retentionLimit ?? 50,
-          storeFilterSnapshot: user.preferences.spinHistory.storeFilterSnapshot ?? true,
-        }
-      : undefined,
-  };
-}
-
-export function toWatchedContract(item: {
-  _id: Types.ObjectId | string;
-  plexId: string;
-  mediaType: 'movie' | 'show' | 'episode';
-  title: string;
-  watchedAt: Date;
-  markedManually: boolean;
-  source: 'manual' | 'tautulli';
-}): WatchedContract {
-  return {
-    id: item._id.toString(),
-    plexId: item.plexId,
-    mediaType: item.mediaType,
-    title: item.title,
-    watchedAt: item.watchedAt.toISOString(),
-    markedManually: item.markedManually,
-    source: item.source,
-  };
-}
-
-export function toSpinHistoryContract(item: {
-  _id: Types.ObjectId | string;
-  plexId: string;
-  title: string;
-  mediaType: 'movie' | 'show' | 'episode';
-  thumbPath?: string;
-  year?: number;
-  libraryIds?: string[];
-  filtersSnapshot?: Record<string, unknown>;
-  tvSelectionMode?: 'show' | 'episode';
-  poolSizeAtSpin?: number;
-  spunAt: Date;
-}): SpinHistoryContract {
-  return {
-    id: item._id.toString(),
-    plexId: item.plexId,
-    title: item.title,
-    mediaType: item.mediaType,
-    thumbPath: item.thumbPath,
-    year: item.year,
-    libraryIds: item.libraryIds ?? [],
-    filtersSnapshot: item.filtersSnapshot,
-    tvSelectionMode: item.tvSelectionMode,
-    poolSizeAtSpin: item.poolSizeAtSpin,
-    spunAt: item.spunAt.toISOString(),
-  };
-}
 
 export async function buildBootstrap(user: IUser) {
   const userId = user._id as Types.ObjectId;
@@ -224,35 +105,69 @@ function hashMutationResult(result: MutationResult): string {
   return crypto.createHash('sha256').update(JSON.stringify(result)).digest('hex');
 }
 
-export function validateMutationBatch(mutations: unknown): SyncMutation[] {
-  if (!Array.isArray(mutations)) {
-    throw new Error('mutations must be an array');
-  }
-  if (mutations.length === 0 || mutations.length > MAX_MUTATION_BATCH_SIZE) {
-    throw new Error(`mutations must contain 1-${MAX_MUTATION_BATCH_SIZE} items`);
-  }
-  return mutations as SyncMutation[];
+/** When the client made the change, never later than now. */
+function clientTime(clientChangedAt: string): Date {
+  return new Date(Math.min(Date.parse(clientChangedAt), Date.now()));
 }
 
+/** Hands one mutation to the user-data store, which validates and applies it exactly as the REST route would. */
+async function applySingleMutation(
+  actor: UserDataActor,
+  mutation: SyncMutation
+): Promise<{ revision: number; entityId?: string }> {
+  switch (`${mutation.entityType}:${mutation.operation}`) {
+    case 'preference:upsert':
+      if (mutation.entityId !== actor.userId.toString()) {
+        throw new DomainError('VALIDATION_FAILED', 'A preference mutation must name your own user id');
+      }
+      return updatePreferences(actor, mutation.payload);
+    case 'watched:upsert':
+      return markWatched(actor, mutation.entityId, mutation.payload, clientTime(mutation.clientChangedAt));
+    case 'watched:delete':
+      return unmarkWatched(actor, mutation.entityId);
+    case 'spin_history:upsert': {
+      const { entry, revision } = await recordSpin(actor, mutation.payload, clientTime(mutation.clientChangedAt));
+      return { revision, entityId: entry?._id.toString() };
+    }
+    case 'spin_history:delete':
+      return deleteSpin(actor, mutation.entityId);
+    default:
+      throw new DomainError('VALIDATION_FAILED', `Unsupported mutation: ${mutation.operation} ${mutation.entityType}`);
+  }
+}
+
+/**
+ * Applies a batch of mutations in order. This only keeps the sync bookkeeping:
+ * a mutation id already seen is a duplicate, and a base revision that is no longer
+ * current is a conflict. Every write, and every refusal, comes from the user-data store.
+ */
 export async function applyMutations(
   user: IUser,
   mutations: SyncMutation[]
 ): Promise<{ results: MutationResult[]; nextCursor: string }> {
   const userId = user._id as Types.ObjectId;
+  const actor: UserDataActor = { userId, isAdmin: user.isAdmin };
   const results: MutationResult[] = [];
 
-  for (const mutation of mutations) {
-    const existing = await AppliedSyncMutation.findOne({
+  const record = async (mutation: SyncMutation, result: MutationResult, revision: number | null) => {
+    await AppliedSyncMutation.create({
       userId,
       mutationId: mutation.mutationId,
-    }).lean();
+      deviceId: mutation.deviceId,
+      entityType: mutation.entityType,
+      entityId: mutation.entityId,
+      status: result.status,
+      revision,
+      conflictReason: result.status === 'conflict' ? result.reason : result.status === 'rejected' ? result.code : undefined,
+      resultHash: hashMutationResult(result),
+    });
+    results.push(result);
+  };
 
+  for (const mutation of mutations) {
+    const existing = await AppliedSyncMutation.findOne({ userId, mutationId: mutation.mutationId }).lean();
     if (existing) {
-      results.push({
-        mutationId: mutation.mutationId,
-        status: 'duplicate',
-        revision: existing.revision ?? 0,
-      });
+      results.push({ mutationId: mutation.mutationId, status: 'duplicate', revision: existing.revision ?? 0 });
       continue;
     }
 
@@ -262,175 +177,41 @@ export async function applyMutations(
       entityId: mutation.entityId,
     }).lean();
 
-    if (
-      mutation.baseRevision !== null &&
-      entityRevision &&
-      entityRevision.revision !== mutation.baseRevision
-    ) {
-      const conflict: MutationResult = {
-        mutationId: mutation.mutationId,
-        status: 'conflict',
-        reason: entityRevision.deletedAt ? 'deleted' : 'revision_mismatch',
-        serverRevision: entityRevision.revision,
-        serverValue: null,
-      };
-      await AppliedSyncMutation.create({
-        userId,
-        mutationId: mutation.mutationId,
-        deviceId: mutation.deviceId,
-        entityType: mutation.entityType,
-        entityId: mutation.entityId,
-        status: 'conflict',
-        revision: entityRevision.revision,
-        conflictReason: conflict.reason,
-        resultHash: hashMutationResult(conflict),
-      });
-      results.push(conflict);
+    if (mutation.baseRevision !== null && entityRevision && entityRevision.revision !== mutation.baseRevision) {
+      await record(
+        mutation,
+        {
+          mutationId: mutation.mutationId,
+          status: 'conflict',
+          reason: entityRevision.deletedAt ? 'deleted' : 'revision_mismatch',
+          serverRevision: entityRevision.revision,
+          serverValue: null,
+        },
+        entityRevision.revision
+      );
       continue;
     }
 
     try {
-      const revision = await applySingleMutation(user, mutation);
-      const applied: MutationResult = {
-        mutationId: mutation.mutationId,
-        status: 'applied',
-        revision,
-      };
-      await AppliedSyncMutation.create({
-        userId,
-        mutationId: mutation.mutationId,
-        deviceId: mutation.deviceId,
-        entityType: mutation.entityType,
-        entityId: mutation.entityId,
-        status: 'applied',
-        revision,
-        resultHash: hashMutationResult(applied),
-      });
-      results.push(applied);
+      const { revision, entityId } = await applySingleMutation(actor, mutation);
+      await record(
+        mutation,
+        { mutationId: mutation.mutationId, status: 'applied', revision, ...(entityId ? { entityId } : {}) },
+        revision
+      );
     } catch (err) {
-      const conflict: MutationResult = {
-        mutationId: mutation.mutationId,
-        status: 'conflict',
-        reason: 'validation',
-        serverRevision: entityRevision?.revision ?? null,
-        serverValue: null,
-      };
-      await AppliedSyncMutation.create({
-        userId,
-        mutationId: mutation.mutationId,
-        deviceId: mutation.deviceId,
-        entityType: mutation.entityType,
-        entityId: mutation.entityId,
-        status: 'conflict',
-        revision: entityRevision?.revision ?? null,
-        conflictReason: 'validation',
-        resultHash: hashMutationResult(conflict),
-      });
-      results.push(conflict);
-      logger.warn('Mutation validation failed', {
-        mutationId: mutation.mutationId,
-        error: (err as Error).message,
-      });
+      if (!(err instanceof DomainError)) throw err;
+      await record(
+        mutation,
+        { mutationId: mutation.mutationId, status: 'rejected', code: err.code, error: err.message },
+        entityRevision?.revision ?? null
+      );
+      logger.warn('Sync mutation rejected', { mutationId: mutation.mutationId, code: err.code });
     }
   }
 
-  const latestChange = await SyncChangeModel.findOne({ userId })
-    .sort({ changedAt: -1 })
-    .lean();
-
-  return {
-    results,
-    nextCursor: latestChange?.cursor ?? '',
-  };
-}
-
-async function applySingleMutation(user: IUser, mutation: SyncMutation): Promise<number> {
-  const userId = user._id as Types.ObjectId;
-
-  switch (mutation.entityType) {
-    case 'preference': {
-      const payload = mutation.payload as PreferenceContract;
-      if (payload.theme) user.preferences.theme = payload.theme;
-      if (payload.defaultMediaType) user.preferences.defaultMediaType = payload.defaultMediaType;
-      if (payload.tvSelectionMode) user.preferences.tvSelectionMode = payload.tvSelectionMode;
-      if (payload.animationStyle) user.preferences.animationStyle = payload.animationStyle;
-      if (payload.animationSpeed) user.preferences.animationSpeed = payload.animationSpeed;
-      if (payload.selectedLibraries) user.preferences.selectedLibraries = payload.selectedLibraries;
-      if (payload.savedFilters) {
-        user.preferences.savedFilters = {
-          ...user.preferences.savedFilters,
-          ...payload.savedFilters,
-        };
-      }
-      if (payload.spinHistory) {
-        user.preferences.spinHistory = {
-          ...user.preferences.spinHistory,
-          ...payload.spinHistory,
-        } as IUser['preferences']['spinHistory'];
-      }
-      await user.save();
-      await emitSyncChange(userId, 'preference', userId.toString(), 'upsert', toPreferenceContract(user));
-      const rev = await SyncEntityRevision.findOne({ userId, entityType: 'preference', entityId: userId.toString() }).lean();
-      return rev?.revision ?? 1;
-    }
-    case 'watched': {
-      if (mutation.operation === 'delete') {
-        await WatchedItem.deleteOne({ userId, plexId: mutation.entityId });
-        await emitSyncChange(userId, 'watched', mutation.entityId, 'delete', null);
-      } else {
-        const payload = mutation.payload as WatchedContract;
-        const item = await WatchedItem.findOneAndUpdate(
-          { userId, plexId: mutation.entityId },
-          {
-            mediaType: payload.mediaType,
-            title: payload.title,
-            watchedAt: new Date(payload.watchedAt || mutation.clientChangedAt),
-            markedManually: true,
-            source: 'manual',
-          },
-          { upsert: true, new: true }
-        );
-        await emitSyncChange(userId, 'watched', mutation.entityId, 'upsert', toWatchedContract(item));
-      }
-      const rev = await SyncEntityRevision.findOne({
-        userId,
-        entityType: 'watched',
-        entityId: mutation.entityId,
-      }).lean();
-      return rev?.revision ?? 1;
-    }
-    case 'spin_history': {
-      if (mutation.operation === 'delete') {
-        await SpinHistoryEntry.deleteOne({ _id: mutation.entityId, userId });
-        await emitSyncChange(userId, 'spin_history', mutation.entityId, 'delete', null);
-      } else {
-        const payload = mutation.payload as SpinHistoryContract;
-        const entry = await SpinHistoryEntry.create({
-          userId,
-          plexId: payload.plexId,
-          title: payload.title,
-          mediaType: payload.mediaType,
-          thumbPath: payload.thumbPath,
-          year: payload.year,
-          libraryIds: payload.libraryIds ?? [],
-          filtersSnapshot: payload.filtersSnapshot,
-          tvSelectionMode: payload.tvSelectionMode,
-          poolSizeAtSpin: payload.poolSizeAtSpin,
-          spunAt: new Date(payload.spunAt || mutation.clientChangedAt),
-        });
-        const entityId = entry._id.toString();
-        await emitSyncChange(userId, 'spin_history', entityId, 'upsert', toSpinHistoryContract(entry));
-      }
-      const rev = await SyncEntityRevision.findOne({
-        userId,
-        entityType: 'spin_history',
-        entityId: mutation.entityId,
-      }).lean();
-      return rev?.revision ?? 1;
-    }
-    default:
-      throw new Error('Unsupported entity type');
-  }
+  const latestChange = await SyncChangeModel.findOne({ userId }).sort({ changedAt: -1 }).lean();
+  return { results, nextCursor: latestChange?.cursor ?? '' };
 }
 
 export async function backfillSyncRevisions(userId: Types.ObjectId): Promise<void> {

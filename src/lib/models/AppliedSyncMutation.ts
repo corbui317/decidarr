@@ -7,8 +7,9 @@ export interface IAppliedSyncMutation extends Document {
   deviceId: string;
   entityType: SyncEntityType;
   entityId: string;
-  status: 'applied' | 'duplicate' | 'conflict';
+  status: 'applied' | 'duplicate' | 'conflict' | 'rejected';
   revision: number | null;
+  /** The conflict reason, or the error code of a rejected mutation. */
   conflictReason?: string;
   resultHash: string;
   createdAt: Date;
@@ -27,7 +28,7 @@ const appliedSyncMutationSchema = new mongoose.Schema<IAppliedSyncMutation>(
     entityId: { type: String, required: true },
     status: {
       type: String,
-      enum: ['applied', 'duplicate', 'conflict'],
+      enum: ['applied', 'duplicate', 'conflict', 'rejected'],
       required: true,
     },
     revision: { type: Number, default: null },

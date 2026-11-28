@@ -53,7 +53,7 @@ flowchart TD
 
 ### Current
 
-- **`Settings`** (`src/lib/models/Settings.ts`): singleton `_id: app-settings`; encrypted Plex token, TMDb key, Tautulli key, JWT secret, encryption key; Plex server URL, username, machine ID; `setupComplete`; `uiPreferences`; `spinHistoryPreferences`.
+- **`Settings`** (`src/lib/models/Settings.ts`): singleton `_id: app-settings`; encrypted Plex token, TMDb key, Tautulli key, JWT secret, encryption key; Plex server URL, username, machine ID; `setupComplete`; `uiPreferences`. (Spin history preferences live on each `User`.)
 - **`User`** (`src/lib/models/User.ts`): `plexUserId` (unique), encrypted `plexToken`, `plexServerUrl`, `preferences` including spin history. Used by spin-history user resolution when JWT payload matches `plexUsername`; not created during current setup flow.
 
 ### Target / Future

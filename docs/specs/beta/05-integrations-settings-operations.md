@@ -61,7 +61,7 @@ Operational fields:
 | `tautulliUrl`, `tautulliApiKey`, `tautulliEnabled`, `tautulliSyncIntervalMinutes`, `tautulliLastSync` | Tautulli |
 | `syncFrequencyHours` | Library cache refresh cadence |
 | `uiPreferences` | `theme`, `defaultMediaType`, `tvSelectionMode` |
-| `spinHistoryPreferences` | `enabled`, `retentionLimit`, `storeFilterSnapshot` |
+| `spinHistoryPreferences` | Legacy single-user copy; no longer read. The v1 upgrade copies it to the Admin's `preferences.spinHistory` and leaves it stored. |
 | `setupComplete` | Boot gate |
 | `jwtSecret`, `encryptionKey` | Auto-generated, encrypted |
 

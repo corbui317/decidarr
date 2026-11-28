@@ -124,13 +124,13 @@ Cross-reference index for every implemented feature surface. Use this to find th
 
 | Feature | Status | Spec | Frontend | API | Models | Tests |
 |---------|--------|------|----------|-----|--------|-------|
-| Record spin after successful selection | Shipped | [09](./beta/09-spin-history-settings.md) | `dashboard/page.tsx` | `POST /api/spin-history` | `SpinHistoryEntry` | `tests/unit/lib/spin-history.test.ts` |
+| Record spin after successful selection | Shipped | [09](./beta/09-spin-history-settings.md) | `dashboard/page.tsx` | `POST /api/spin-history` | `SpinHistoryEntry` | `tests/unit/lib/user-data/spin-history.test.ts` |
 | Recent spins sidebar | Shipped | [09](./beta/09-spin-history-settings.md) | `RecentSpins.tsx` | `GET /api/spin-history` | `SpinHistoryEntry` | — |
 | Reapply filters from history | Shipped | [09](./beta/09-spin-history-settings.md) | `RecentSpins.tsx`, dashboard | — | `SpinHistoryEntry` | — |
-| Delete one / clear all history | Shipped | [09](./beta/09-spin-history-settings.md) | `RecentSpins.tsx`, `SettingsModal.tsx` | `DELETE /api/spin-history/[id]`, `DELETE /api/spin-history` | `SpinHistoryEntry` | `tests/unit/lib/spin-history.test.ts` |
-| Spin history preferences | Shipped | [09](./beta/09-spin-history-settings.md) | `SettingsModal.tsx` | `GET/PATCH /api/users/me/preferences` | `Settings`, `User` | `tests/unit/lib/spin-history.test.ts` |
-| Filter snapshot sanitization | Shipped | [09](./beta/09-spin-history-settings.md) | — | `src/lib/spin-history.ts` | — | `tests/unit/lib/spin-history.test.ts` |
-| Retention limit trimming | Shipped | [09](./beta/09-spin-history-settings.md) | `SettingsModal.tsx` | preferences PATCH | `SpinHistoryEntry` | `tests/unit/lib/spin-history.test.ts` |
+| Delete one / clear all history | Shipped | [09](./beta/09-spin-history-settings.md) | `RecentSpins.tsx`, `SettingsModal.tsx` | `DELETE /api/spin-history/[id]`, `DELETE /api/spin-history` | `SpinHistoryEntry` | `tests/unit/lib/user-data/spin-history.test.ts` |
+| Spin history preferences | Shipped | [09](./beta/09-spin-history-settings.md) | `SettingsModal.tsx` | `GET/PATCH /api/users/me/preferences` | `User` | `tests/unit/lib/user-data/spin-history.test.ts` |
+| Filter snapshot sanitization | Shipped | [09](./beta/09-spin-history-settings.md) | - | `src/lib/user-data/spin-history.ts` | - | `tests/unit/lib/user-data/spin-history.test.ts` |
+| Retention limit trimming | Shipped | [09](./beta/09-spin-history-settings.md) | `SettingsModal.tsx` | preferences PATCH | `SpinHistoryEntry` | `tests/unit/lib/user-data/spin-history.test.ts` |
 
 ---
 
@@ -185,7 +185,7 @@ Cross-reference index for every implemented feature surface. Use this to find th
 | Auth / setup | `tests/api/auth/login.test.ts`, `tests/api/settings/setup.test.ts`, `tests/unit/lib/auth.test.ts` |
 | Selection / filters | `tests/unit/lib/selection/filters.test.ts`, `tests/api/selection/random.test.ts` |
 | Watched | `tests/api/watched.test.ts` |
-| Spin history | `tests/unit/lib/spin-history.test.ts` |
+| Spin history | `tests/unit/lib/user-data/spin-history.test.ts` |
 | Components | `tests/components/SlotMachine.test.tsx`, `FilterPanel.test.tsx`, `AuthContext.test.tsx`, `ErrorBoundary.test.tsx` |
 | E2E | `tests/e2e/setup-and-spin.spec.ts`, `tests/e2e/filters-empty-pool.spec.ts` |
 | Settings model | `tests/unit/models/Settings.test.ts` |
