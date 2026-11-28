@@ -8,7 +8,7 @@ import {
 } from './models/Settings';
 import { User, USER_TOKEN_FIELDS, userTokenLocation, type IUser } from './models/User';
 import { WatchedItem } from './models/WatchedItem';
-import { LibraryCache } from './models/LibraryCache';
+import { adoptLegacyLibraries, rewriteStoredItems } from './library/embedded-storage';
 import { SpinHistoryEntry } from './models/SpinHistoryEntry';
 import { MobileAuthCode, authCodeTokenLocation } from './models/MobileAuthCode';
 import {
@@ -64,18 +64,8 @@ function sanitizeCachedItem(item: Record<string, unknown>): boolean {
 }
 
 async function migrateTokenizedMediaUrls(): Promise<void> {
-  const caches = await LibraryCache.find({});
-  for (const cache of caches) {
-    let changed = false;
-    const items = cache.items as unknown as Record<string, unknown>[];
-    for (const item of items) {
-      if (sanitizeCachedItem(item)) changed = true;
-    }
-    if (changed) {
-      cache.markModified('items');
-      await cache.save();
-      logger.info('Stripped Plex tokens from library cache', { libraryId: cache.libraryId });
-    }
+  for (const libraryId of await rewriteStoredItems(sanitizeCachedItem)) {
+    logger.info('Stripped Plex tokens from library cache', { libraryId });
   }
 
   const historyEntries = await SpinHistoryEntry.find({
@@ -411,32 +401,7 @@ async function migrate(): Promise<void> {
           { $set: { userId: admin._id } }
         );
 
-        const machineId = settings.plexMachineId || 'unknown';
-        const legacyCaches = await mongoose.connection.db
-          ?.collection('librarycaches')
-          .find({ userId: LEGACY_USER_ID })
-          .toArray();
-
-        if (legacyCaches?.length) {
-          for (const cache of legacyCaches) {
-            await LibraryCache.findOneAndUpdate(
-              { plexMachineId: machineId, libraryId: cache.libraryId },
-              {
-                plexMachineId: machineId,
-                libraryId: cache.libraryId,
-                libraryName: cache.libraryName,
-                mediaType: cache.mediaType,
-                items: cache.items,
-                lastSyncedAt: cache.lastSyncedAt,
-                expiresAt: cache.expiresAt,
-              },
-              { upsert: true }
-            );
-          }
-          await mongoose.connection.db
-            ?.collection('librarycaches')
-            .deleteMany({ userId: LEGACY_USER_ID });
-        }
+        await adoptLegacyLibraries(settings.plexMachineId || 'unknown', LEGACY_USER_ID);
 
         logger.info('Legacy migration complete', { adminId: admin._id.toString() });
       }

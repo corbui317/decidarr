@@ -3,7 +3,7 @@ import { libraryIdsQuerySchema } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { getAccessibleLibraryIds } from '@/lib/auth';
 import { getOrCreateSettings } from '@/lib/models/Settings';
-import { LibraryCache } from '@/lib/models/LibraryCache';
+import { facets } from '@/lib/library/store';
 
 // Reads the session and database on every request; never prerender at build time.
 export const dynamic = 'force-dynamic';
@@ -18,35 +18,13 @@ export const GET = route({ access: 'user', query: libraryIdsQuerySchema }, async
   }
 
   const settings = await getOrCreateSettings();
-  const allowed = await getAccessibleLibraryIds(
-    {
-      userId: session.userId.toString(),
-      plexToken: session.plex.token,
-      plexServerUrl: session.plex.serverUrl,
-      plexMachineId: settings.plexMachineId || null,
-    },
-    ids
-  );
-  const machineId = settings.plexMachineId || 'unknown';
+  const access = {
+    userId: session.userId.toString(),
+    plexToken: session.plex.token,
+    plexServerUrl: session.plex.serverUrl,
+    plexMachineId: settings.plexMachineId || null,
+  };
+  const { years } = await facets(access, await getAccessibleLibraryIds(access, ids));
 
-  const caches = await LibraryCache.find({
-    plexMachineId: machineId,
-    libraryId: { $in: allowed },
-  }).lean();
-
-  const years: number[] = [];
-  for (const cache of caches) {
-    for (const item of cache.items) {
-      if (item.year) years.push(item.year);
-    }
-  }
-
-  if (years.length === 0) {
-    return NextResponse.json({ min: 1900, max: new Date().getFullYear() });
-  }
-
-  return NextResponse.json({
-    min: Math.min(...years),
-    max: Math.max(...years),
-  });
+  return NextResponse.json(years ?? { min: 1900, max: new Date().getFullYear() });
 });

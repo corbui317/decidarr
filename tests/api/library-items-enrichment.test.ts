@@ -8,6 +8,8 @@ import {
 } from '../helpers/auth';
 import { LibraryCache } from '@/lib/models/LibraryCache';
 import type { ILibraryItem } from '@/lib/models/LibraryCache';
+import { LibraryVisibility } from '@/lib/models/LibraryVisibility';
+import type { IUser } from '@/lib/models/User';
 import {
   fakeIntegrations,
   plexMetadata,
@@ -73,11 +75,13 @@ function makeEnrichedItem(index: number): ILibraryItem {
 }
 
 describe('GET /api/library/[id]/items enrichment preservation', () => {
+  let user: IUser;
+
   beforeEach(async () => {
     await clearDatabase();
     clearTestCookies();
     await seedConfiguredSettings({ tmdbApiKey: 'tmdb-test-key-abcdefgh' });
-    await authenticateTestSession();
+    ({ user } = await authenticateTestSession());
     fakePlexAndTmdb([]);
   });
 
@@ -160,6 +164,16 @@ describe('GET /api/library/[id]/items enrichment preservation', () => {
   });
 
   it('serves cached items as plain, tokenless items', async () => {
+    const expiresAt = new Date(Date.now() + 86400000);
+    // Cached before tokenless image paths, and already synced for this user.
+    await LibraryVisibility.create({
+      userId: user._id,
+      plexMachineId: 'machine-1',
+      libraryId: 'lib-1',
+      plexIds: ['1'],
+      lastSyncedAt: new Date(),
+      expiresAt,
+    });
     await LibraryCache.create({
       plexMachineId: 'machine-1',
       libraryId: 'lib-1',
