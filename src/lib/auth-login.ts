@@ -260,15 +260,35 @@ export async function completePlexLogin(
   await user.save();
 
   if (setupServerUrl && candidateServer) {
-    settings.plexServerUrl = setupServerUrl;
-    settings.plexMachineId = candidateServer.clientIdentifier;
-    settings.plexUsername = plexUser.username;
-    settings.adminUserId = user._id as Types.ObjectId;
-    settings.setupComplete = true;
-    if (options?.setupTmdbApiKey) {
-      settings.tmdbApiKey = options.setupTmdbApiKey;
+    try {
+      settings.plexServerUrl = setupServerUrl;
+      settings.plexMachineId = candidateServer.clientIdentifier;
+      settings.plexUsername = plexUser.username;
+      settings.adminUserId = user._id as Types.ObjectId;
+      settings.setupComplete = true;
+      if (options?.setupTmdbApiKey) {
+        settings.tmdbApiKey = options.setupTmdbApiKey;
+      }
+      await settings.save();
+    } catch (err) {
+      // The user was already saved as Admin above (its own write is atomic, but there is no
+      // transaction across the two documents: Mongo here is not a replica set). Anything
+      // that fails between that write and this one - saving settings, or encrypting the
+      // TMDb key above - must not leave a stale Admin flag behind (spec #18 story 40), so
+      // roll the flags back by hand.
+      await User.updateOne({ _id: user._id }, { isAdmin: false, isApproved: false });
+      const authError = createAuthError('SERVER_MISCONFIGURED', `Failed to complete setup: ${(err as Error).message}`);
+      logger.error('Setup failed while saving settings; rolled back Admin flag', {
+        reason: authError.detailedReason,
+        plexUserId: plexUser.id,
+      });
+      return {
+        success: false,
+        error: authError.message,
+        code: authError.code,
+        status: 500,
+      };
     }
-    await settings.save();
     logger.info('Initial setup completed via OAuth', {
       username: plexUser.username,
       machineId: candidateServer.clientIdentifier,
