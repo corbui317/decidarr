@@ -13,6 +13,8 @@ import {
 import { setTestCookie } from '../helpers/cookies';
 import { getOrCreateSettings } from '@/lib/models/Settings';
 import { User } from '@/lib/models/User';
+import { MobileRefreshToken } from '@/lib/models/MobileRefreshToken';
+import { issueTokenPair, rotateRefreshToken } from '@/lib/mobile-auth/tokens';
 import { fakeIntegrations, fakePlexTv, type SentRequest } from '../helpers/fake-integrations';
 
 import { GET as adminUsersGet } from '@/app/api/admin/users/route';
@@ -169,5 +171,37 @@ describe('Admin users API routes', () => {
     setTestCookie('decidarr_session', staleSession);
     const meRes = await meGet(createJsonRequest('http://localhost/api/auth/me', 'GET'));
     expect(meRes.status).toBe(401);
+  });
+
+  it('revoking a Friend also revokes all of their mobile refresh tokens', async () => {
+    const admin = await seedTestUser({
+      plexUserId: 'admin-user',
+      plexUsername: 'admin',
+      isAdmin: true,
+      isApproved: true,
+    });
+    const targetUser = await seedTestUser({
+      plexUserId: 'friend-1',
+      plexUsername: 'alice',
+      isAdmin: false,
+      isApproved: true,
+    });
+    const tokens = await issueTokenPair(targetUser, 'friends-phone');
+    await authenticateTestSession({ user: admin });
+
+    const req = createJsonRequest('http://localhost/api/admin/users/friend-1', 'PUT', {
+      approved: false,
+    });
+    const res = await adminUserPut(req as NextRequest, {
+      params: Promise.resolve({ plexUserId: 'friend-1' }),
+    });
+    expect(res.status).toBe(200);
+
+    const stored = await MobileRefreshToken.findOne({ userId: targetUser._id });
+    expect(stored?.revokedAt).toBeInstanceOf(Date);
+
+    await expect(rotateRefreshToken(tokens.refreshToken, 'friends-phone')).rejects.toMatchObject({
+      code: 'UNAUTHORIZED',
+    });
   });
 });

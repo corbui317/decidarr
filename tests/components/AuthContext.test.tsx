@@ -2,6 +2,8 @@ import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 
+const authErrorListeners = new Set<() => void>();
+
 vi.mock('@/lib/api', () => ({
   settingsApi: {
     getStatus: vi.fn(),
@@ -12,9 +14,18 @@ vi.mock('@/lib/api', () => ({
     logout: vi.fn(),
     refreshSession: vi.fn(),
   },
+  onAuthError: (listener: () => void) => {
+    authErrorListeners.add(listener);
+    return () => authErrorListeners.delete(listener);
+  },
 }));
 
 import { settingsApi, authApi } from '@/lib/api';
+
+/** Simulates some other, unrelated call (not /auth/me, not the scheduled refresh) hitting a 401. */
+function fireAuthErrorFromElsewhere() {
+  authErrorListeners.forEach((listener) => listener());
+}
 
 function AuthProbe() {
   const { user, loading, isAuthenticated } = useAuth();
@@ -30,6 +41,37 @@ function AuthProbe() {
 describe('AuthContext', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    authErrorListeners.clear();
+  });
+
+  it('signs out immediately when an unrelated call hits a 401 (revocation mid-session)', async () => {
+    vi.mocked(settingsApi.getStatus).mockResolvedValue({
+      setupComplete: true,
+      hasPlexToken: true,
+      hasPlexServer: true,
+      hasTmdbKey: false,
+      setupSecretRequired: false,
+    });
+    vi.mocked(authApi.getCurrentUser).mockResolvedValue({
+      user: { id: 'user-1', username: 'testuser', isAdmin: false },
+      preferences: { theme: 'dark', defaultMediaType: 'movie', tvSelectionMode: 'show' },
+      expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
+    });
+
+    render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>
+    );
+    await waitFor(() => expect(screen.getByTestId('auth')).toHaveTextContent('yes'));
+
+    // A dashboard call unrelated to /auth/me or the scheduled refresh gets a 401.
+    fireAuthErrorFromElsewhere();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('auth')).toHaveTextContent('no');
+      expect(screen.getByTestId('user')).toHaveTextContent('none');
+    });
   });
 
   it('does not authenticate when setup incomplete', async () => {
@@ -65,7 +107,6 @@ describe('AuthContext', () => {
       user: {
         id: 'user-1',
         username: 'testuser',
-        serverUrl: 'http://192.168.1.10:32400',
         isAdmin: false,
       },
       preferences: { theme: 'dark', defaultMediaType: 'movie', tvSelectionMode: 'show' },
@@ -133,7 +174,7 @@ describe('AuthContext', () => {
 
     async function renderSignedIn(expiresAt: number) {
       vi.mocked(authApi.getCurrentUser).mockResolvedValue({
-        user: { id: 'user-1', username: 'testuser', serverUrl: 'http://192.168.1.10:32400', isAdmin: false },
+        user: { id: 'user-1', username: 'testuser', isAdmin: false },
         preferences: { theme: 'dark', defaultMediaType: 'movie', tvSelectionMode: 'show' },
         expiresAt,
       });

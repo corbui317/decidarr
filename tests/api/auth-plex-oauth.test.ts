@@ -37,7 +37,7 @@ describe('Plex OAuth API routes', () => {
     ({ sent } = fakeIntegrations(fakePlexTv({ pin: { id: 123, code: 'pin-code' } })));
     authLoginMocks.completePlexLogin.mockResolvedValue({
       success: true,
-      user: { id: 'user-1', username: 'testuser', serverUrl: 'http://192.168.1.10:32400', isAdmin: true },
+      user: { id: 'user-1', username: 'testuser', isAdmin: true },
     });
   });
 

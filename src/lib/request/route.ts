@@ -69,7 +69,7 @@ function originOf(value: string | null): string | null {
  * prove it came from this app: its Origin (or, failing that, Referer) must be the
  * host the request was sent to, or the configured APP_URL.
  */
-function assertSameOrigin(request: Request): void {
+export function assertSameOrigin(request: Request): void {
   const source = originOf(request.headers.get('origin')) ?? originOf(request.headers.get('referer'));
   const host = request.headers.get('host') ?? new URL(request.url).host;
   const sameHost = source !== null && new URL(source).host === host;

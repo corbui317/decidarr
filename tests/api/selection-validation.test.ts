@@ -33,7 +33,7 @@ function fakePlexServer() {
           () => plexMetadata([{ ratingKey: plexId, title, year, type: 'movie' }]),
         ])
       ),
-      [`${TEST_PLEX_SERVER}/library/collections/col-1/children`]: () =>
+      [`${TEST_PLEX_SERVER}/library/collections/101/children`]: () =>
         plexMetadata([
           { ratingKey: '1', title: 'Inception' },
           { ratingKey: '2', title: 'The Matrix' },
@@ -43,12 +43,14 @@ function fakePlexServer() {
 }
 
 describe('Selection API validation', () => {
+  let sent: ReturnType<typeof fakePlexServer>['sent'];
+
   beforeEach(async () => {
     await clearDatabase();
     clearTestCookies();
     await seedConfiguredSettings();
     await authenticateTestSession();
-    fakePlexServer();
+    ({ sent } = fakePlexServer());
   });
 
   describe('POST /api/selection/pool-count', () => {
@@ -79,6 +81,22 @@ describe('Selection API validation', () => {
       expect(body.issues).toEqual(
         expect.arrayContaining([expect.objectContaining({ path: 'filters.collections' })])
       );
+    });
+
+    it('rejects a malformed collection key before it reaches Plex (spec #18 story 39)', async () => {
+      const req = createJsonRequest('http://localhost/api/selection/pool-count', 'POST', {
+        libraryIds: ['lib-1'],
+        mediaType: 'movie',
+        filters: { collections: ['../../etc/passwd'] },
+      });
+      const res = await poolCountPost(req as never);
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.code).toBe('VALIDATION_FAILED');
+      expect(body.issues).toEqual(
+        expect.arrayContaining([expect.objectContaining({ path: 'filters.collections.0' })])
+      );
+      expect(sent.find((r) => r.url.pathname.includes('/library/collections/'))).toBeUndefined();
     });
 
     it('still returns zero pool for empty libraryIds', async () => {

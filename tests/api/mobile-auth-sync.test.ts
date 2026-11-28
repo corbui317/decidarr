@@ -15,7 +15,6 @@ vi.mock('@/lib/auth-login', () => ({
     user: {
       id: 'user-id-placeholder',
       username: 'mobileuser',
-      serverUrl: 'http://192.168.1.10:32400',
       isAdmin: false,
     },
   }),
@@ -62,8 +61,7 @@ describe('mobile auth and sync API', () => {
       user: {
         id: user._id.toString(),
         username: 'mobileuser',
-        serverUrl: 'http://192.168.1.10:32400',
-        isAdmin: true,
+          isAdmin: true,
       },
     });
 

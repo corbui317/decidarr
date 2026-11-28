@@ -36,10 +36,8 @@ export const POST = route({ access: 'user' }, async ({ session }) => {
   const service = new TautulliService(settings.tautulliUrl, apiKey);
   const connectionTest = await service.testConnection();
   if (!connectionTest.success) {
-    throw new DomainError(
-      'INTEGRATION_UNAVAILABLE',
-      `Cannot reach Tautulli at ${settings.tautulliUrl}: ${connectionTest.error}`
-    );
+    logger.warn('Cannot reach Tautulli', { tautulliUrl: settings.tautulliUrl, error: connectionTest.error });
+    throw new DomainError('INTEGRATION_UNAVAILABLE');
   }
 
   const plexAccountId = Number(user.plexUserId);
