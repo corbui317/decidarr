@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { mobileAuthLogoutRequestSchema } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
-import { requireMobileUser, extractBearerToken } from '@/lib/mobile-auth/context';
+import { extractBearerToken } from '@/lib/mobile-auth/context';
+import { resolveSession } from '@/lib/request/session';
 import { revokeRefreshToken, redactToken, verifyAccessToken } from '@/lib/mobile-auth/tokens';
 import { createLogger } from '@/lib/logger';
 
@@ -17,8 +18,8 @@ export const POST = route({ access: 'public', body: mobileAuthLogoutRequestSchem
       try {
         const payload = await verifyAccessToken(bearer);
         deviceId = payload.deviceId;
-        const auth = await requireMobileUser(request);
-        await revokeRefreshToken(refreshToken, auth.user._id, deviceId);
+        const session = await resolveSession(request);
+        await revokeRefreshToken(refreshToken, session.userId, deviceId);
       } catch {
         if (refreshToken) {
           await revokeRefreshToken(refreshToken);

@@ -286,6 +286,11 @@ describe('Upgrading stored Plex account tokens to per-server tokens', () => {
     settings.plexUsername = 'solo';
     settings.setupComplete = true;
     await settings.save();
+    // A v1 install kept its spin history preferences on the settings document too.
+    const legacySpinHistory = { enabled: false, retentionLimit: 7, storeFilterSnapshot: false };
+    await mongoose.connection
+      .collection('settings')
+      .updateOne({ _id: 'app-settings' } as never, { $set: { spinHistoryPreferences: legacySpinHistory } });
     const plexTv = fakePlexTv({
       servers: [{ clientIdentifier: MACHINE_ID, owned: true, uri: TEST_PLEX_SERVER, accessToken: ADMIN_SERVER_TOKEN }],
     });
@@ -306,6 +311,8 @@ describe('Upgrading stored Plex account tokens to per-server tokens', () => {
     expect(admin.plexToken).toBeUndefined();
     expect(decryptUserField(admin, 'plexServerToken')).toBe(ADMIN_SERVER_TOKEN);
     expect(decryptUserField(admin, 'plexAccountToken')).toBe(ADMIN_ACCOUNT_TOKEN);
+    expect((admin.preferences as { spinHistory?: unknown }).spinHistory).toEqual(legacySpinHistory);
+    expect((await rawSettings()).spinHistoryPreferences).toEqual(legacySpinHistory);
     expect(sent.map(({ url, headers }) => [url.pathname, headers.get('X-Plex-Token')])).toEqual([
       ['/identity', ADMIN_ACCOUNT_TOKEN],
       ['/api/v2/resources', ADMIN_ACCOUNT_TOKEN],

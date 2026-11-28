@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import type { z } from 'zod';
 import { isAuthError, PLEX_SIGN_IN_REQUIRED_MESSAGE } from '@/lib/auth-errors';
 import { IntegrationError } from '@/lib/integrations/client';
 import { isPlexSignInRequired } from '@/lib/services/plex';
@@ -38,6 +39,19 @@ export class DomainError extends Error {
     this.code = code;
     this.issues = issues;
   }
+}
+
+/** The value `contract` parses `value` to; throws VALIDATION_FAILED, listing each issue, when it does not. */
+export function parseContract<C extends z.ZodType>(contract: C, value: unknown): z.output<C> {
+  const result = contract.safeParse(value);
+  if (!result.success) {
+    const issues: ValidationIssue[] = result.error.issues.map((issue) => ({
+      path: issue.path.map(String).join('.'),
+      message: issue.message,
+    }));
+    throw new DomainError('VALIDATION_FAILED', undefined, issues);
+  }
+  return result.data;
 }
 
 /** Maps any thrown value to the response the table defines; unknown errors become INTERNAL. */

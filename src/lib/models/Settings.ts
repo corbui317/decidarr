@@ -11,12 +11,6 @@ import {
   type AnimationSpeed,
 } from '@decidarr/api-contracts';
 
-export interface ISpinHistoryPreferences {
-  enabled: boolean;
-  retentionLimit: number;
-  storeFilterSnapshot: boolean;
-}
-
 export interface IUIPreferences {
   theme: AppTheme;
   defaultMediaType: MediaType;
@@ -64,9 +58,6 @@ export interface ISettings extends Omit<Document, '_id'> {
 
   // UI Preferences
   uiPreferences: IUIPreferences;
-
-  // Spin history preferences (single-user / installation scope)
-  spinHistoryPreferences: ISpinHistoryPreferences;
 
   // Multi-user
   adminUserId?: Types.ObjectId;
@@ -142,12 +133,6 @@ const settingsSchema = new mongoose.Schema<ISettings>(
       },
     },
 
-    spinHistoryPreferences: {
-      enabled: { type: Boolean, default: true },
-      retentionLimit: { type: Number, default: 50, min: 1, max: 500 },
-      storeFilterSnapshot: { type: Boolean, default: true },
-    },
-
     adminUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     approvedPlexUserIds: { type: [String], default: [] },
 
@@ -206,11 +191,6 @@ export async function getOrCreateSettings(): Promise<ISettings> {
           animationStyle: 'slots',
           animationSpeed: 'normal',
         },
-        spinHistoryPreferences: {
-          enabled: true,
-          retentionLimit: 50,
-          storeFilterSnapshot: true,
-        },
         approvedPlexUserIds: [],
         setupComplete: false,
       });
@@ -232,14 +212,4 @@ export async function getOrCreateSettings(): Promise<ISettings> {
   }
 
   return settings;
-}
-
-// Helper to check if app is configured
-export async function isAppConfigured(): Promise<boolean> {
-  try {
-    const settings = await Settings.findById(SETTINGS_ID);
-    return settings?.setupComplete ?? false;
-  } catch {
-    return false;
-  }
 }

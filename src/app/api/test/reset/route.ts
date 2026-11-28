@@ -3,8 +3,9 @@ import mongoose from 'mongoose';
 import { connectDB, forgetConnectionForTests } from '@/lib/db';
 import { resetMigrationStateForTests } from '@/lib/migrate';
 import { clearRateLimitStore } from '@/lib/security/rate-limit';
+import { route } from '@/lib/request/route';
 
-export async function POST(request: Request) {
+export const POST = route({ access: 'public' }, async ({ request }) => {
   if (process.env.NODE_ENV === 'production' || process.env.E2E_MOCK_PLEX !== 'true') {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
@@ -37,4 +38,4 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
-}
+});

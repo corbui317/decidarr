@@ -24,6 +24,7 @@ import {
   unwrapLegacyDataKey,
   type SecretLocation,
 } from './secrets';
+import { normalizeSpinHistoryPreferences } from './user-data/spin-history';
 import { createLogger } from './logger';
 import { assertTestOnly } from './test-only';
 import { IntegrationError } from './integrations/client';
@@ -382,6 +383,8 @@ async function migrate(): Promise<void> {
             tvSelectionMode: settings.uiPreferences?.tvSelectionMode || 'show',
             animationStyle: settings.uiPreferences?.animationStyle || 'slots',
             animationSpeed: settings.uiPreferences?.animationSpeed || 'normal',
+            // Single-user installs kept these on the settings document; the stored copy there is left as is.
+            spinHistory: normalizeSpinHistoryPreferences(settings.get('spinHistoryPreferences')),
           },
         });
         // Stored as a legacy account token so the exchange below treats it like any other.

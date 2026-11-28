@@ -81,17 +81,21 @@ interface SyncChange<T = unknown> {
   data: T | null
 }
 
-interface SyncMutation<T = unknown> {
+interface SyncMutation {
   mutationId: string
   deviceId: string
   entityType: SyncEntityType
   entityId: string
   operation: 'upsert' | 'delete'
   baseRevision: number | null
-  clientChangedAt: string
-  payload: T
+  clientChangedAt: string // ISO 8601
+  payload: unknown
 }
 ```
+
+`syncMutationSchema` in `packages/api-contracts/src/sync.ts` is the authoritative definition.
+The payload is the body the matching REST route takes: `PreferencesPutBody` for a preference upsert, `WatchedCreateBody` for a watched upsert, and `SpinHistoryCreateBody` for a spin history upsert.
+`entityId` is the user's own id for a preference, the `plexId` for a watched item, and any id the client chose for a new spin history entry.
 
 ### New server collections
 
@@ -190,15 +194,18 @@ interface SyncChangesResponse {
 
 ```typescript
 type MutationResult =
-  | { mutationId: string; status: 'applied'; revision: number }
+  // entityId: the server-assigned id of a created spin history entry; revision 0 when nothing was written
+  | { mutationId: string; status: 'applied'; revision: number; entityId?: string }
   | { mutationId: string; status: 'duplicate'; revision: number }
   | {
       mutationId: string
       status: 'conflict'
-      reason: 'revision_mismatch' | 'deleted' | 'validation'
+      reason: 'revision_mismatch' | 'deleted'
       serverRevision: number | null
       serverValue: unknown
     }
+  // refused by the user-data store exactly as the REST route refuses it: same code and error
+  | { mutationId: string; status: 'rejected'; code: string; error: string }
 
 interface SyncMutationBatchResponse {
   results: MutationResult[]
@@ -222,6 +229,8 @@ Client clocks are advisory only. Server revision and authoritative integration t
 - Mutation batches have bounded item count and body size.
 - A repeated `mutationId` returns the original result without reapplying side effects.
 - Invalid mutations fail individually where safe; an invalid envelope fails the whole request with `400`.
+- The sync applier only keeps bookkeeping (idempotency by `mutationId`, base-revision conflicts) and hands every write to the user-data store (`src/lib/user-data/`), which the REST routes use too.
+  A payload, the Admin-only rule for manual watched state, sanitizing, and spin history retention are therefore checked the same way for web and mobile; `tests/api/user-data-parity.test.ts` proves it.
 - `401` triggers one refresh attempt; failed refresh returns the client to signed-out state without deleting local read-only data automatically.
 - `409` is represented per mutation and must not be converted into a generic success.
 - `410 full_resync_required` tells the client to preserve pending mutations, obtain a new snapshot, rebase, and retry safely.
