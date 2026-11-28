@@ -50,7 +50,7 @@ interface FakePlexControl {
 
 function fakeRestrictedPlex(views: Record<string, ILibraryItem[]>, plex: FakePlexControl = { listing: 'up' }) {
   return fakeIntegrations(async ({ url, headers }) => {
-    if (url.origin === TMDB) {
+    if (url.href.startsWith(TMDB)) {
       plex.onTmdb?.();
       return Response.json({ results: [] });
     }
@@ -328,11 +328,16 @@ describe('A restriction the Admin tightens in Plex reaches the Friend within the
       if (enrichmentSlow) advance(50_000);
       enrichmentSlow = false;
     };
+    // Without a studio from Plex, each title is looked up on TMDb.
+    const withoutStudio = (items: ILibraryItem[]) => items.map((item) => ({ ...item, studio: undefined }));
+    views[FRIEND_SERVER_TOKEN] = withoutStudio(FRIEND_VIEW);
     await signInAs(friend);
     expect(titles((await loadItems()).items)).toEqual(titles(FRIEND_VIEW));
 
+    expect(enrichmentSlow).toBe(false);
+
     // Listed at T, written at T + 50 s; the Admin tightens right after the listing.
-    views[FRIEND_SERVER_TOKEN] = TIGHTENED_VIEW;
+    views[FRIEND_SERVER_TOKEN] = withoutStudio(TIGHTENED_VIEW);
     advance(VISIBILITY_BOUND_MS - 50_000 + 1);
 
     expect(titles((await loadItems()).items)).toEqual(titles(TIGHTENED_VIEW));
