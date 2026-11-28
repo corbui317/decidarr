@@ -81,7 +81,7 @@ All settings are managed through the **Settings** panel (gear icon in the header
 ### Sync Tab
 | Setting | Description |
 |---------|-------------|
-| **Sync Frequency** | How often to refresh library cache (1h - 1 week) |
+| **Sync Frequency** | How often to refresh library cache (1h - 1 week). A Friend's Plex sharing restrictions are re-checked at most 60 seconds after they change, whatever this is set to. |
 
 ### Preferences Tab
 | Setting | Description |
