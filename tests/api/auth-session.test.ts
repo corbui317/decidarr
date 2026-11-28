@@ -164,6 +164,25 @@ describe('Auth session API routes', () => {
     findByIdAndUpdate.mockRestore();
   });
 
+  it('does not report a successful logout when looking up the user fails', async () => {
+    await seedConfiguredSettings();
+    const { user } = await authenticateTestSession();
+    // A database failure resolving identity, not a session problem: the credential
+    // itself is perfectly valid, so this must not be treated as "nothing to revoke".
+    const findById = vi.spyOn(User, 'findById').mockRejectedValueOnce(new Error('database unavailable'));
+
+    const res = await logoutDelete(createJsonRequest('http://localhost/api/auth/logout', 'DELETE'));
+    const body = await res.json();
+
+    expect(res.status).toBeGreaterThanOrEqual(500);
+    expect(body.message).not.toBe('Logged out successfully');
+    expect(getTestCookie('decidarr_session')).toBeTruthy();
+
+    findById.mockRestore();
+    const untouched = await User.findById(user._id);
+    expect(untouched?.sessionVersion).toBe(0);
+  });
+
   it('refuses to refresh a web session older than 30 days from sign-in', async () => {
     await seedConfiguredSettings();
     const THIRTY_ONE_DAYS_AGO = Date.now() - 31 * 24 * 60 * 60 * 1000;
