@@ -93,13 +93,17 @@ export async function seedTestUser(overrides?: {
   return user;
 }
 
-export async function createModernSessionToken(user: IUser): Promise<string> {
+export async function createModernSessionToken(
+  user: IUser,
+  options?: { signedInAt?: number }
+): Promise<string> {
   return jwt.sign(
     {
       sub: user._id.toString(),
       plexUserId: user.plexUserId,
       isAdmin: user.isAdmin,
       sessionVersion: user.sessionVersion,
+      signedInAt: options?.signedInAt ?? Date.now(),
     },
     deriveKey('web-session'),
     { expiresIn: '7d' }
@@ -110,9 +114,10 @@ export async function createModernSessionToken(user: IUser): Promise<string> {
 export async function authenticateTestSession(options?: {
   user?: IUser;
   username?: string;
+  signedInAt?: number;
 }): Promise<{ token: string; user: IUser }> {
   const user = options?.user ?? (await seedTestUser({ plexUsername: options?.username }));
-  const token = await createModernSessionToken(user);
+  const token = await createModernSessionToken(user, { signedInAt: options?.signedInAt });
   setTestCookie('decidarr_session', token);
   return { token, user };
 }

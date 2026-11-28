@@ -10,6 +10,7 @@ import { getTestCookie, setTestCookie } from '../helpers/cookies';
 import jwt from 'jsonwebtoken';
 import { clearDatabase } from '../helpers/mongo';
 import { User } from '@/lib/models/User';
+import { deriveKey } from '@/lib/secrets';
 import {
   fakeIntegrations,
   plexSections,
@@ -94,6 +95,58 @@ describe('Auth session API routes', () => {
     expect(res.status).toBe(200);
     expect(body.message).toBe('Logged out successfully');
     expect(getTestCookie('decidarr_session')).toBeUndefined();
+  });
+
+  it('rejects a session cookie captured before logout, after logout (M3)', async () => {
+    await seedConfiguredSettings();
+    const { token } = await authenticateTestSession();
+    // Simulates an attacker (or another tab) holding a copy of the cookie from before
+    // this browser's own logout call clears it.
+    const capturedCookie = token;
+
+    const res = await logoutDelete(createJsonRequest('http://localhost/api/auth/logout', 'DELETE'));
+    expect(res.status).toBe(200);
+
+    setTestCookie('decidarr_session', capturedCookie);
+    const meRes = await meGet(createJsonRequest('http://localhost/api/auth/me', 'GET'));
+
+    expect(meRes.status).toBe(401);
+    expect(await meRes.json()).toEqual({ error: 'Unauthorized', code: 'UNAUTHENTICATED' });
+  });
+
+  it('refuses to refresh a web session older than 30 days from sign-in', async () => {
+    await seedConfiguredSettings();
+    const THIRTY_ONE_DAYS_AGO = Date.now() - 31 * 24 * 60 * 60 * 1000;
+    await authenticateTestSession({ signedInAt: THIRTY_ONE_DAYS_AGO });
+
+    const res = await refreshPost(createJsonRequest('http://localhost/api/auth/refresh', 'POST'));
+
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: 'Unauthorized', code: 'UNAUTHENTICATED' });
+  });
+
+  it('still refreshes a web session within its 30-day absolute lifetime', async () => {
+    await seedConfiguredSettings();
+    const TWENTY_NINE_DAYS_AGO = Date.now() - 29 * 24 * 60 * 60 * 1000;
+    await authenticateTestSession({ signedInAt: TWENTY_NINE_DAYS_AGO });
+
+    const res = await refreshPost(createJsonRequest('http://localhost/api/auth/refresh', 'POST'));
+    expect(res.status).toBe(200);
+  });
+
+  it('signs a pre-upgrade cookie (no signedInAt claim) out once, rather than guess its age', async () => {
+    await seedConfiguredSettings();
+    const { user } = await authenticateTestSession();
+    const legacyToken = jwt.sign(
+      { sub: user._id.toString(), plexUserId: user.plexUserId, isAdmin: user.isAdmin, sessionVersion: user.sessionVersion },
+      // Signed the same way issueSessionCookie would have before this change (no signedInAt field).
+      deriveKey('web-session'),
+      { expiresIn: '7d' }
+    );
+    setTestCookie('decidarr_session', legacyToken);
+
+    const res = await meGet(createJsonRequest('http://localhost/api/auth/me', 'GET'));
+    expect(res.status).toBe(401);
   });
 
   describe('a session cookie the server cannot verify', () => {
