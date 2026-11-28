@@ -15,12 +15,12 @@
 | Pool count + breakdown | dashboard empty-state copy | `POST /api/selection/pool-count` |
 | Random selection | `SlotMachine.tsx` | `POST /api/selection/random` |
 | Result display + play links | `MovieCard.tsx` | play links in random response |
-| Spin history recording | dashboard post-spin hook | `POST /api/spin-history` |
+| Spin history recording | server, when Spin picks | `POST /api/selection/random` |
 | Recent spins sidebar | `RecentSpins.tsx` | `GET /api/spin-history` |
 
 **Filter types** (`src/types/filters.ts`): collections, genres, year range, rating presets, custom rating range, content ratings, studios/networks, unwatched-only.
 
-**Shared filter logic:** `src/lib/selection/filters.ts` — `getPoolCountWithBreakdown()` and `applyFilters()` used by both pool-count and random routes for parity.
+**Shared filter logic:** `src/lib/selection/pool.ts` - `loadPool(session, params)` with `pick()` and `breakdown()` over one predicate list, used by both pool-count and random routes, so the count is always what Spin can pick (`tests/api/selection-pool-parity.test.ts`).
 
 **Spin timing:** minimum 2s animation before revealing result or error (`dashboard/page.tsx`).
 
@@ -166,7 +166,7 @@ Returns TMDb award category metadata for filter UI when configured.
 
 - `src/app/dashboard/page.tsx`
 - `src/components/SlotMachine.tsx`, `MovieCard.tsx`, `FilterPanel.tsx`, `RecentSpins.tsx`
-- `src/lib/api.ts`, `src/lib/selection/filters.ts`
+- `src/lib/api.ts`, `src/lib/selection/pool.ts`
 - `src/app/api/selection/random/route.ts`, `pool-count/route.ts`
 
 **Depends on:**
@@ -187,7 +187,7 @@ Returns TMDb award category metadata for filter UI when configured.
 
 **Automated:**
 
-- `tests/unit/lib/selection/filters.test.ts`
+- `tests/api/selection-pool-parity.test.ts`
 - `tests/api/selection/random.test.ts`
 - `tests/components/SlotMachine.test.tsx`, `FilterPanel.test.tsx`
 - `tests/e2e/setup-and-spin.spec.ts`, `filters-empty-pool.spec.ts`
