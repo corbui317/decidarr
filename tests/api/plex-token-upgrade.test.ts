@@ -314,7 +314,7 @@ describe('Upgrading stored Plex account tokens to per-server tokens', () => {
     expect((admin.preferences as { spinHistory?: unknown }).spinHistory).toEqual(legacySpinHistory);
     expect((await rawSettings()).spinHistoryPreferences).toEqual(legacySpinHistory);
     expect(sent.map(({ url, headers }) => [url.pathname, headers.get('X-Plex-Token')])).toEqual([
-      ['/identity', ADMIN_ACCOUNT_TOKEN],
+      ['/identity', null],
       ['/api/v2/resources', ADMIN_ACCOUNT_TOKEN],
     ]);
   });

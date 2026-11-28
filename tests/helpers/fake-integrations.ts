@@ -197,6 +197,8 @@ export function fakePlex(options: { serverUri: string; machineId: string; accoun
     servers: [{ clientIdentifier: options.machineId, owned: true, uri: options.serverUri }],
   });
   const server = routes({
+    [`${new URL(options.serverUri).origin}/identity`]: () =>
+      Response.json({ MediaContainer: { machineIdentifier: options.machineId } }),
     [`${new URL(options.serverUri).origin}/library/sections`]: () =>
       plexSections([{ id: '1', title: 'Movies', type: 'movie' }]),
   });
