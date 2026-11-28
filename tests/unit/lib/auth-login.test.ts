@@ -34,6 +34,9 @@ describe('completePlexLogin', () => {
 
     expect(result.success).toBe(true);
     expect(result.user).toMatchObject({ username: 'plexuser', isAdmin: true });
+    // The Plex server URL is an internal detail (spec #18 story 30); every login response,
+    // including the one a Friend receives, must never carry it.
+    expect(result.user).not.toHaveProperty('serverUrl');
     expect(result.requiresSetup).toBe(false);
     expect(getTestCookie('decidarr_session')).toBeTruthy();
 
@@ -46,6 +49,22 @@ describe('completePlexLogin', () => {
     expect(String(settings.adminUserId)).toBe(String(user?._id));
     expect(user?.isAdmin).toBe(true);
     expect(user?.isApproved).toBe(true);
+  });
+
+  it('leaves no stale Admin flag when first-run setup fails because the owned server has no safe connection', async () => {
+    fakePlexTvWith([
+      { name: 'Home', clientIdentifier: 'machine-1', owned: true, uri: 'http://169.254.169.254:32400' },
+    ]);
+
+    const result = await completePlexLogin('first-run-token');
+
+    expect(result).toMatchObject({ success: false, status: 403, code: 'SERVER_MISCONFIGURED' });
+    expect(getTestCookie('decidarr_session')).toBeUndefined();
+
+    const settings = await getOrCreateSettings();
+    expect(settings.setupComplete).toBe(false);
+    expect(settings.adminUserId).toBeUndefined();
+    expect(await User.findOne({ plexUserId: 'plex-user-1' })).toBeNull();
   });
 
   it('allows a configured, approved non-admin user to log in', async () => {
