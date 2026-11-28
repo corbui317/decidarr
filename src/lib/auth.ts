@@ -28,8 +28,8 @@ export interface SessionPayload {
   plexUserId: string;
   isAdmin: boolean;
   sessionVersion: number;
-  /** Unix timestamp (ms) of the sign-in that started this session's absolute lifetime. */
-  signedInAt: number;
+  /** Unix timestamp (ms) of the sign-in that started this session's absolute lifetime. Web only. */
+  signedInAt?: number;
   exp: number; // Unix timestamp when session expires
 }
 

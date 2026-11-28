@@ -14,8 +14,7 @@ describe('Mobile refresh token rotation (M6)', () => {
 
   it('two concurrent refreshes with the same refresh token yield at most one new token', async () => {
     const user = await seedTestUser();
-    const { refreshToken, user: _unused } = await issueTokenPair(user, DEVICE_ID);
-    void _unused;
+    const { refreshToken } = await issueTokenPair(user, DEVICE_ID);
 
     const results = await Promise.allSettled([
       rotateRefreshToken(refreshToken, DEVICE_ID),
