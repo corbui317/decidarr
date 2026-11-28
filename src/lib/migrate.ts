@@ -29,7 +29,7 @@ import { createLogger } from './logger';
 import { assertTestOnly } from './test-only';
 import { IntegrationError } from './integrations/client';
 import { fetchPlexServers } from './services/plex-oauth';
-import { PlexService } from './services/plex';
+import { readPlexServerIdentity } from './services/plex';
 
 const logger = createLogger('Migration');
 
@@ -257,7 +257,7 @@ async function ensurePlexMachineId(settings: ISettings, users: IUser[]): Promise
   const adminToken = users.filter((user) => user.isAdmin).map(readLegacyAccountToken).find(Boolean);
   if (!adminToken) return;
   // A refusal here only means the identity stays unknown until a later start.
-  const machineId = await new PlexService(adminToken, settings.plexServerUrl).fetchMachineIdFromServer().catch(() => null);
+  const machineId = await readPlexServerIdentity(settings.plexServerUrl);
   if (!machineId) return;
   await Settings.updateOne({ _id: SETTINGS_ID, plexMachineId: { $exists: false } }, { $set: { plexMachineId: machineId } });
   settings.plexMachineId = (await Settings.findById(SETTINGS_ID, { plexMachineId: 1 }).lean())?.plexMachineId;
