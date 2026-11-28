@@ -4,7 +4,6 @@ import { preferenceContractSchema } from './sync';
 export const authUserSchema = z.object({
   id: z.string(),
   username: z.string(),
-  serverUrl: z.string(),
   thumb: z.string().optional(),
   isAdmin: z.boolean(),
 });

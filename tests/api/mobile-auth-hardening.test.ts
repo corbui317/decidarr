@@ -232,7 +232,7 @@ describe('Mobile auth hardening (spec #1 rules on the mobile routes)', () => {
         .mockResolvedValueOnce({ success: false, error: 'Plex.tv is unavailable', status: 503 })
         .mockResolvedValueOnce({
           success: true,
-          user: { id: user._id.toString(), username: 'mobileuser', serverUrl: '', isAdmin: true },
+          user: { id: user._id.toString(), username: 'mobileuser', isAdmin: true },
         });
 
       const deviceCode = await startDeviceCode();
@@ -259,6 +259,69 @@ describe('Mobile auth hardening (spec #1 rules on the mobile routes)', () => {
 
       expect(lastStatus).toBe(429);
       expect(pinPolls()).toHaveLength(60);
+    });
+
+    it('rejects a replayed device code once it has already been exchanged (audit: mobile exchange gaps)', async () => {
+      const user = await seedTestUser({ plexUsername: 'mobileuser' });
+      vi.mocked(completePlexLogin).mockResolvedValue({
+        success: true,
+        user: { id: user._id.toString(), username: 'mobileuser', isAdmin: true },
+      });
+
+      const deviceCode = await startDeviceCode();
+      const first = await exchangePost(exchangeRequest(deviceCode));
+      expect(first.status).toBe(200);
+
+      const replay = await exchangePost(exchangeRequest(deviceCode));
+      expect(replay.status).toBe(401);
+      expect((await replay.json()).error).toBe('Authorization code already used');
+    });
+
+    it('rejects an expired device code (audit: mobile exchange gaps)', async () => {
+      const deviceCode = await startDeviceCode();
+      await MobileAuthCode.updateOne({ deviceCode }, { expiresAt: new Date(Date.now() - 1000) });
+
+      const response = await exchangePost(exchangeRequest(deviceCode));
+
+      expect(response.status).toBe(401);
+      expect((await response.json()).code).toBe('PLEX_PIN_EXPIRED');
+    });
+
+    it('rejects a device code exchanged from a different device (audit: mobile exchange gaps)', async () => {
+      const deviceCode = await startDeviceCode();
+
+      const response = await exchangePost(
+        new NextRequest('http://localhost/api/mobile/auth/exchange', {
+          method: 'POST',
+          body: JSON.stringify({ deviceCode, deviceId: 'a-different-device' }),
+        })
+      );
+
+      expect(response.status).toBe(401);
+      expect((await response.json()).error).toBe('Device mismatch');
+    });
+
+    it('claims a device code atomically so concurrent exchanges cannot both mint tokens', async () => {
+      const user = await seedTestUser({ plexUsername: 'mobileuser' });
+      vi.mocked(completePlexLogin).mockResolvedValue({
+        success: true,
+        user: { id: user._id.toString(), username: 'mobileuser', isAdmin: true },
+      });
+
+      const deviceCode = await startDeviceCode();
+      const [first, second] = await Promise.all([
+        exchangePost(exchangeRequest(deviceCode)),
+        exchangePost(exchangeRequest(deviceCode)),
+      ]);
+
+      const statuses = [first.status, second.status].sort();
+      expect(statuses).toEqual([200, 401]);
+
+      const winner = first.status === 200 ? first : second;
+      const tokens = await winner.json();
+      expect(tokens.accessToken).toBeTruthy();
+
+      expect(await MobileRefreshToken.countDocuments({ userId: user._id })).toBe(1);
     });
   });
 

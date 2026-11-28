@@ -7,9 +7,10 @@ import { TMDbService } from '@/lib/services/tmdb';
 const logger = createLogger('API:TestTmdb');
 
 // POST /api/settings/test-tmdb - Test TMDB API key
-// Open endpoint (no session required) - the API key being tested IS the credential.
-// This is needed during wizard setup when there is no session yet.
-export const POST = route({ access: 'public', body: settingsTestTmdbBodySchema }, async ({ body }) => {
+// Admin-only (spec #18 story 38): an unauthenticated caller must not get a free TMDb key
+// oracle. The wizard's TMDb step runs after Plex sign-in, which already issued the Admin's
+// session cookie, so this needs no pre-setup public path.
+export const POST = route({ access: 'admin', body: settingsTestTmdbBodySchema }, async ({ body }) => {
   const { apiKey } = body;
 
   logger.debug('Testing TMDB API key');

@@ -10,7 +10,6 @@ const USER_METADATA_KEY = 'decidarr_user_metadata';
 export interface StoredUserMetadata {
   id: string;
   username: string;
-  serverUrl: string;
   isAdmin: boolean;
   thumb?: string;
 }

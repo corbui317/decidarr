@@ -69,6 +69,16 @@ describe('POST /api/tautulli/sync', () => {
     expect(await WatchedItem.countDocuments({ userId })).toBe(0);
   });
 
+  it('never includes the internal Tautulli URL when the connection fails (spec #18 story 30)', async () => {
+    fakeIntegrations(() => new Response('down', { status: 503 }));
+
+    const res = await tautulliSyncPost(createJsonRequest('http://localhost/api/tautulli/sync', 'POST') as never);
+    const text = await res.text();
+
+    expect(res.status).toBe(503);
+    expect(text).not.toContain('192.168.1.20');
+  });
+
   it('imports paginated movie and episode history beyond a single page', async () => {
     const movies = Array.from({ length: 3 }, (_, i) => ({
       reference_id: i + 1,
