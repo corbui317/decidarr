@@ -59,8 +59,8 @@ Cross-reference index for every implemented feature surface. Use this to find th
 | Feature | Status | Spec | Frontend | API | Models | Tests |
 |---------|--------|------|----------|-----|--------|-------|
 | Library + media type selection | Shipped | [03](./beta/03-selection-filters-command-center.md) | `dashboard/page.tsx`, `LibrarySelector.tsx` | — | — | E2E |
-| Filter panel (genre, year, rating, studio, collections, unwatched) | Shipped | [03](./beta/03-selection-filters-command-center.md) | `FilterPanel.tsx` | filter metadata routes | `WatchedItem` (unwatched) | `tests/components/FilterPanel.test.tsx`, `tests/unit/lib/selection/filters.test.ts` |
-| Pool count with filter breakdown | Shipped | [03](./beta/03-selection-filters-command-center.md) | `dashboard/page.tsx` | `POST /api/selection/pool-count` | `LibraryCache`, `WatchedItem` | `tests/unit/lib/selection/filters.test.ts` |
+| Filter panel (genre, year, rating, studio, collections, unwatched) | Shipped | [03](./beta/03-selection-filters-command-center.md) | `FilterPanel.tsx` | filter metadata routes | `WatchedItem` (unwatched) | `tests/components/FilterPanel.test.tsx`, `tests/api/selection-pool-parity.test.ts` |
+| Pool count with filter breakdown | Shipped | [03](./beta/03-selection-filters-command-center.md) | `dashboard/page.tsx` | `POST /api/selection/pool-count` | `LibraryCache`, `WatchedItem` | `tests/api/selection-pool-parity.test.ts` |
 | Random selection | Shipped | [03](./beta/03-selection-filters-command-center.md) | `dashboard/page.tsx`, `SlotMachine.tsx` | `POST /api/selection/random` | `LibraryCache`, `WatchedItem` | `tests/api/selection/random.test.ts` |
 | Result card + Plex play links | Shipped | [03](./beta/03-selection-filters-command-center.md) | `MovieCard.tsx` | play links from random route | — | — |
 | Award category metadata (TMDb) | Shipped | [03](./beta/03-selection-filters-command-center.md) | `FilterPanel.tsx` | `GET /api/selection/awards/categories` | — | — |
@@ -76,7 +76,7 @@ Cross-reference index for every implemented feature surface. Use this to find th
 |---------|--------|------|----------|-----|--------|-------|
 | Manual mark watched / unwatched | Shipped | [04](./beta/04-watch-history-tautulli.md) | `MovieCard.tsx` | `POST/DELETE /api/watched/[plexId]` | `WatchedItem` | `tests/api/watched.test.ts` |
 | List watched items | Shipped | [04](./beta/04-watch-history-tautulli.md) | — (used by selection) | `GET /api/watched` | `WatchedItem` | `tests/api/watched.test.ts` |
-| Unwatched-only filter | Shipped | [04](./beta/04-watch-history-tautulli.md) | `FilterPanel.tsx` | pool-count + random | `WatchedItem` | `tests/unit/lib/selection/filters.test.ts` |
+| Unwatched-only filter | Shipped | [04](./beta/04-watch-history-tautulli.md) | `FilterPanel.tsx` | pool-count + random | `WatchedItem` | `tests/api/selection-pool-parity.test.ts` |
 | Tautulli connection test | Shipped | [04](./beta/04-watch-history-tautulli.md) | `SettingsModal.tsx` | `POST /api/tautulli/test` | `Settings` | — |
 | Tautulli manual sync | Shipped | [04](./beta/04-watch-history-tautulli.md) | `SettingsModal.tsx` | `POST /api/tautulli/sync` | `WatchedItem` | — |
 | Episode → show watched mapping | Shipped | [04](./beta/04-watch-history-tautulli.md) | — | sync route maps episodes to grandparent show | `WatchedItem` | — |
@@ -124,7 +124,7 @@ Cross-reference index for every implemented feature surface. Use this to find th
 
 | Feature | Status | Spec | Frontend | API | Models | Tests |
 |---------|--------|------|----------|-----|--------|-------|
-| Record spin after successful selection | Shipped | [09](./beta/09-spin-history-settings.md) | `dashboard/page.tsx` | `POST /api/spin-history` | `SpinHistoryEntry` | `tests/unit/lib/user-data/spin-history.test.ts` |
+| Record spin after successful selection | Shipped | [09](./beta/09-spin-history-settings.md) | server (`src/app/api/selection/random/route.ts`) | `POST /api/selection/random` | `SpinHistoryEntry` | `tests/api/spin-records-history.test.ts` |
 | Recent spins sidebar | Shipped | [09](./beta/09-spin-history-settings.md) | `RecentSpins.tsx` | `GET /api/spin-history` | `SpinHistoryEntry` | — |
 | Reapply filters from history | Shipped | [09](./beta/09-spin-history-settings.md) | `RecentSpins.tsx`, dashboard | — | `SpinHistoryEntry` | — |
 | Delete one / clear all history | Shipped | [09](./beta/09-spin-history-settings.md) | `RecentSpins.tsx`, `SettingsModal.tsx` | `DELETE /api/spin-history/[id]`, `DELETE /api/spin-history` | `SpinHistoryEntry` | `tests/unit/lib/user-data/spin-history.test.ts` |
@@ -183,7 +183,7 @@ Cross-reference index for every implemented feature surface. Use this to find th
 | Area | Key test files |
 |------|----------------|
 | Auth / setup | `tests/api/auth/login.test.ts`, `tests/api/settings/setup.test.ts`, `tests/unit/lib/auth.test.ts` |
-| Selection / filters | `tests/unit/lib/selection/filters.test.ts`, `tests/api/selection/random.test.ts` |
+| Selection / filters | `tests/api/selection-pool-parity.test.ts`, `tests/api/selection/random.test.ts` |
 | Watched | `tests/api/watched.test.ts` |
 | Spin history | `tests/unit/lib/user-data/spin-history.test.ts` |
 | Components | `tests/components/SlotMachine.test.tsx`, `FilterPanel.test.tsx`, `AuthContext.test.tsx`, `ErrorBoundary.test.tsx` |

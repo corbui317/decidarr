@@ -1,82 +1,27 @@
 import { NextResponse } from 'next/server';
 import { route } from '@/lib/request/route';
-import { getAccessibleLibraryIds } from '@/lib/auth';
 import { getOrCreateSettings } from '@/lib/models/Settings';
-import { itemsFor } from '@/lib/library/store';
-import { WatchedItem } from '@/lib/models/WatchedItem';
 import { PlexService } from '@/lib/services/plex';
 import { TMDbService } from '@/lib/services/tmdb';
-import { createLogger } from '@/lib/logger';
-import { applyFullFilters, fetchCollectionItemIds } from '@/lib/selection/filters';
+import { loadPool, POOL_PROBLEMS } from '@/lib/selection/pool';
+import { recordSpin } from '@/lib/user-data';
 import { sanitizeLibraryItemForClient } from '@/lib/plex-image';
 import { selectionRequestBodySchema } from '@decidarr/api-contracts';
 import type { SelectionResultResponse, SelectionError } from '@decidarr/api-contracts';
 
-const logger = createLogger('API:Random');
-
 export const POST = route({ access: 'user', body: selectionRequestBodySchema }, async ({ session, body }) => {
-  const { libraryIds, mediaType, filters, tvSelectionMode } = body;
+  const { mediaType, filters } = body;
+  const tvSelectionMode = mediaType === 'show' ? body.tvSelectionMode : undefined;
 
-  if (libraryIds.length === 0) {
-    return NextResponse.json(
-      { error: 'At least one library must be selected', code: 'NO_LIBRARIES' },
-      { status: 400 }
-    );
+  const pool = await loadPool(session, body);
+  if (pool.problem) {
+    const { status, error, suggestion } = POOL_PROBLEMS[pool.problem];
+    const errorResponse: SelectionError = { error, code: pool.problem, ...(suggestion && { suggestion }) };
+    return NextResponse.json(errorResponse, { status });
   }
 
-  const settings = await getOrCreateSettings();
-  const access = {
-    userId: session.userId.toString(),
-    plexToken: session.plex.token,
-    plexServerUrl: session.plex.serverUrl,
-    plexMachineId: settings.plexMachineId || null,
-  };
-  const allowedLibraryIds = await getAccessibleLibraryIds(access, libraryIds);
-  if (allowedLibraryIds.length === 0) {
-    return NextResponse.json(
-      { error: 'No accessible libraries selected', code: 'NO_ACCESSIBLE_LIBRARIES' },
-      { status: 403 }
-    );
-  }
-
-  if (!settings.plexMachineId) {
-    return NextResponse.json(
-      { error: 'Plex machine ID not configured', code: 'MACHINE_ID_MISSING' },
-      { status: 400 }
-    );
-  }
-
-  let { items: allItems } = await itemsFor(access, { libraryIds: allowedLibraryIds, mediaType });
-
-  if (allItems.length === 0) {
-    const errorResponse: SelectionError = {
-      error: 'No items found in selected libraries',
-      code: 'NO_ITEMS_IN_LIBRARIES',
-      suggestion: 'Try syncing your libraries first',
-    };
-    return NextResponse.json(errorResponse, { status: 404 });
-  }
-
-  const plexService = new PlexService(session.plex.token, session.plex.serverUrl, settings.plexMachineId);
-
-  let collectionItemIds: Set<string> | null = null;
-  if (filters.collections && filters.collections.length > 0) {
-    collectionItemIds = await fetchCollectionItemIds(filters.collections, plexService, logger);
-    logger.debug('Filtered by collections', {
-      before: allItems.length,
-      collectionItemCount: collectionItemIds.size,
-    });
-  }
-
-  let watchedIds = new Set<string>();
-  if (filters.unwatchedOnly) {
-    const watchedItems = await WatchedItem.find({ userId: session.userId }).select('plexId').lean();
-    watchedIds = new Set(watchedItems.map((w) => w.plexId));
-  }
-
-  allItems = applyFullFilters(allItems, filters, watchedIds, collectionItemIds, settings.overseerrFilterEnabled);
-
-  if (allItems.length === 0) {
+  const picked = pool.pick();
+  if (!picked) {
     const errorResponse: SelectionError = {
       error: 'No items match your filters',
       code: 'NO_ITEMS_MATCH_FILTERS',
@@ -85,35 +30,44 @@ export const POST = route({ access: 'user', body: selectionRequestBodySchema }, 
     return NextResponse.json(errorResponse, { status: 404 });
   }
 
-  const randomIndex = Math.floor(Math.random() * allItems.length);
-  const selectedItem = allItems[randomIndex];
-
-  const fullDetails = await plexService.getItemMetadata(selectedItem.plexId);
-  const playLinks = plexService.buildPlayLinks(selectedItem.plexId);
+  const settings = await getOrCreateSettings();
+  const plexService = new PlexService(session.plex.token, session.plex.serverUrl, settings.plexMachineId);
+  const fullDetails = await plexService.getItemMetadata(picked.plexId);
+  const playLinks = plexService.buildPlayLinks(picked.plexId);
 
   let tmdbData = null;
   const tmdbApiKey = settings.getDecryptedTmdbKey();
   if (tmdbApiKey) {
-    const tmdbService = new TMDbService(tmdbApiKey);
-    tmdbData = await tmdbService.matchPlexItem(fullDetails.title, fullDetails.year, mediaType);
+    tmdbData = await new TMDbService(tmdbApiKey).matchPlexItem(fullDetails.title, fullDetails.year, mediaType);
   }
 
-  const selectionWithTmdb: SelectionResultResponse['selection'] = {
+  const selection: SelectionResultResponse['selection'] = {
     ...sanitizeLibraryItemForClient({
       ...fullDetails,
       type: fullDetails.type ?? mediaType,
-      overseerrStatus: selectedItem.overseerrStatus ?? null,
+      overseerrStatus: picked.overseerrStatus ?? null,
     }),
     tmdb: tmdbData,
   };
 
-  const response: SelectionResultResponse = {
-    selection: selectionWithTmdb,
-    playLinks,
-    stats: {
-      totalMatches: allItems.length,
-    },
+  // The server records every spin it answers, whichever client asked, so clients never record it.
+  await recordSpin(session, {
+    plexId: selection.plexId,
+    title: selection.title,
+    mediaType,
+    thumbPath: selection.thumbPath,
+    year: selection.year,
+    libraryIds: pool.libraryIds,
+    filtersSnapshot: filters,
     tvSelectionMode,
+    poolSizeAtSpin: pool.count,
+  });
+
+  const response: SelectionResultResponse = {
+    selection,
+    playLinks,
+    stats: { totalMatches: pool.count },
+    tvSelectionMode: body.tvSelectionMode,
   };
   return NextResponse.json(response);
 });

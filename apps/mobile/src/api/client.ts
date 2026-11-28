@@ -6,7 +6,6 @@ import {
   type MobileAuthLogoutRequest,
   type PreferenceContract,
   type SelectionParameters,
-  type SpinHistoryCreateBody,
 } from '@decidarr/api-contracts';
 import { getApiBaseUrl } from './config';
 import {
@@ -91,5 +90,4 @@ export const coreApi = {
   spin: (params: SelectionParameters) => authenticatedClient.selection.random(params),
   updatePreferences: (preferences: Partial<PreferenceContract>) =>
     authenticatedClient.preferences.update(preferences),
-  recordSpinHistory: (entry: SpinHistoryCreateBody) => authenticatedClient.spinHistory.create(entry),
 };
