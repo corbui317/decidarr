@@ -14,6 +14,7 @@ import {
   plexSections,
   routes,
   TEST_PLEX_SERVER,
+  TMDB,
 } from '../../helpers/fake-integrations';
 
 import { POST as randomPost } from '@/app/api/selection/random/route';
@@ -21,10 +22,11 @@ import { POST as poolCountPost } from '@/app/api/selection/pool-count/route';
 
 const SAMPLE_TITLES = SAMPLE_LIBRARY_ITEMS.map((item) => item.title);
 
-/** The seeded Plex server: one movie library holding `items`. */
-function fakePlexServer(items = SAMPLE_LIBRARY_ITEMS) {
+/** The seeded Plex server: one movie library holding `items`; `extra` adds more routes. */
+function fakePlexServer(items = SAMPLE_LIBRARY_ITEMS, extra: Parameters<typeof routes>[0] = {}) {
   return fakeIntegrations(
     routes({
+      ...extra,
       [`${TEST_PLEX_SERVER}/library/sections`]: () => plexSections([{ id: 'lib-1', title: 'Movies', type: 'movie' }]),
       [`${TEST_PLEX_SERVER}/library/sections/lib-1/all`]: () => plexLibraryItems(items),
       ...Object.fromEntries(
@@ -97,6 +99,35 @@ describe('Selection API routes', () => {
       const body = await res.json();
       expect(SAMPLE_TITLES).toContain(body.selection.title);
       expect(body.stats.totalMatches).toBeGreaterThan(0);
+    });
+
+    it('sends only the TMDb fields the selection contract declares', async () => {
+      await seedConfiguredSettings({ tmdbApiKey: 'tmdb-test-key-abcdefgh' });
+      fakePlexServer(SAMPLE_LIBRARY_ITEMS, {
+        [`${TMDB}/search/movie`]: ({ url }) =>
+          Response.json({
+            results: [
+              {
+                id: 603,
+                title: url.searchParams.get('query'),
+                overview: 'An overview.',
+                vote_average: 8.2,
+                poster_path: '/poster.jpg',
+                backdrop_path: '/backdrop.jpg',
+              },
+            ],
+          }),
+      });
+
+      const req = createJsonRequest('http://localhost/api/selection/random', 'POST', {
+        libraryIds: ['lib-1'],
+        mediaType: 'movie',
+        filters: {},
+      });
+      const res = await randomPost(req as never);
+
+      expect(res.status).toBe(200);
+      expect((await res.json()).selection.tmdb).toEqual({ voteAverage: 8.2, overview: 'An overview.' });
     });
   });
 

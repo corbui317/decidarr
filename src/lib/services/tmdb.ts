@@ -1,3 +1,4 @@
+import type { AwardCategory, LibraryStudiosResponse } from '@decidarr/api-contracts';
 import { createIntegrationClient, type IntegrationClient } from '../integrations/client';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
@@ -18,12 +19,6 @@ export interface TMDbEnrichmentData {
   certification?: string;
   networks?: string[];
   studios?: string[];
-}
-
-export interface AwardCategory {
-  id: string;
-  name: string;
-  icon: string;
 }
 
 // Simple rate-limited fetch wrapper for TMDb (max 40 req / 10s)
@@ -310,7 +305,7 @@ export class TMDbService {
     ];
   }
 
-  getPopularStudios(): { streaming: string[]; anime: string[]; traditional: string[] } {
+  getPopularStudios(): LibraryStudiosResponse['studios'] {
     return {
       streaming: [
         'Netflix', 'HBO', 'Amazon', 'Disney+', 'Hulu', 'Apple TV+',

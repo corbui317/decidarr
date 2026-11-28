@@ -18,6 +18,16 @@ API route tests call the handlers in-process against the test MongoDB.
 `createJsonRequest` in `tests/helpers/auth.ts` sends the same-origin `Origin` header a browser sends, because cookie-authenticated writes on routes declared with `route()` (`src/lib/request/route.ts`) reject any other origin.
 For a bearer client, mint a token with `issueTokenPair` from `src/lib/mobile-auth/tokens.ts` and send it as `Authorization: Bearer <token>`.
 
+### Reply contracts
+
+Every route declares the contract its replies follow (`response` in `route()`), taken from `@decidarr/api-contracts`.
+A route that answers with something other than JSON, such as the Plex image proxy, declares `response: 'raw'` and is listed in `tests/unit/lib/route-response-contracts.test.ts`.
+`src/lib/request/reply.ts` checks each JSON reply as the client will see it, after serialization: 2xx replies against the route's contract, 4xx and 5xx replies against the shared error contract (`apiErrorBodySchema`).
+Fields a contract does not declare are never sent, at any depth.
+In a running install a reply that breaks its contract is logged by field path (never its values) and still sent.
+Under Vitest (`NODE_ENV=test`) it throws instead, so the route answers 500 and the test that reached it fails.
+When a route test fails with "Reply does not match its contract", fix the handler or the contract; the log line names the fields.
+
 ### Faking integrations
 
 Every outbound request to Plex, plex.tv, Tautulli, Overseerr and TMDb goes through the integration client in `src/lib/integrations/client.ts`, which takes an injectable fetch and DNS lookup.

@@ -3,9 +3,12 @@ import {
   createMobileTransport,
   createPublicTransport,
   ApiError,
+  type MobileAuthExchangeRequest,
   type MobileAuthLogoutRequest,
+  type MobileAuthTokens,
   type PreferenceContract,
   type SelectionParameters,
+  type SuccessResponse,
 } from '@decidarr/api-contracts';
 import { getApiBaseUrl } from './config';
 import {
@@ -71,11 +74,20 @@ export const getValidAccessToken = mobileTransport.getValidAccessToken;
 
 export const mobileAuthApi = {
   ...publicClient.mobileAuth,
+  // Before the user approves the sign-in on plex.tv the server answers 202 with no tokens:
+  // sign-in is not finished, so this rejects with the server's message.
+  exchange: async (body: MobileAuthExchangeRequest): Promise<MobileAuthTokens> => {
+    const result = await publicClient.mobileAuth.exchange(body);
+    if ('authorized' in result) {
+      throw new Error(result.error);
+    }
+    return result;
+  },
   // Sent best-effort with whatever access token is stored, without forcing a refresh,
   // so the server can also revoke the session by device id.
   logout: async (body: MobileAuthLogoutRequest = {}) => {
     const accessToken = await getAccessToken();
-    return publicTransport.request<{ success: boolean }>('/mobile/auth/logout', {
+    return publicTransport.request<SuccessResponse>('/mobile/auth/logout', {
       method: 'POST',
       body,
       headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,

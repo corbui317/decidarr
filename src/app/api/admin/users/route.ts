@@ -1,5 +1,4 @@
-import { NextResponse } from 'next/server';
-import type { AdminUsersListResponse } from '@decidarr/api-contracts';
+import { adminUsersListResponseSchema, type PlexFriendUser } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { getOrCreateSettings } from '@/lib/models/Settings';
 import { User } from '@/lib/models/User';
@@ -20,7 +19,7 @@ async function readAdminAccountToken(userId: unknown): Promise<string | null> {
   }
 }
 
-export const GET = route({ access: 'admin' }, async ({ session }) => {
+export const GET = route({ access: 'admin', response: adminUsersListResponseSchema }, async ({ session, reply }) => {
   const settings = await getOrCreateSettings();
   const accountToken = await readAdminAccountToken(session.userId);
   if (!accountToken) {
@@ -30,9 +29,16 @@ export const GET = route({ access: 'admin' }, async ({ session }) => {
   const dbUsers = await User.find({ isAdmin: false }).lean();
   const approvedSet = new Set(settings.approvedPlexUserIds || []);
 
-  const friendMap = new Map(
-    friends.map((f) => [f.id, { ...f, hasServerAccess: true, isApproved: approvedSet.has(f.id) }])
-  );
+  const friendMap = new Map<string, PlexFriendUser>();
+  for (const f of friends) {
+    friendMap.set(f.id, {
+      id: f.id,
+      username: f.username,
+      thumb: f.thumb,
+      hasServerAccess: true,
+      isApproved: approvedSet.has(f.id),
+    });
+  }
 
   for (const u of dbUsers) {
     if (!friendMap.has(u.plexUserId)) {
@@ -51,6 +57,5 @@ export const GET = route({ access: 'admin' }, async ({ session }) => {
   );
 
   logger.debug('Listed users', { count: users.length });
-  const response: AdminUsersListResponse = { users };
-  return NextResponse.json(response);
+  return reply({ users });
 });

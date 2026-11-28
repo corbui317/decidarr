@@ -1,3 +1,4 @@
+import type { PlayLinks } from '@decidarr/api-contracts';
 import { createLogger } from '../logger';
 import { createIntegrationClient, IntegrationError, type IntegrationClient } from '../integrations/client';
 import { getPlexClientHeaders } from './plex-oauth';
@@ -407,13 +408,7 @@ export class PlexService {
   }
 
   // Build all play links for different platforms
-  buildPlayLinks(ratingKey: string): {
-    web: string;
-    app: string;
-    ios: string;
-    android: string;
-    machineId: string | null;
-  } {
+  buildPlayLinks(ratingKey: string): PlayLinks {
     return {
       web: this.buildDeepLink(ratingKey, 'web'),
       app: this.buildDeepLink(ratingKey, 'app'),

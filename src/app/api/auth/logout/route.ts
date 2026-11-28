@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server';
 import type { Types } from 'mongoose';
+import { messageResponseSchema } from '@decidarr/api-contracts';
 import { route, assertSameOrigin } from '@/lib/request/route';
 import { clearSessionCookie } from '@/lib/auth-login';
 import { invalidateAccessibleLibraryCache, readCookieSession } from '@/lib/auth';
@@ -44,7 +44,7 @@ async function resolveLogoutIdentity(
   return { userId: user._id as Types.ObjectId, credential: bearer ? 'bearer' : 'cookie' };
 }
 
-export const DELETE = route({ access: 'public' }, async ({ request }) => {
+export const DELETE = route({ access: 'public', response: messageResponseSchema }, async ({ request, reply }) => {
   const identity = await resolveLogoutIdentity(request);
 
   if (identity) {
@@ -66,5 +66,5 @@ export const DELETE = route({ access: 'public' }, async ({ request }) => {
   }
 
   await clearSessionCookie();
-  return NextResponse.json({ message: 'Logged out successfully' });
+  return reply({ message: 'Logged out successfully' });
 });

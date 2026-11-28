@@ -1,5 +1,4 @@
-import { NextResponse } from 'next/server';
-import type { SettingsStatusResponse } from '@decidarr/api-contracts';
+import { settingsStatusResponseSchema } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { getOrCreateSettings } from '@/lib/models/Settings';
 import { User, USER_TOKEN_FIELDS, userTokenLocation } from '@/lib/models/User';
@@ -34,19 +33,18 @@ async function hasUsablePlexToken(
 }
 
 // GET /api/settings/status - Check if app is configured (public endpoint)
-export const GET = route({ access: 'public' }, async () => {
+export const GET = route({ access: 'public', response: settingsStatusResponseSchema }, async ({ reply }) => {
   const settings = await getOrCreateSettings();
 
   const hasPlexToken = await hasUsablePlexToken(settings);
   const hasPlexServer = !!settings.plexServerUrl;
   const setupComplete = settings.setupComplete && hasPlexToken && hasPlexServer;
 
-  const response: SettingsStatusResponse = {
+  return reply({
     setupComplete,
     hasPlexToken,
     hasPlexServer,
     hasTmdbKey: !!settings.getDecryptedTmdbKey(),
     setupSecretRequired: !setupComplete && isSetupSecretRequired() && !!getConfiguredSetupSecret(),
-  };
-  return NextResponse.json(response);
+  });
 });

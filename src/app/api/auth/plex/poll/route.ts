@@ -1,8 +1,8 @@
-import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { timingSafeEqual } from 'crypto';
-import { plexPollQuerySchema } from '@decidarr/api-contracts';
+import { plexLoginPollResponseSchema, plexPollQuerySchema } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
+import { errorReply } from '@/lib/request/reply';
 import {
   pollAuthPin,
   OAUTH_PIN_COOKIE,
@@ -41,104 +41,85 @@ function statesMatch(expected: string, provided: string): boolean {
   return timingSafeEqual(a, b);
 }
 
-export const GET = route({ access: 'public', query: plexPollQuerySchema }, async ({ request, query }) => {
-  try {
-    const setupCheck = await assertSetupSecretAllowed(request);
-    if (!setupCheck.ok) {
-      return NextResponse.json(
-        { error: setupCheck.error, code: setupCheck.code },
-        { status: setupCheck.status }
-      );
-    }
+export const GET = route(
+  { access: 'public', query: plexPollQuerySchema, response: plexLoginPollResponseSchema },
+  async ({ request, query, reply }) => {
+    try {
+      const setupCheck = await assertSetupSecretAllowed(request);
+      if (!setupCheck.ok) {
+        return errorReply(setupCheck.status, { error: setupCheck.error, code: setupCheck.code });
+      }
 
-    const cookieStore = await cookies();
-    const pinId = parseInt(cookieStore.get(OAUTH_PIN_COOKIE)?.value || '', 10);
-    const pinCode = cookieStore.get(OAUTH_PIN_CODE_COOKIE)?.value || '';
-    const stateCookie = cookieStore.get(OAUTH_STATE_COOKIE)?.value || '';
-    const url = new URL(request.url);
-    const stateParam = query.state || '';
+      const cookieStore = await cookies();
+      const pinId = parseInt(cookieStore.get(OAUTH_PIN_COOKIE)?.value || '', 10);
+      const pinCode = cookieStore.get(OAUTH_PIN_CODE_COOKIE)?.value || '';
+      const stateCookie = cookieStore.get(OAUTH_STATE_COOKIE)?.value || '';
+      const url = new URL(request.url);
+      const stateParam = query.state || '';
 
-    if (url.searchParams.has('pinId') || url.searchParams.has('code')) {
-      return NextResponse.json(
-        { error: 'OAuth pin must come from session cookies', code: 'INVALID_OAUTH_PIN' },
-        { status: 400 }
-      );
-    }
+      if (url.searchParams.has('pinId') || url.searchParams.has('code')) {
+        return errorReply(400, { error: 'OAuth pin must come from session cookies', code: 'INVALID_OAUTH_PIN' });
+      }
 
-    if (!pinId || Number.isNaN(pinId) || !pinCode) {
-      return NextResponse.json(
-        { error: 'Missing OAuth session. Please start login again.', code: 'MISSING_OAUTH_COOKIES' },
-        { status: 400 }
-      );
-    }
+      if (!pinId || Number.isNaN(pinId) || !pinCode) {
+        return errorReply(400, { error: 'Missing OAuth session. Please start login again.', code: 'MISSING_OAUTH_COOKIES' });
+      }
 
-    // Rate limit by pin to prevent excessive polling for a single login session
-    // This allows users to take their time on plex.tv without getting locked out
-    const limited = isRateLimited(request, 'auth:poll', POLL_RATE_LIMIT_CONFIG, `pin:${pinId}`);
+      // Rate limit by pin to prevent excessive polling for a single login session
+      // This allows users to take their time on plex.tv without getting locked out
+      const limited = isRateLimited(request, 'auth:poll', POLL_RATE_LIMIT_CONFIG, `pin:${pinId}`);
 
-    if (limited) {
-      logger.warn('Rate limit exceeded for OAuth pin polling', { pinId });
+      if (limited) {
+        logger.warn('Rate limit exceeded for OAuth pin polling', { pinId });
+        clearOAuthCookies(cookieStore);
+        return errorReply(429, {
+          error: 'Login session expired due to excessive polling. Please try again.',
+          code: 'RATE_LIMITED',
+        });
+      }
+
+      if (!stateCookie || !stateParam || !statesMatch(stateCookie, stateParam)) {
+        clearOAuthCookies(cookieStore);
+        return errorReply(400, { error: 'Invalid OAuth state', code: 'INVALID_OAUTH_STATE' });
+      }
+
+      const pin = await pollAuthPin(pinId, pinCode);
+
+      if (!pin.authToken) {
+        return reply({ authorized: false });
+      }
+
+      const result = await completePlexLogin(pin.authToken);
+
       clearOAuthCookies(cookieStore);
-      return NextResponse.json(
-        { error: 'Login session expired due to excessive polling. Please try again.', code: 'RATE_LIMITED' },
-        { status: 429 }
-      );
-    }
 
-    if (!stateCookie || !stateParam || !statesMatch(stateCookie, stateParam)) {
-      clearOAuthCookies(cookieStore);
-      return NextResponse.json(
-        { error: 'Invalid OAuth state', code: 'INVALID_OAUTH_STATE' },
-        { status: 400 }
-      );
-    }
+      if (!result.success) {
+        return errorReply(result.status || 403, {
+          error: result.error ?? 'Login failed',
+          code: result.code || 'AUTH_FAILED',
+        });
+      }
 
-    const pin = await pollAuthPin(pinId, pinCode);
-
-    if (!pin.authToken) {
-      return NextResponse.json({ authorized: false });
-    }
-
-    const result = await completePlexLogin(pin.authToken);
-
-    clearOAuthCookies(cookieStore);
-
-    if (!result.success) {
-      return NextResponse.json(
-        { authorized: true, success: false, error: result.error, code: result.code || 'AUTH_FAILED' },
-        { status: result.status || 403 }
-      );
-    }
-
-    logger.info('Plex OAuth login complete', { username: result.user?.username });
-    return NextResponse.json({
-      authorized: true,
-      success: true,
-      user: result.user,
-    });
-  } catch (err) {
-    const msg = (err as Error).message;
-    if (msg === 'PLEX_UNAVAILABLE') {
-      return NextResponse.json(
-        {
+      logger.info('Plex OAuth login complete', { username: result.user?.username });
+      return reply({ authorized: true, success: true, user: result.user });
+    } catch (err) {
+      const msg = (err as Error).message;
+      if (msg === 'PLEX_UNAVAILABLE') {
+        return errorReply(503, {
           error: 'Plex.tv is unavailable. Login is temporarily blocked. Please try again later.',
           code: 'PLEX_UNAVAILABLE',
-        },
-        { status: 503 }
-      );
-    }
-    if (msg === 'PLEX_PIN_EXPIRED' || msg === 'PLEX_PIN_INVALID') {
-      const cookieStore = await cookies();
-      clearOAuthCookies(cookieStore);
-      return NextResponse.json(
-        {
+        });
+      }
+      if (msg === 'PLEX_PIN_EXPIRED' || msg === 'PLEX_PIN_INVALID') {
+        const cookieStore = await cookies();
+        clearOAuthCookies(cookieStore);
+        return errorReply(400, {
           error: 'Plex authorization expired or was invalid. Please try again.',
           code: 'PLEX_PIN_EXPIRED',
-        },
-        { status: 400 }
-      );
+        });
+      }
+      logger.error('Plex poll error', { error: msg });
+      return errorReply(500, { error: 'Login failed', code: 'LOGIN_FAILED' });
     }
-    logger.error('Plex poll error', { error: msg });
-    return NextResponse.json({ error: 'Login failed', code: 'LOGIN_FAILED' }, { status: 500 });
   }
-});
+);

@@ -1,10 +1,11 @@
+import { tautulliTestResponseSchema, type TautulliTestResponse } from '@decidarr/api-contracts';
 import { TautulliService } from '@/lib/services/tautulli';
 import { createLogger } from '@/lib/logger';
 import { connectionTestRoute } from '@/lib/routes/connection-test';
 
 const logger = createLogger('API:TautulliTest');
 
-async function testTautulliConnection(url: string, apiKey: string) {
+async function testTautulliConnection(url: string, apiKey: string): Promise<TautulliTestResponse> {
   const service = new TautulliService(url, apiKey);
   const result = await service.testConnection();
 
@@ -20,7 +21,7 @@ async function testTautulliConnection(url: string, apiKey: string) {
     };
   }
 
-  return result;
+  return { success: false, error: result.error };
 }
 
-export const POST = connectionTestRoute(testTautulliConnection, 'Tautulli', logger);
+export const POST = connectionTestRoute(tautulliTestResponseSchema, testTautulliConnection, 'Tautulli', logger);

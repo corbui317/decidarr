@@ -63,7 +63,6 @@ describe.each([
     const req = createJsonRequest(url, 'POST', { url: 'http://169.254.169.254', apiKey: 'a-key' });
     const res = await post()(req);
     expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.success).toBe(false);
+    expect(await res.json()).toEqual({ error: 'Invalid or disallowed service URL' });
   });
 });

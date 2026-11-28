@@ -1,5 +1,6 @@
-import { NextResponse } from 'next/server';
+import { refreshSessionResponseSchema } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
+import { errorReply } from '@/lib/request/reply';
 import { User } from '@/lib/models/User';
 import { PlexService } from '@/lib/services/plex';
 import { issueSessionCookie } from '@/lib/auth-login';
@@ -8,10 +9,10 @@ import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('API:AuthRefresh');
 
-export const POST = route({ access: 'user' }, async ({ session }) => {
+export const POST = route({ access: 'user', response: refreshSessionResponseSchema }, async ({ session, reply }) => {
   const user = await User.findById(session.userId);
   if (!user) {
-    return NextResponse.json({ error: 'Session expired' }, { status: 401 });
+    return errorReply(401, { error: 'Session expired' });
   }
 
   // Proves the user's server access token still works; a refusal surfaces as "sign in again".
@@ -30,5 +31,5 @@ export const POST = route({ access: 'user' }, async ({ session }) => {
   const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
 
   logger.debug('Session refreshed', { username: user.plexUsername });
-  return NextResponse.json({ success: true, expiresAt });
+  return reply({ success: true, expiresAt });
 });

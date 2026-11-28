@@ -35,6 +35,30 @@ export const selectionErrorCodeSchema = z.enum([
 ]);
 export type SelectionErrorCode = z.infer<typeof selectionErrorCodeSchema>;
 
+/**
+ * The body of every 4xx and 5xx JSON reply. Clients read `error` for the message and
+ * switch on `code`; `issues` lists each field a request failed validation on.
+ */
+export const apiErrorBodySchema = z.object({
+  error: z.string(),
+  code: z.string().optional(),
+  issues: z.array(z.object({ path: z.string(), message: z.string() })).optional(),
+  suggestion: z.string().optional(),
+});
+export type ApiErrorBody = z.infer<typeof apiErrorBodySchema>;
+
+/** A reply that only confirms what happened in words, such as a sign-out. */
+export const messageResponseSchema = z.object({ message: z.string() });
+export type MessageResponse = z.infer<typeof messageResponseSchema>;
+
+/** A reply that only confirms the request succeeded. */
+export const successResponseSchema = z.object({ success: z.boolean() });
+export type SuccessResponse = z.infer<typeof successResponseSchema>;
+
+/** The reply of the test-only control routes the E2E suite calls. */
+export const okResponseSchema = z.object({ ok: z.literal(true) });
+export type OkResponse = z.infer<typeof okResponseSchema>;
+
 export const selectionErrorSchema = z.object({
   error: z.string(),
   code: selectionErrorCodeSchema,

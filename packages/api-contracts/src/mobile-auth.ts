@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { authUserSchema } from './auth';
 
 export const mobileAuthStartRequestSchema = z.object({
   deviceId: z.string().min(8, 'deviceId is required'),
@@ -20,21 +21,26 @@ export const mobileAuthExchangeRequestSchema = z.object({
 });
 export type MobileAuthExchangeRequest = z.infer<typeof mobileAuthExchangeRequestSchema>;
 
-export const mobileUserSchema = z.object({
-  id: z.string(),
-  username: z.string(),
-  serverUrl: z.string(),
-  isAdmin: z.boolean(),
-  thumb: z.string().optional(),
-});
+/** The signed-in user, the same shape the web gets from /auth/me. */
+export const mobileUserSchema = authUserSchema;
 export type MobileUser = z.infer<typeof mobileUserSchema>;
 
-export const mobileAuthExchangeResponseSchema = z.object({
+export const mobileAuthTokensSchema = z.object({
   accessToken: z.string(),
   refreshToken: z.string(),
   expiresIn: z.number(),
   user: mobileUserSchema,
 });
+export type MobileAuthTokens = z.infer<typeof mobileAuthTokensSchema>;
+
+/** The user has not yet approved the sign-in on plex.tv (HTTP 202); exchange again once they have. */
+export const mobileAuthPendingSchema = z.object({
+  authorized: z.literal(false),
+  error: z.string(),
+});
+export type MobileAuthPending = z.infer<typeof mobileAuthPendingSchema>;
+
+export const mobileAuthExchangeResponseSchema = z.union([mobileAuthTokensSchema, mobileAuthPendingSchema]);
 export type MobileAuthExchangeResponse = z.infer<typeof mobileAuthExchangeResponseSchema>;
 
 export const mobileAuthRefreshRequestSchema = z.object({

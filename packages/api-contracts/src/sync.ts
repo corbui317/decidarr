@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { appThemeSchema, animationStyleSchema, animationSpeedSchema, mediaTypeWithEpisodeSchema, tvSelectionModeSchema } from './shared';
+import { savedFiltersPreferenceSchema } from './filters';
 
 export const SYNC_SCHEMA_VERSION = 1;
 export const MAX_MUTATION_BATCH_SIZE = 50;
@@ -24,17 +25,6 @@ export const syncMetadataSchema = z.object({
   deletedAt: z.string().nullable(),
 });
 export type SyncMetadata = z.infer<typeof syncMetadataSchema>;
-
-/** The payload type varies by entityType; see PreferenceContract, WatchedContract, SpinHistoryContract. */
-export interface SyncChange<T = unknown> {
-  cursor: string;
-  entityType: SyncEntityType;
-  entityId: string;
-  operation: 'upsert' | 'delete';
-  revision: number;
-  changedAt: string;
-  data: T | null;
-}
 
 /**
  * One change a client made. The payload is the body the matching REST route takes
@@ -74,14 +64,7 @@ export const preferenceContractSchema = z.object({
   tvSelectionMode: tvSelectionModeSchema.optional(),
   animationStyle: animationStyleSchema.optional(),
   animationSpeed: animationSpeedSchema.optional(),
-  savedFilters: z
-    .object({
-      genres: z.array(z.string()).optional(),
-      yearRange: z.object({ start: z.number().optional(), end: z.number().optional() }).optional(),
-      collections: z.array(z.string()).optional(),
-      unwatchedOnly: z.boolean().optional(),
-    })
-    .optional(),
+  savedFilters: savedFiltersPreferenceSchema.optional(),
   spinHistory: spinHistoryPreferencesContractSchema.optional(),
 });
 export type PreferenceContract = z.infer<typeof preferenceContractSchema>;
@@ -124,15 +107,21 @@ export const syncBootstrapResponseSchema = z.object({
 });
 export type SyncBootstrapResponse = z.infer<typeof syncBootstrapResponseSchema>;
 
-export const syncChangeSchema = z.object({
+const syncChangeFields = {
   cursor: z.string(),
-  entityType: syncEntityTypeSchema,
   entityId: z.string(),
   operation: z.enum(['upsert', 'delete']),
   revision: z.number(),
   changedAt: z.string(),
-  data: z.unknown().nullable(),
-});
+};
+
+/** One change in the feed; `data` is the entity as its contract describes it, or null for a delete. */
+export const syncChangeSchema = z.discriminatedUnion('entityType', [
+  z.object({ ...syncChangeFields, entityType: z.literal('preference'), data: preferenceContractSchema.nullable() }),
+  z.object({ ...syncChangeFields, entityType: z.literal('watched'), data: watchedContractSchema.nullable() }),
+  z.object({ ...syncChangeFields, entityType: z.literal('spin_history'), data: spinHistoryContractSchema.nullable() }),
+]);
+export type SyncChange = z.infer<typeof syncChangeSchema>;
 
 export const syncChangesResponseSchema = z.object({
   schemaVersion: z.number(),

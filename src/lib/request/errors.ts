@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { z } from 'zod';
+import type { ApiErrorBody } from '@decidarr/api-contracts';
 import { isAuthError, PLEX_SIGN_IN_REQUIRED_MESSAGE } from '@/lib/auth-errors';
 import { IntegrationError } from '@/lib/integrations/client';
 import { isPlexSignInRequired } from '@/lib/services/plex';
@@ -73,7 +74,7 @@ export function errorResponse(error: unknown): NextResponse {
     domainError = new DomainError('INTERNAL');
   }
 
-  const body: { error: string; code: DomainErrorCode; issues?: ValidationIssue[] } = {
+  const body: ApiErrorBody = {
     error: domainError.message,
     code: domainError.code,
   };

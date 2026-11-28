@@ -1,6 +1,6 @@
-import { NextResponse } from 'next/server';
-import { mobileAuthStartRequestSchema } from '@decidarr/api-contracts';
+import { mobileAuthStartRequestSchema, mobileAuthStartResponseSchema } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
+import { errorReply } from '@/lib/request/reply';
 import { MobileAuthCode } from '@/lib/models/MobileAuthCode';
 import { buildPlexAuthUrl, createAuthPin } from '@/lib/services/plex-oauth';
 import {
@@ -19,6 +19,7 @@ export const POST = route(
   {
     access: 'public',
     body: mobileAuthStartRequestSchema,
+    response: mobileAuthStartResponseSchema,
     // No per-guess target: a caller-chosen deviceId is not an attacked resource, and the
     // setup secret is a single shared one, so neither should become a bucket of its own.
     // Identity (when TRUST_PROXY makes it trustworthy) plus the ceiling well above household
@@ -32,16 +33,13 @@ export const POST = route(
       bypass: isCorrectSetupSecret,
     },
   },
-  async ({ request, body }) => {
+  async ({ request, body, reply }) => {
     try {
       // A mobile sign-in on a server that has not finished setup would make the caller the
       // admin, so it needs the same setup secret as the browser flow.
       const setupCheck = await assertSetupSecretAllowed(request);
       if (!setupCheck.ok) {
-        return NextResponse.json(
-          { error: setupCheck.error, code: setupCheck.code },
-          { status: setupCheck.status }
-        );
+        return errorReply(setupCheck.status, { error: setupCheck.error, code: setupCheck.code });
       }
 
       const deviceId = body.deviceId.trim();
@@ -68,7 +66,7 @@ export const POST = route(
         deviceCode: redactToken(deviceCode),
       });
 
-      return NextResponse.json({
+      return reply({
         authUrl,
         pinId: pin.id,
         deviceCode,
@@ -77,13 +75,10 @@ export const POST = route(
     } catch (err) {
       const msg = (err as Error).message;
       if (msg === 'PLEX_UNAVAILABLE') {
-        return NextResponse.json(
-          { error: 'Plex.tv is unavailable. Please try again later.', code: 'PLEX_UNAVAILABLE' },
-          { status: 503 }
-        );
+        return errorReply(503, { error: 'Plex.tv is unavailable. Please try again later.', code: 'PLEX_UNAVAILABLE' });
       }
       logger.error('Mobile auth start failed', { error: msg });
-      return NextResponse.json({ error: 'Failed to start authorization' }, { status: 500 });
+      return errorReply(500, { error: 'Failed to start authorization' });
     }
   }
 );

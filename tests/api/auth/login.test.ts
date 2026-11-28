@@ -88,7 +88,7 @@ describe('Auth and setup API routes', () => {
       const res = await setupPost(req as never);
       expect(res.status).toBe(400);
       const body = await res.json();
-      expect(body.useOAuth).toBe(true);
+      expect(body.error).toMatch(/Plex/);
       expect(body.error).toMatch(/signing in with Plex/i);
     });
 
@@ -100,7 +100,7 @@ describe('Auth and setup API routes', () => {
       const res = await setupPost(req as never);
       expect(res.status).toBe(400);
       const body = await res.json();
-      expect(body.useOAuth).toBe(true);
+      expect(body.error).toMatch(/Plex/);
     });
 
     it('allows admin to update TMDB key after setup is complete', async () => {
@@ -125,7 +125,7 @@ describe('Auth and setup API routes', () => {
       const res = await loginPost(new Request('http://localhost/api/auth/login', { method: 'POST' }));
       expect(res.status).toBe(410);
       const body = await res.json();
-      expect(body.useOAuth).toBe(true);
+      expect(body.error).toMatch(/Plex/);
       expect(body.error).toMatch(/Plex OAuth/i);
     });
 
@@ -134,7 +134,7 @@ describe('Auth and setup API routes', () => {
       const res = await loginPost(new Request('http://localhost/api/auth/login', { method: 'POST' }));
       expect(res.status).toBe(410);
       const body = await res.json();
-      expect(body.useOAuth).toBe(true);
+      expect(body.error).toMatch(/Plex/);
     });
   });
 

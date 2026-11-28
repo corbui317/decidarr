@@ -1,3 +1,5 @@
+import { sanitizedLibraryItemSchema, type SanitizedLibraryItem } from '@decidarr/api-contracts';
+
 const PLEX_LIBRARY_PATH_PREFIX = '/library/';
 
 export function stripTokenFromUrl(url: string): string {
@@ -128,20 +130,24 @@ interface ItemImageFields {
   art?: string | null;
 }
 
-/** An item as the client receives it: image fields only in tokenless, proxied form. */
-export type ClientSafeItem<T> = Omit<T, keyof ItemImageFields> & {
-  thumbPath?: string;
-  artPath?: string;
-  posterUrl?: string;
-  art?: string;
-};
+type ClientItemField = keyof SanitizedLibraryItem;
+const CLIENT_ITEM_FIELDS: readonly string[] = sanitizedLibraryItemSchema.keyof().options;
 
-/** Takes a plain object (not a Mongoose document: spreading one copies its internals). */
+/**
+ * An item as the client receives it: only the fields the item contract declares, with
+ * image fields only in tokenless, proxied form.
+ */
+export type ClientSafeItem<T> = Pick<T, Exclude<Extract<keyof T, ClientItemField>, keyof ItemImageFields>> &
+  Pick<SanitizedLibraryItem, keyof ItemImageFields>;
+
+/** Takes a plain object (not a Mongoose document). Internal fields such as enrichment state are left out. */
 export function sanitizeLibraryItemForClient<T extends ItemImageFields>(item: T): ClientSafeItem<T> {
   const images = resolveItemImageUrls(item);
-  const { posterUrl: _legacyPoster, art: _legacyArt, thumbPath: _thumb, artPath: _art, ...rest } = item;
+  const declared = Object.entries(item).filter(
+    ([key]) => CLIENT_ITEM_FIELDS.includes(key) && !(key in images)
+  );
   return {
-    ...rest,
+    ...(Object.fromEntries(declared) as Pick<T, Exclude<Extract<keyof T, ClientItemField>, keyof ItemImageFields>>),
     thumbPath: images.thumbPath,
     artPath: images.artPath,
     posterUrl: images.posterUrl ?? undefined,
