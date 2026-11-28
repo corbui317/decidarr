@@ -10,7 +10,7 @@
 
 | Capability | UI | API / Logic |
 |------------|-----|-------------|
-| Record spin after selection | `dashboard/page.tsx` (post-spin) | `POST /api/spin-history` |
+| Record spin after selection | server, when Spin picks | `POST /api/selection/random` (`recordSpin` in `src/lib/user-data`) |
 | List recent spins | `RecentSpins.tsx` | `GET /api/spin-history?page=&limit=` |
 | Delete one entry | `RecentSpins.tsx` | `DELETE /api/spin-history/[id]` |
 | Clear all history | `SettingsModal.tsx` | `DELETE /api/spin-history` |
@@ -108,7 +108,7 @@ interface CreateSpinHistoryBody {
 
 ### Shipped
 
-- **Dashboard** — calls `spinHistoryApi.create()` after successful spin; refreshes `RecentSpins` via `historyRefreshKey`.
+- **Dashboard** - records nothing itself: the server records each spin when it picks, for web and mobile alike; the dashboard refreshes `RecentSpins` via `historyRefreshKey` after a successful spin.
 - **`RecentSpins`** — sidebar showing latest 10; relative time; reapply filters; delete; empty state.
 - **`SettingsModal` (Prefs)** — enable toggle, retention input, snapshot toggle, clear-all with confirmation.
 

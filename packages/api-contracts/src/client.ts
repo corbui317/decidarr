@@ -17,8 +17,6 @@ import type {
   MobileAuthStartResponse,
 } from './mobile-auth';
 import type {
-  SpinHistoryCreateBody,
-  SpinHistoryCreateResponse,
   SpinHistoryListResponse,
   SpinHistoryDeleteResponse,
   SpinHistoryClearAllResponse,
@@ -290,11 +288,6 @@ export function createApiClient(transport: Transport) {
     spinHistory: {
       list: (page = 1, limit = 20) =>
         transport.request<SpinHistoryListResponse>('/spin-history', { query: { page, limit } }),
-      create: (payload: SpinHistoryCreateBody) =>
-        transport.request<SpinHistoryCreateResponse>('/spin-history', {
-          method: 'POST',
-          body: payload,
-        }),
       delete: (id: string) =>
         transport.request<SpinHistoryDeleteResponse>(`/spin-history/${id}`, { method: 'DELETE' }),
       clearAll: () =>

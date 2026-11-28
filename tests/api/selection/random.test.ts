@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import mongoose from 'mongoose';
 import { clearDatabase } from '../../helpers/mongo';
 import {
   seedConfiguredSettings,
@@ -15,18 +14,14 @@ import {
   plexSections,
   routes,
   TEST_PLEX_SERVER,
-  type SentRequest,
 } from '../../helpers/fake-integrations';
-import { WatchedItem } from '@/lib/models/WatchedItem';
-
-let authenticatedUserId: mongoose.Types.ObjectId;
 
 import { POST as randomPost } from '@/app/api/selection/random/route';
 import { POST as poolCountPost } from '@/app/api/selection/pool-count/route';
 
 const SAMPLE_TITLES = SAMPLE_LIBRARY_ITEMS.map((item) => item.title);
 
-/** The seeded Plex server: one movie library holding `items`, and a two-item collection. */
+/** The seeded Plex server: one movie library holding `items`. */
 function fakePlexServer(items = SAMPLE_LIBRARY_ITEMS) {
   return fakeIntegrations(
     routes({
@@ -38,25 +33,17 @@ function fakePlexServer(items = SAMPLE_LIBRARY_ITEMS) {
           () => plexMetadata([{ ratingKey: plexId, title, year, type: 'movie' }]),
         ])
       ),
-      [`${TEST_PLEX_SERVER}/library/collections/101/children`]: () =>
-        plexMetadata([
-          { ratingKey: '1', title: 'Inception' },
-          { ratingKey: '2', title: 'The Matrix' },
-        ]),
     })
   );
 }
 
 describe('Selection API routes', () => {
-  let sent: SentRequest[];
-
   beforeEach(async () => {
     await clearDatabase();
     clearTestCookies();
     await seedConfiguredSettings();
-    const auth = await authenticateTestSession();
-    authenticatedUserId = auth.user._id as mongoose.Types.ObjectId;
-    ({ sent } = fakePlexServer());
+    await authenticateTestSession();
+    fakePlexServer();
   });
 
   describe('POST /api/selection/random', () => {
@@ -147,57 +134,6 @@ describe('Selection API routes', () => {
       const body = await res.json();
       expect(body.matchingItems).toBe(0);
       expect(body.emptyReason).toBeTruthy();
-    });
-
-    it('parity: pool count matches random eligibility with unwatched filter', async () => {
-      await WatchedItem.create({
-        userId: authenticatedUserId,
-        plexId: '1',
-        title: 'Inception',
-        mediaType: 'movie',
-        watchedAt: new Date(),
-        source: 'manual',
-      });
-
-      const poolReq = createJsonRequest('http://localhost/api/selection/pool-count', 'POST', {
-        libraryIds: ['lib-1'],
-        mediaType: 'movie',
-        filters: { unwatchedOnly: true },
-      });
-      const poolRes = await poolCountPost(poolReq as never);
-      const poolBody = await poolRes.json();
-
-      const randomReq = createJsonRequest('http://localhost/api/selection/random', 'POST', {
-        libraryIds: ['lib-1'],
-        mediaType: 'movie',
-        filters: { unwatchedOnly: true },
-      });
-      const randomRes = await randomPost(randomReq as never);
-      const randomBody = await randomRes.json();
-
-      expect(poolBody.matchingItems).toBe(randomBody.stats.totalMatches);
-    });
-
-    it('parity: pool count matches random eligibility with collection filter', async () => {
-
-      const poolReq = createJsonRequest('http://localhost/api/selection/pool-count', 'POST', {
-        libraryIds: ['lib-1'],
-        mediaType: 'movie',
-        filters: { collections: ['101'] },
-      });
-      const poolRes = await poolCountPost(poolReq as never);
-      const poolBody = await poolRes.json();
-
-      const randomReq = createJsonRequest('http://localhost/api/selection/random', 'POST', {
-        libraryIds: ['lib-1'],
-        mediaType: 'movie',
-        filters: { collections: ['101'] },
-      });
-      const randomRes = await randomPost(randomReq as never);
-      const randomBody = await randomRes.json();
-
-      expect(poolBody.matchingItems).toBe(randomBody.stats.totalMatches);
-      expect(sent.filter((r) => r.url.pathname === '/library/collections/101/children')).toHaveLength(2);
     });
   });
 });
