@@ -69,13 +69,45 @@ function defOf(schema: z.ZodType): SchemaDef {
   return schema._zod.def as unknown as SchemaDef;
 }
 
-/** Schemas whose value is kept whole: a field declared as a string, a number, `unknown` and so on. */
+/** Schemas that declare any value at all, so a structured value is kept whole. */
+const ANY_VALUE_TYPES = new Set(['unknown', 'any']);
+
+/** Schemas of one plain value. A wrong-typed primitive is kept; a structured value is not. */
 const LEAF_TYPES = new Set([
   'string', 'number', 'int', 'boolean', 'bigint', 'date', 'enum', 'literal', 'null', 'undefined',
-  'unknown', 'any', 'nan', 'never', 'void', 'template_literal',
+  'nan', 'never', 'void', 'template_literal',
 ]);
 
-/** The union option a value belongs to: one it matches, else the one its discriminator names, else the first. */
+const WRAPPER_TYPES = new Set(['optional', 'nullable', 'default', 'prefault', 'nonoptional', 'readonly', 'catch']);
+
+/** Marks a value that must not be sent: its parent leaves it out. */
+const DROP = Symbol('drop');
+
+function isStructured(value: unknown): value is object {
+  return typeof value === 'object' && value !== null;
+}
+
+/** The schema kind under any optional, nullable or default wrapper. */
+function coreType(schema: z.ZodType): string {
+  const def = defOf(schema);
+  if (WRAPPER_TYPES.has(def.type)) return coreType(def.innerType!);
+  if (def.type === 'pipe') return coreType(def.in!);
+  if (def.type === 'lazy') return coreType(def.getter!());
+  return def.type;
+}
+
+/** Whether a schema of this kind declares the shape of `value` (an object, an array, or a primitive). */
+function declaresShapeOf(type: string, value: unknown): boolean {
+  if (ANY_VALUE_TYPES.has(type) || type === 'union') return true;
+  if (Array.isArray(value)) return type === 'array';
+  if (isStructured(value)) return type === 'object' || type === 'record';
+  return LEAF_TYPES.has(type);
+}
+
+/**
+ * The union option a value belongs to: one it matches, else the one its discriminator
+ * names, else the first that declares its shape. None when no option declares its shape.
+ */
 function unionOption(def: SchemaDef, value: unknown): z.ZodType | undefined {
   const options = def.options ?? [];
   const matching = options.find((option) => option.safeParse(value).success);
@@ -85,62 +117,72 @@ function unionOption(def: SchemaDef, value: unknown): z.ZodType | undefined {
     const named = options.find((option) => defOf(option).shape?.[key]?.safeParse(value[key]).success);
     if (named) return named;
   }
-  return options[0];
+  return options.find((option) => declaresShapeOf(coreType(option), value));
+}
+
+/** A value whose shape its position does not declare: a primitive is kept, anything structured is not sent. */
+function undeclaredShape(value: unknown, path: string, removed: string[]): unknown {
+  if (!isStructured(value)) return value;
+  removed.push(`${path || '(reply)'} (undeclared structure)`);
+  return DROP;
 }
 
 /**
- * `value` with every field its schema does not declare removed, at any depth. Each removed
- * field's path goes into `removed`. Values are otherwise kept as they are, even when a
- * declared field has the wrong type, so a mismatch never costs the client what it can use.
+ * `value` with everything its schema does not declare removed, at any depth: a field the
+ * schema does not name, and a structured value (an object, an array) where the schema
+ * declares another shape. Each removed path goes into `removed`. A wrong-typed primitive
+ * is kept, so a mismatch never costs the client what it can use. Returns DROP when
+ * nothing of `value` may be sent.
  */
 function stripUndeclared(schema: z.ZodType, value: unknown, path: string, removed: string[]): unknown {
   const def = defOf(schema);
+  if (WRAPPER_TYPES.has(def.type)) {
+    return value === null || value === undefined ? value : stripUndeclared(def.innerType!, value, path, removed);
+  }
   switch (def.type) {
-    case 'optional':
-    case 'nullable':
-    case 'default':
-    case 'prefault':
-    case 'nonoptional':
-    case 'readonly':
-    case 'catch':
-      return value === null || value === undefined ? value : stripUndeclared(def.innerType!, value, path, removed);
     case 'pipe':
       return stripUndeclared(def.in!, value, path, removed);
     case 'lazy':
       return stripUndeclared(def.getter!(), value, path, removed);
     case 'object': {
-      if (!isPlainObject(value)) return value;
+      if (!isPlainObject(value)) return undeclaredShape(value, path, removed);
       const kept: Record<string, unknown> = {};
       for (const [key, field] of Object.entries(value)) {
-        const declared = def.shape?.[key];
-        if (declared) {
-          kept[key] = stripUndeclared(declared, field, joinPath(path, key), removed);
-        } else if (def.catchall && defOf(def.catchall).type !== 'never') {
-          kept[key] = stripUndeclared(def.catchall, field, joinPath(path, key), removed);
-        } else {
+        const declared = def.shape?.[key] ?? (def.catchall && defOf(def.catchall).type !== 'never' ? def.catchall : undefined);
+        if (!declared) {
           removed.push(joinPath(path, key));
+          continue;
         }
+        const stripped = stripUndeclared(declared, field, joinPath(path, key), removed);
+        if (stripped !== DROP) kept[key] = stripped;
       }
       return kept;
     }
     case 'array':
-      return Array.isArray(value)
-        ? value.map((item) => stripUndeclared(def.element!, item, `${path}[]`, removed))
-        : value;
-    case 'record':
-      if (!isPlainObject(value)) return value;
-      return Object.fromEntries(
-        Object.entries(value).map(([key, field]) => [key, stripUndeclared(def.valueType!, field, `${path}{}`, removed)])
-      );
+      if (!Array.isArray(value)) return undeclaredShape(value, path, removed);
+      return value.map((item) => {
+        const stripped = stripUndeclared(def.element!, item, `${path}[]`, removed);
+        return stripped === DROP ? null : stripped;
+      });
+    case 'record': {
+      if (!isPlainObject(value)) return undeclaredShape(value, path, removed);
+      const kept: Record<string, unknown> = {};
+      for (const [key, field] of Object.entries(value)) {
+        const stripped = stripUndeclared(def.valueType!, field, `${path}{}`, removed);
+        if (stripped !== DROP) kept[key] = stripped;
+      }
+      return kept;
+    }
     case 'union': {
       const option = unionOption(def, value);
-      return option ? stripUndeclared(option, value, path, removed) : value;
+      return option ? stripUndeclared(option, value, path, removed) : undeclaredShape(value, path, removed);
     }
     default:
-      if (LEAF_TYPES.has(def.type)) return value;
+      if (ANY_VALUE_TYPES.has(def.type)) return value;
+      if (LEAF_TYPES.has(def.type)) return undeclaredShape(value, path, removed);
       // A schema kind this walk does not know could hide undeclared fields: send nothing for it.
       removed.push(`${path || '(reply)'} (unsupported contract type ${def.type})`);
-      return undefined;
+      return DROP;
   }
 }
 
@@ -162,7 +204,8 @@ export function sendReply(contract: z.ZodType, body: unknown, status: number, so
   const wire: unknown = serialized === undefined ? null : JSON.parse(serialized);
 
   const removed: string[] = [];
-  const sent = stripUndeclared(checked, wire, '', removed);
+  const stripped = stripUndeclared(checked, wire, '', removed);
+  const sent = stripped === DROP ? null : stripped;
   const result = checked.safeParse(wire);
   const invalid = result.success
     ? []
