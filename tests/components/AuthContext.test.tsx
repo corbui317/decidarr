@@ -53,7 +53,7 @@ describe('AuthContext', () => {
       setupSecretRequired: false,
     });
     vi.mocked(authApi.getCurrentUser).mockResolvedValue({
-      user: { id: 'user-1', username: 'testuser', serverUrl: 'http://192.168.1.10:32400', isAdmin: false },
+      user: { id: 'user-1', username: 'testuser', isAdmin: false },
       preferences: { theme: 'dark', defaultMediaType: 'movie', tvSelectionMode: 'show' },
       expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
     });
