@@ -11,10 +11,10 @@ import {
 } from '../helpers/legacy-install-seed';
 import { defaultServerToken, fakeIntegrations, fakePlex } from '../helpers/fake-integrations';
 import { connectDB, forgetConnectionForTests } from '@/lib/db';
-import { resetMigrationStateForTests } from '@/lib/migrate';
+import { resetMigrationStateForTests, runMigrations } from '@/lib/migrate';
 import { getOrCreateSettings } from '@/lib/models/Settings';
-import { User } from '@/lib/models/User';
-import { getLegacyMasterKey, isCurrentCiphertext } from '@/lib/secrets';
+import { User, userTokenLocation } from '@/lib/models/User';
+import { getLegacyMasterKey, isCurrentCiphertext, encryptSecret } from '@/lib/secrets';
 import { completePlexLogin } from '@/lib/auth-login';
 import { GET as statusGet } from '@/app/api/settings/status/route';
 import { POST as restartPost } from '@/app/api/test/restart/route';
@@ -290,6 +290,45 @@ describe('Restarting a legacy install with a changed MONGODB_URI', () => {
     const admin = await User.findOne({ plexUserId: LEGACY_ADMIN_PLEX_USER_ID });
     expect(admin?.getAccountToken()).toBe(LEGACY_PLAINTEXT.plexToken);
     expect(admin?.getServerToken(LEGACY_MACHINE_ID)).toBe(defaultServerToken(LEGACY_MACHINE_ID));
+  });
+});
+
+describe('Migrating an install with no stored server id', () => {
+  beforeEach(async () => {
+    await clearDatabase();
+    clearTestCookies();
+    vi.stubEnv('NODE_ENV', 'development');
+    vi.stubEnv('DECIDARR_SECRET', 'upgrade-test-secret');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("resolves the server id from /identity without sending the Admin's account token", async () => {
+    simulateRestart();
+    await connectDB();
+
+    const admin = new User({ plexUserId: LEGACY_ADMIN_PLEX_USER_ID, plexUsername: 'admin', isAdmin: true, isApproved: true });
+    admin.plexToken = encryptSecret('admin-legacy-account-token', userTokenLocation(admin, 'plexToken'));
+    await admin.save();
+
+    const settings = await getOrCreateSettings();
+    settings.plexServerUrl = 'http://192.168.1.10:32400';
+    settings.plexUsername = 'admin';
+    settings.adminUserId = admin._id;
+    settings.setupComplete = true;
+    await settings.save();
+
+    const { sent } = fakeLegacyPlex();
+    resetMigrationStateForTests();
+    await runMigrations();
+
+    const identityRequests = sent.filter((r) => r.url.pathname === '/identity');
+    expect(identityRequests).toHaveLength(1);
+    expect(identityRequests[0].headers.get('X-Plex-Token')).toBeNull();
+
+    expect((await getOrCreateSettings()).plexMachineId).toBe(LEGACY_MACHINE_ID);
   });
 });
 
