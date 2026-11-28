@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server';
 import mongoose from 'mongoose';
+import { tautulliSyncResponseSchema } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { DomainError } from '@/lib/request/errors';
 import { getOrCreateSettings } from '@/lib/models/Settings';
@@ -10,7 +10,7 @@ import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('API:TautulliSync');
 
-export const POST = route({ access: 'user' }, async ({ session }) => {
+export const POST = route({ access: 'user', response: tautulliSyncResponseSchema }, async ({ session, reply }) => {
   const settings = await getOrCreateSettings();
 
   if (!settings.tautulliEnabled) {
@@ -154,7 +154,7 @@ export const POST = route({ access: 'user' }, async ({ session }) => {
 
   logger.info('Tautulli sync completed', { synced, movies: moviesWatched.size, shows: showsWatched.size });
 
-  return NextResponse.json({
+  return reply({
     success: true,
     synced,
     movies: moviesWatched.size,

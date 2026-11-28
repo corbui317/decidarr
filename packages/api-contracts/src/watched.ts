@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { mediaTypeWithEpisodeSchema } from './shared';
+import { watchedContractSchema } from './sync';
 
 export const watchedListQuerySchema = z.object({
   mediaType: z.string().optional(),
@@ -18,10 +19,18 @@ export const watchedCreateBodySchema = z.object({
 export type WatchedCreateBody = z.infer<typeof watchedCreateBodySchema>;
 
 export const watchedListResponseSchema = z.object({
-  items: z.array(z.unknown()),
-  pagination: z.unknown(),
+  items: z.array(watchedContractSchema),
+  pagination: z.object({
+    page: z.number(),
+    limit: z.number(),
+    total: z.number(),
+    pages: z.number(),
+  }),
 });
 export type WatchedListResponse = z.infer<typeof watchedListResponseSchema>;
+
+export const watchedCreateResponseSchema = z.object({ item: watchedContractSchema });
+export type WatchedCreateResponse = z.infer<typeof watchedCreateResponseSchema>;
 
 export const watchedStatusResponseSchema = z.object({ watched: z.boolean() });
 export type WatchedStatusResponse = z.infer<typeof watchedStatusResponseSchema>;

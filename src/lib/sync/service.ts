@@ -86,15 +86,19 @@ export async function getChanges(
   const hasMore = docs.length > limit;
   const page = hasMore ? docs.slice(0, limit) : docs;
 
-  const changes: SyncChange[] = page.map((doc) => ({
-    cursor: doc.cursor,
-    entityType: doc.entityType,
-    entityId: doc.entityId,
-    operation: doc.operation,
-    revision: doc.revision,
-    changedAt: doc.changedAt.toISOString(),
-    data: doc.data ?? null,
-  }));
+  // The store wrote each change's data from the entity's contract; the reply check enforces it.
+  const changes = page.map(
+    (doc) =>
+      ({
+        cursor: doc.cursor,
+        entityType: doc.entityType,
+        entityId: doc.entityId,
+        operation: doc.operation,
+        revision: doc.revision,
+        changedAt: doc.changedAt.toISOString(),
+        data: doc.data ?? null,
+      }) as SyncChange
+  );
 
   const nextCursor = page.length > 0 ? page[page.length - 1].cursor : cursor ?? '';
 

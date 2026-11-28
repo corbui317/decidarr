@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { overseerrStatusResponseSchema } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { getOrCreateSettings } from '@/lib/models/Settings';
 import { getOverseerrConfig } from '@/lib/auth';
@@ -10,12 +10,12 @@ export const dynamic = 'force-dynamic';
 
 const logger = createLogger('API:OverseerrStatus');
 
-export const GET = route({ access: 'user' }, async () => {
+export const GET = route({ access: 'user', response: overseerrStatusResponseSchema }, async ({ reply }) => {
   const config = await getOverseerrConfig();
   const settings = await getOrCreateSettings();
 
   if (!config.configured) {
-    return NextResponse.json({
+    return reply({
       configured: false,
       reachable: null,
       filterEnabled: false,
@@ -44,7 +44,7 @@ export const GET = route({ access: 'user' }, async () => {
         ? 'The last Overseerr sync failed. Using the last cached availability data.'
         : null;
 
-  return NextResponse.json({
+  return reply({
     configured: true,
     reachable,
     filterEnabled: config.filterEnabled,

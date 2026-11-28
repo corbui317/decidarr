@@ -1,5 +1,4 @@
 import { createHash } from 'crypto';
-import { NextResponse } from 'next/server';
 import { assertTestOnly } from '@/lib/test-only';
 
 interface RateLimitEntry {
@@ -144,24 +143,6 @@ export function isRateLimited(
   identityKeys.forEach((key) => recordHit(key, windowMs));
   recordHit(ceilingKey, windowMs);
   return false;
-}
-
-/**
- * Shared rate limit enforcement helper.
- * Returns null if allowed, or a 429 NextResponse if rate limited.
- */
-export function enforceRateLimit(
-  request: Request,
-  scope: string,
-  policy: RateLimitPolicy,
-  targetId?: string
-): NextResponse | null {
-  if (!isRateLimited(request, scope, policy, targetId)) return null;
-
-  return NextResponse.json(
-    { error: 'Too many requests. Please try again later.', code: 'RATE_LIMITED' },
-    { status: 429 }
-  );
 }
 
 /** @internal Test-only: forget every rate-limit bucket. */

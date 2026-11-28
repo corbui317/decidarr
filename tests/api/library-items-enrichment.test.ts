@@ -111,15 +111,14 @@ describe('GET /api/library/[id]/items enrichment preservation', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
 
-    expect(body.items[54].tmdbId).toBe('1055');
     expect(body.items[54].contentRating).toBe('PG-13');
     expect(body.items[54].studio).toBe('Test Studio');
-    expect(body.items[109].tmdbId).toBe('1110');
     expect(body.items[109].contentRating).toBe('PG-13');
 
     expect(tmdbSearches(sent)).toEqual([]);
 
     const cache = await LibraryCache.findOne({ libraryId: 'lib-1' });
+    expect(cache?.items[54].tmdbId).toBe('1055');
     expect(cache?.items[109].tmdbId).toBe('1110');
     expect(cache?.items[54].contentRating).toBe('PG-13');
   });
@@ -160,7 +159,9 @@ describe('GET /api/library/[id]/items enrichment preservation', () => {
 
     const body = await res.json();
     const enrichedNewItem = body.items.find((item: ILibraryItem) => item.plexId === '100');
-    expect(enrichedNewItem).toMatchObject({ tmdbId: '2000', contentRating: 'PG', studio: 'New Studio' });
+    expect(enrichedNewItem).toMatchObject({ contentRating: 'PG', studio: 'New Studio' });
+    const cache = await LibraryCache.findOne({ libraryId: 'lib-1' });
+    expect(cache?.items.find((item) => item.plexId === '100')?.tmdbId).toBe('2000');
   });
 
   it('serves cached items as plain, tokenless items', async () => {
@@ -200,9 +201,12 @@ describe('GET /api/library/[id]/items enrichment preservation', () => {
     expect(body.items[0]).toMatchObject({
       plexId: '1',
       title: 'Movie 1',
-      tmdbId: '1001',
       thumbPath: '/library/metadata/1/thumb/1',
     });
+    // Enrichment bookkeeping stays on the server: it is not in the item contract.
+    for (const internal of ['tmdbId', 'tmdbRating', 'enrichedAt']) {
+      expect(body.items[0]).not.toHaveProperty(internal);
+    }
     expect(Object.keys(body.items[0]).some((key) => key.startsWith('$') || key === '_doc')).toBe(false);
     expect(JSON.stringify(body.items[0])).not.toContain('X-Plex-Token');
   });

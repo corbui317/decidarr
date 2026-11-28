@@ -1,6 +1,7 @@
-import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { plexLoginStartResponseSchema } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
+import { errorReply } from '@/lib/request/reply';
 import {
   createAuthPin,
   buildPlexAuthUrl,
@@ -19,6 +20,7 @@ const logger = createLogger('API:PlexAuthStart');
 export const POST = route(
   {
     access: 'public',
+    response: plexLoginStartResponseSchema,
     // No per-guess target: the setup secret is one shared resource, so a bucket keyed on it
     // would just be a smaller, easier-to-exhaust copy of the global ceiling and could lock
     // the real admin out. Identity (when TRUST_PROXY makes it trustworthy) plus the ceiling
@@ -32,14 +34,11 @@ export const POST = route(
       bypass: isCorrectSetupSecret,
     },
   },
-  async ({ request }) => {
+  async ({ request, reply }) => {
     try {
       const setupCheck = await assertSetupSecretAllowed(request);
       if (!setupCheck.ok) {
-        return NextResponse.json(
-          { error: setupCheck.error, code: setupCheck.code },
-          { status: setupCheck.status }
-        );
+        return errorReply(setupCheck.status, { error: setupCheck.error, code: setupCheck.code });
       }
 
       const state = generateOAuthState();
@@ -55,23 +54,16 @@ export const POST = route(
       cookieStore.set(OAUTH_PIN_CODE_COOKIE, pin.code, cookieOptions);
 
       logger.debug('Plex OAuth started', { pinId: pin.id });
-      return NextResponse.json({
-        authUrl,
-        pinId: pin.id,
-        state,
-      });
+      return reply({ authUrl, pinId: pin.id, state });
     } catch (err) {
       const msg = (err as Error).message;
       if (msg === 'PLEX_UNAVAILABLE') {
-        return NextResponse.json(
-          {
-            error: 'Plex.tv is unavailable. Login is temporarily blocked. Please try again later.',
-          },
-          { status: 503 }
-        );
+        return errorReply(503, {
+          error: 'Plex.tv is unavailable. Login is temporarily blocked. Please try again later.',
+        });
       }
       logger.error('Plex OAuth start failed', { error: msg });
-      return NextResponse.json({ error: 'Failed to start Plex login' }, { status: 500 });
+      return errorReply(500, { error: 'Failed to start Plex login' });
     }
   }
 );

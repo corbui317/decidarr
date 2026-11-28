@@ -1,5 +1,8 @@
-import { NextResponse } from 'next/server';
-import { libraryIdsQuerySchema } from '@decidarr/api-contracts';
+import {
+  libraryCollectionsResponseSchema,
+  libraryIdsQuerySchema,
+  type PlexCollection,
+} from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { getAccessibleLibraryIds } from '@/lib/auth';
 import { getOrCreateSettings } from '@/lib/models/Settings';
@@ -11,48 +14,51 @@ export const dynamic = 'force-dynamic';
 
 const logger = createLogger('API:Collections');
 
-export const GET = route({ access: 'user', query: libraryIdsQuerySchema }, async ({ session, query }) => {
-  const ids = query.libraryIds?.split(',').filter(Boolean) ?? [];
-  if (ids.length === 0) {
-    return NextResponse.json({ collections: [] });
-  }
+export const GET = route(
+  { access: 'user', query: libraryIdsQuerySchema, response: libraryCollectionsResponseSchema },
+  async ({ session, query, reply }) => {
+    const ids = query.libraryIds?.split(',').filter(Boolean) ?? [];
+    if (ids.length === 0) {
+      return reply({ collections: [] });
+    }
 
-  const settings = await getOrCreateSettings();
-  const allowed = await getAccessibleLibraryIds(
-    {
-      userId: session.userId.toString(),
-      plexToken: session.plex.token,
-      plexServerUrl: session.plex.serverUrl,
-      plexMachineId: settings.plexMachineId || null,
-    },
-    ids
-  );
-  const plexService = new PlexService(session.plex.token, session.plex.serverUrl, settings.plexMachineId);
+    const settings = await getOrCreateSettings();
+    const allowed = await getAccessibleLibraryIds(
+      {
+        userId: session.userId.toString(),
+        plexToken: session.plex.token,
+        plexServerUrl: session.plex.serverUrl,
+        plexMachineId: settings.plexMachineId || null,
+      },
+      ids
+    );
+    const plexService = new PlexService(session.plex.token, session.plex.serverUrl, settings.plexMachineId);
 
-  const allCollections: { ratingKey: string; title: string; childCount: number; libraryId: string }[] = [];
+    const allCollections: PlexCollection[] = [];
 
-  await Promise.all(
-    allowed.map(async (libraryId) => {
-      try {
-        const collections = await plexService.getCollections(libraryId);
-        for (const c of collections) {
-          allCollections.push({
-            ratingKey: c.ratingKey,
-            title: c.title,
-            childCount: c.childCount,
-            libraryId,
-          });
+    await Promise.all(
+      allowed.map(async (libraryId) => {
+        try {
+          const collections = await plexService.getCollections(libraryId);
+          for (const c of collections) {
+            allCollections.push({
+              ratingKey: c.ratingKey,
+              title: c.title,
+              childCount: c.childCount,
+              libraryId,
+            });
+          }
+        } catch (err) {
+          if (isPlexSignInRequired(err)) throw err;
+          logger.warn('Failed to get collections for library', { libraryId, error: (err as Error).message });
         }
-      } catch (err) {
-        if (isPlexSignInRequired(err)) throw err;
-        logger.warn('Failed to get collections for library', { libraryId, error: (err as Error).message });
-      }
-    })
-  );
+      })
+    );
 
-  allCollections.sort((a, b) => a.title.localeCompare(b.title));
+    allCollections.sort((a, b) => a.title.localeCompare(b.title));
 
-  logger.debug('Fetched collections', { libraryCount: ids.length, collectionCount: allCollections.length });
+    logger.debug('Fetched collections', { libraryCount: ids.length, collectionCount: allCollections.length });
 
-  return NextResponse.json({ collections: allCollections });
-});
+    return reply({ collections: allCollections });
+  }
+);

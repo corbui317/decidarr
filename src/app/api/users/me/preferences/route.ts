@@ -1,34 +1,39 @@
-import { NextResponse } from 'next/server';
-import { preferencesPatchBodySchema, preferencesPutBodySchema } from '@decidarr/api-contracts';
+import {
+  preferencesGetResponseSchema,
+  preferencesPatchBodySchema,
+  preferencesPatchResponseSchema,
+  preferencesPutBodySchema,
+  preferencesPutResponseSchema,
+} from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { DomainError } from '@/lib/request/errors';
 import { User } from '@/lib/models/User';
-import { normalizeSpinHistoryPreferences, updatePreferences } from '@/lib/user-data';
+import { toPreferenceContract, updatePreferences } from '@/lib/user-data';
 
 // Reads the session and database on every request; never prerender at build time.
 export const dynamic = 'force-dynamic';
 
-export const GET = route({ access: 'user' }, async ({ session }) => {
+export const GET = route({ access: 'user', response: preferencesGetResponseSchema }, async ({ session, reply }) => {
   const user = await User.findById(session.userId);
   if (!user) {
     throw new DomainError('UNAUTHENTICATED');
   }
-  const spinHistory = normalizeSpinHistoryPreferences(user.preferences?.spinHistory);
-  return NextResponse.json({
-    preferences: {
-      ...user.preferences,
-      spinHistory,
-    },
-    spinHistory,
-  });
+  const preferences = toPreferenceContract(user);
+  return reply({ preferences, spinHistory: preferences.spinHistory! });
 });
 
-export const PUT = route({ access: 'user', body: preferencesPutBodySchema }, async ({ session, body }) => {
-  const { user } = await updatePreferences(session, body);
-  return NextResponse.json({ success: true, preferences: user.preferences });
-});
+export const PUT = route(
+  { access: 'user', body: preferencesPutBodySchema, response: preferencesPutResponseSchema },
+  async ({ session, body, reply }) => {
+    const { user } = await updatePreferences(session, body);
+    return reply({ success: true, preferences: toPreferenceContract(user) });
+  }
+);
 
-export const PATCH = route({ access: 'user', body: preferencesPatchBodySchema }, async ({ session, body }) => {
-  const { spinHistory } = await updatePreferences(session, { spinHistory: body.spinHistory });
-  return NextResponse.json({ spinHistory });
-});
+export const PATCH = route(
+  { access: 'user', body: preferencesPatchBodySchema, response: preferencesPatchResponseSchema },
+  async ({ session, body, reply }) => {
+    const { spinHistory } = await updatePreferences(session, { spinHistory: body.spinHistory });
+    return reply({ spinHistory });
+  }
+);

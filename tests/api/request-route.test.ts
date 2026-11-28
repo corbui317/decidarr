@@ -1,5 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { NextResponse } from 'next/server';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { clearDatabase } from '../helpers/mongo';
@@ -11,7 +10,9 @@ import {
   clearTestCookies,
 } from '../helpers/auth';
 import { setTestCookie } from '../helpers/cookies';
+import { okResponseSchema } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
+import { errorReply } from '@/lib/request/reply';
 import { createIntegrationClient } from '@/lib/integrations/client';
 import { fakeIntegrations, redirectTo } from '../helpers/fake-integrations';
 import type { Session } from '@/lib/request/session';
@@ -54,9 +55,9 @@ describe('request-handling module', () => {
   describe('Session seam', () => {
     it('gives cookie and bearer requests the same Session for the same user', async () => {
       const seen: Session[] = [];
-      const handler = route({ access: 'user' }, async ({ session }) => {
+      const handler = route({ access: 'user', response: okResponseSchema }, async ({ session, reply }) => {
         seen.push(session);
-        return NextResponse.json({ ok: true });
+        return reply({ ok: true });
       });
 
       await authenticateTestSession({ user: friend });
@@ -103,7 +104,7 @@ describe('request-handling module', () => {
     });
 
     it('answers 403 FORBIDDEN when a Friend calls an Admin route', async () => {
-      const adminOnly = route({ access: 'admin' }, async () => NextResponse.json({ ok: true }));
+      const adminOnly = route({ access: 'admin', response: okResponseSchema }, async ({ reply }) => reply({ ok: true }));
       await authenticateTestSession({ user: friend });
       const res = await adminOnly(request('GET', {}));
       expect(res.status).toBe(403);
@@ -142,7 +143,7 @@ describe('request-handling module', () => {
     });
 
     it('answers 500 INTERNAL without leaking the error message', async () => {
-      const broken = route({ access: 'public' }, async () => {
+      const broken = route({ access: 'public', response: okResponseSchema }, async () => {
         throw new Error('database password is hunter2');
       });
       const res = await broken(request('GET', {}));
@@ -151,14 +152,14 @@ describe('request-handling module', () => {
     });
 
     it('maps integration errors to 503 INTEGRATION_UNAVAILABLE or 502 INTEGRATION_REJECTED without leaking details', async () => {
-      const callsTautulli = route({ access: 'public' }, async () => {
+      const callsTautulli = route({ access: 'public', response: okResponseSchema }, async ({ reply }) => {
         const tautulli = createIntegrationClient({
           integration: 'Tautulli',
           baseUrl: 'http://tautulli.internal.example:8181',
           timeoutMs: 1_000,
         });
         await tautulli.json('/api/v2');
-        return NextResponse.json({ ok: true });
+        return reply({ ok: true });
       });
       const answers = [new Response('down', { status: 503 }), redirectTo('http://elsewhere.example/')];
       fakeIntegrations(() => answers.shift()!);
@@ -177,8 +178,8 @@ describe('request-handling module', () => {
 
     it('answers 429 RATE_LIMITED once a route policy is exhausted', async () => {
       const limited = route(
-        { access: 'public', rateLimit: { scope: 'test', windowMs: 60_000, maxAttempts: 1 } },
-        async () => NextResponse.json({ ok: true })
+        { access: 'public', response: okResponseSchema, rateLimit: { scope: 'test', windowMs: 60_000, maxAttempts: 1 } },
+        async ({ reply }) => reply({ ok: true })
       );
       expect((await limited(request('GET', {}))).status).toBe(200);
       const res = await limited(request('GET', {}));
@@ -195,14 +196,151 @@ describe('request-handling module', () => {
           params: z.object({ id: z.string() }),
           query: z.object({ n: z.coerce.number() }),
           body: z.object({ name: z.string() }),
+          response: z.object({
+            params: z.object({ id: z.string() }),
+            query: z.object({ n: z.number() }),
+            body: z.object({ name: z.string() }),
+          }),
         },
-        async ({ params, query, body }) => NextResponse.json({ params, query, body })
+        async ({ params, query, body, reply }) => reply({ params, query, body })
       );
       const res = await echo(
         new Request('http://localhost/api/x?n=3', { method: 'POST', body: '{"name":"a","extra":1}' }),
         { params: Promise.resolve({ id: 'abc' }) }
       );
       expect(await res.json()).toEqual({ params: { id: 'abc' }, query: { n: 3 }, body: { name: 'a' } });
+    });
+  });
+
+  describe('reply contracts', () => {
+    const entry = z.object({ id: z.string(), title: z.string(), when: z.string() });
+    const listReply = z.object({ items: z.array(entry), owner: z.object({ name: z.string() }) });
+    const leaky = {
+      items: [{ id: '1', title: 'A', when: new Date('2026-01-02T03:04:05.000Z'), plexToken: 'secret-token-1' }],
+      owner: { name: 'friend', passwordHash: 'secret-hash' },
+      internalNote: 'secret-note',
+    };
+
+    function leakyRoute() {
+      // The cast stands in for a handler whose types drifted from its contract.
+      return route({ access: 'public', response: listReply }, async () => leaky as never);
+    }
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+      vi.restoreAllMocks();
+    });
+
+    it('types reply() by the contract, so undeclared or renamed fields fail typecheck', () => {
+      route({ access: 'public', response: listReply }, async ({ reply }) =>
+        reply({
+          items: [{ id: '1', title: 'A', when: 'x' }],
+          // @ts-expect-error -- `nmae` is not a field of the contract's owner
+          owner: { nmae: 'friend' },
+        })
+      );
+      route({ access: 'public', response: listReply }, async ({ reply }) =>
+        reply({
+          // @ts-expect-error -- `secret` is not declared on an entry
+          items: [{ id: '1', title: 'A', when: 'x', secret: 's' }],
+          owner: { name: 'friend' },
+        })
+      );
+    });
+
+    it('carries the declared contract on the handler', () => {
+      expect(leakyRoute().response).toBe(listReply);
+    });
+
+    it('fails a reply with undeclared fields under test, so a test that reaches it fails', async () => {
+      const res = await leakyRoute()(request('GET', {}));
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({ error: 'Internal server error', code: 'INTERNAL' });
+    });
+
+    it('in a running install, strips undeclared fields at every depth, logs, and still sends the reply', async () => {
+      vi.stubEnv('NODE_ENV', 'production');
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const res = await leakyRoute()(request('GET', {}));
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({
+        items: [{ id: '1', title: 'A', when: '2026-01-02T03:04:05.000Z' }],
+        owner: { name: 'friend' },
+      });
+      expect(warn).toHaveBeenCalledTimes(1);
+      const logged = String(warn.mock.calls[0][0]);
+      expect(logged).toContain('Reply does not match its contract');
+      expect(logged).toContain('items[].plexToken');
+      expect(logged).toContain('owner.passwordHash');
+      expect(logged).toContain('internalNote');
+      expect(logged).not.toMatch(/secret-/);
+    });
+
+    it('in a running install, still sends a reply whose declared fields are missing or of the wrong type', async () => {
+      vi.stubEnv('NODE_ENV', 'production');
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const wrong = route(
+        { access: 'public', response: listReply },
+        async () => ({ items: [{ id: 7, title: 'secret-title', extra: 'secret-extra' }] }) as never
+      );
+
+      const res = await wrong(request('GET', {}));
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ items: [{ id: 7, title: 'secret-title' }] });
+      const logged = String(warn.mock.calls[0][0]);
+      expect(logged).toContain('items.0.id (invalid_type)');
+      expect(logged).toContain('items.0.when (invalid_type)');
+      expect(logged).toContain('owner (invalid_type)');
+      expect(logged).not.toMatch(/secret-/);
+    });
+
+    it('checks error replies against the shared error contract, with the same stripping', async () => {
+      vi.stubEnv('NODE_ENV', 'production');
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const failing = route({ access: 'public', response: listReply }, async () =>
+        errorReply(409, { error: 'Taken', code: 'TAKEN', serverUrl: 'http://10.0.0.2:32400' } as never)
+      );
+
+      const res = await failing(request('GET', {}));
+
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({ error: 'Taken', code: 'TAKEN' });
+    });
+
+    it('fails an error reply with undeclared fields under test too', async () => {
+      const failing = route({ access: 'public', response: listReply }, async () =>
+        errorReply(409, { error: 'Taken', serverUrl: 'http://10.0.0.2:32400' } as never)
+      );
+      expect((await failing(request('GET', {}))).status).toBe(500);
+    });
+
+    it('sends a matching reply with the status the handler chose', async () => {
+      const created = route({ access: 'public', response: listReply }, async ({ reply }) =>
+        reply({ items: [{ id: '1', title: 'A', when: new Date(0) }], owner: { name: 'friend' } }, 201)
+      );
+      const res = await created(request('GET', {}));
+      expect(res.status).toBe(201);
+      expect(await res.json()).toEqual({
+        items: [{ id: '1', title: 'A', when: '1970-01-01T00:00:00.000Z' }],
+        owner: { name: 'friend' },
+      });
+    });
+
+    it('passes a raw route its own Response, but never a JSON success body', async () => {
+      const image = route({ access: 'public', response: 'raw' }, async () =>
+        new Response('bytes', { headers: { 'Content-Type': 'image/png' } })
+      );
+      const res = await image(request('GET', {}));
+      expect(res.headers.get('content-type')).toBe('image/png');
+      expect(await res.text()).toBe('bytes');
+
+      const jsonFromRaw = route({ access: 'public', response: 'raw' }, async ({ reply }) =>
+        reply({ secret: 'x' } as never)
+      );
+      expect((await jsonFromRaw(request('GET', {}))).status).toBe(500);
     });
   });
 

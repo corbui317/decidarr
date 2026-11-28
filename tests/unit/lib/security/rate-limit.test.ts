@@ -2,7 +2,6 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import {
   checkRateLimit,
   clearRateLimitStore,
-  enforceRateLimit,
   getClientIp,
   isRateLimited,
   rateLimitStoreSizeForTests,
@@ -114,7 +113,7 @@ describe('checkRateLimit store bound', () => {
   });
 });
 
-describe('isRateLimited / enforceRateLimit', () => {
+describe('isRateLimited', () => {
   afterEach(() => {
     clearRateLimitStore();
     vi.unstubAllEnvs();
@@ -179,17 +178,5 @@ describe('isRateLimited / enforceRateLimit', () => {
     expect(isRateLimited(request(), 'scope-f', policy)).toBe(false);
     expect(isRateLimited(request(), 'scope-f', policy)).toBe(false);
     expect(isRateLimited(request(), 'scope-f', policy)).toBe(true);
-  });
-
-  it('enforceRateLimit returns the shared rate-limited error code', async () => {
-    const policy = { windowMs: 60_000, maxAttempts: 1, globalMaxAttempts: 1_000 };
-    expect(enforceRateLimit(request(), 'scope-d', policy, 'client')).toBeNull();
-
-    const response = enforceRateLimit(request(), 'scope-d', policy, 'client');
-    expect(response?.status).toBe(429);
-    expect(await response?.json()).toEqual({
-      error: 'Too many requests. Please try again later.',
-      code: 'RATE_LIMITED',
-    });
   });
 });

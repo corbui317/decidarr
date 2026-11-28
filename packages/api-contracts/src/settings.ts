@@ -114,6 +114,14 @@ export const settingsSetupResponseSchema = z.object({
 });
 export type SettingsSetupResponse = z.infer<typeof settingsSetupResponseSchema>;
 
+export const fetchMachineIdResponseSchema = z.object({
+  success: z.boolean(),
+  machineId: z.string(),
+  /** The machine id was already stored, so the Plex server was not asked. */
+  cached: z.boolean(),
+});
+export type FetchMachineIdResponse = z.infer<typeof fetchMachineIdResponseSchema>;
+
 export const plexTestResponseSchema = z.object({
   valid: z.boolean(),
   error: z.string().optional(),

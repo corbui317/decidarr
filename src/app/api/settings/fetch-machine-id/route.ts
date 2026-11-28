@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { fetchMachineIdResponseSchema } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { DomainError } from '@/lib/request/errors';
 import { getOrCreateSettings } from '@/lib/models/Settings';
@@ -9,16 +9,12 @@ const logger = createLogger('API:FetchMachineId');
 
 // POST /api/settings/fetch-machine-id
 // Fetches the machineId from the configured Plex server and stores it
-export const POST = route({ access: 'admin' }, async ({ session }) => {
+export const POST = route({ access: 'admin', response: fetchMachineIdResponseSchema }, async ({ session, reply }) => {
   const settings = await getOrCreateSettings();
 
   if (settings.plexMachineId) {
     logger.debug('MachineId already stored', { machineId: settings.plexMachineId });
-    return NextResponse.json({
-      success: true,
-      machineId: settings.plexMachineId,
-      cached: true,
-    });
+    return reply({ success: true, machineId: settings.plexMachineId, cached: true });
   }
 
   logger.info('Fetching machineId from Plex server');
@@ -33,9 +29,5 @@ export const POST = route({ access: 'admin' }, async ({ session }) => {
   await settings.save();
 
   logger.info('MachineId stored successfully', { machineId });
-  return NextResponse.json({
-    success: true,
-    machineId,
-    cached: false,
-  });
+  return reply({ success: true, machineId, cached: false });
 });

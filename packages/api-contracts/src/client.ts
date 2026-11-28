@@ -37,7 +37,13 @@ import type {
   LibraryFilterOptionsResponse,
   LibraryCollectionsResponse,
 } from './library';
-import type { WatchedListResponse, WatchedStatusResponse, WatchedCreateBody } from './watched';
+import type {
+  WatchedListResponse,
+  WatchedStatusResponse,
+  WatchedCreateBody,
+  WatchedCreateResponse,
+} from './watched';
+import type { MessageResponse, SuccessResponse } from './shared';
 import type {
   SettingsResponse,
   SettingsUpdateResponse,
@@ -255,7 +261,7 @@ export function createApiClient(transport: Transport) {
       pollPlexLogin: (state: string) =>
         transport.request<PlexLoginPollResponse>('/auth/plex/poll', { query: { state } }),
       refreshSession: () => transport.request<RefreshSessionResponse>('/auth/refresh', { method: 'POST' }),
-      logout: () => transport.request<{ message: string }>('/auth/logout', { method: 'DELETE' }),
+      logout: () => transport.request<MessageResponse>('/auth/logout', { method: 'DELETE' }),
     },
     mobileAuth: {
       start: (body: MobileAuthStartRequest) =>
@@ -265,7 +271,7 @@ export function createApiClient(transport: Transport) {
       refresh: (body: MobileAuthRefreshRequest) =>
         transport.request<MobileAuthRefreshResponse>('/mobile/auth/refresh', { method: 'POST', body }),
       logout: (body: MobileAuthLogoutRequest = {}) =>
-        transport.request<{ success: boolean }>('/mobile/auth/logout', { method: 'POST', body }),
+        transport.request<SuccessResponse>('/mobile/auth/logout', { method: 'POST', body }),
     },
     sync: {
       bootstrap: () => transport.request<SyncBootstrapResponse>('/v1/sync/bootstrap'),
@@ -340,9 +346,9 @@ export function createApiClient(transport: Transport) {
       getStatus: (plexId: string) =>
         transport.request<WatchedStatusResponse>(`/watched/${encodeURIComponent(plexId)}`),
       markWatched: (plexId: string, body: WatchedCreateBody) =>
-        transport.request<unknown>(`/watched/${plexId}`, { method: 'POST', body }),
+        transport.request<WatchedCreateResponse>(`/watched/${plexId}`, { method: 'POST', body }),
       markUnwatched: (plexId: string) =>
-        transport.request<unknown>(`/watched/${plexId}`, { method: 'DELETE' }),
+        transport.request<MessageResponse>(`/watched/${plexId}`, { method: 'DELETE' }),
     },
     settings: {
       getSettings: () => transport.request<SettingsResponse>('/settings'),

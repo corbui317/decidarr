@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { APP_THEMES, ANIMATION_STYLES, ANIMATION_SPEEDS } from './shared';
 import { preferenceContractSchema, spinHistoryPreferencesContractSchema } from './sync';
+import { savedFiltersPreferenceSchema } from './filters';
 
 export const spinHistoryPreferencesPatchSchema = z.object({
   enabled: z.boolean().optional(),
@@ -8,18 +9,6 @@ export const spinHistoryPreferencesPatchSchema = z.object({
   storeFilterSnapshot: z.boolean().optional(),
 });
 export type SpinHistoryPreferencesPatch = z.infer<typeof spinHistoryPreferencesPatchSchema>;
-
-export const savedFiltersPreferenceSchema = z.object({
-  genres: z.array(z.string()).optional(),
-  studios: z.array(z.string()).optional(),
-  contentRatings: z.array(z.string()).optional(),
-  collections: z.array(z.string()).optional(),
-  yearRange: z.object({ start: z.number().optional(), end: z.number().optional() }).optional(),
-  ratingRange: z.object({ min: z.number().optional(), max: z.number().optional() }).optional(),
-  ratingFilter: z.string().nullable().optional(),
-  unwatchedOnly: z.boolean().optional(),
-});
-export type SavedFiltersPreference = z.infer<typeof savedFiltersPreferenceSchema>;
 
 export const preferencesPatchBodySchema = z
   .object({

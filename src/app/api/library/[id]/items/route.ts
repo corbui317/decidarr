@@ -1,5 +1,8 @@
-import { NextResponse } from 'next/server';
-import { libraryItemsParamsSchema, libraryItemsQuerySchema } from '@decidarr/api-contracts';
+import {
+  libraryItemsParamsSchema,
+  libraryItemsQuerySchema,
+  libraryItemsResponseSchema,
+} from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { DomainError } from '@/lib/request/errors';
 import { getAccessibleLibraryIds } from '@/lib/auth';
@@ -8,8 +11,13 @@ import { itemsFor, syncLibrary } from '@/lib/library/store';
 import { sanitizeLibraryItemForClient } from '@/lib/plex-image';
 
 export const GET = route(
-  { access: 'user', params: libraryItemsParamsSchema, query: libraryItemsQuerySchema },
-  async ({ session, params, query }) => {
+  {
+    access: 'user',
+    params: libraryItemsParamsSchema,
+    query: libraryItemsQuerySchema,
+    response: libraryItemsResponseSchema,
+  },
+  async ({ session, params, query, reply }) => {
     const { id } = params;
     const forceRefresh = query.forceRefresh === 'true';
 
@@ -30,7 +38,7 @@ export const GET = route(
     }
     const view = await itemsFor(access, { libraryIds: [id] });
 
-    return NextResponse.json({
+    return reply({
       items: view.items.map(sanitizeLibraryItemForClient),
       fromCache: !forceRefresh && view.fromCache,
       lastSyncedAt: view.lastSyncedAt,

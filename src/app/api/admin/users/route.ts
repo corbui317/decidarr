@@ -1,5 +1,4 @@
-import { NextResponse } from 'next/server';
-import type { AdminUsersListResponse } from '@decidarr/api-contracts';
+import { adminUsersListResponseSchema } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { getOrCreateSettings } from '@/lib/models/Settings';
 import { User } from '@/lib/models/User';
@@ -20,7 +19,7 @@ async function readAdminAccountToken(userId: unknown): Promise<string | null> {
   }
 }
 
-export const GET = route({ access: 'admin' }, async ({ session }) => {
+export const GET = route({ access: 'admin', response: adminUsersListResponseSchema }, async ({ session, reply }) => {
   const settings = await getOrCreateSettings();
   const accountToken = await readAdminAccountToken(session.userId);
   if (!accountToken) {
@@ -51,6 +50,5 @@ export const GET = route({ access: 'admin' }, async ({ session }) => {
   );
 
   logger.debug('Listed users', { count: users.length });
-  const response: AdminUsersListResponse = { users };
-  return NextResponse.json(response);
+  return reply({ users });
 });

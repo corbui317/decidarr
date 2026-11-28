@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { sanitizedLibraryItemSchema } from './selection';
 
 /** Comma-separated library ids; shared by every library-aggregation query route. */
 export const libraryIdsQuerySchema = z.object({
@@ -28,9 +29,11 @@ export const librarySectionsResponseSchema = z.object({ sections: z.array(plexLi
 export type LibrarySectionsResponse = z.infer<typeof librarySectionsResponseSchema>;
 
 export const libraryItemsResponseSchema = z.object({
-  items: z.array(z.unknown()),
+  // A cached item may predate storing its type; the library it came from says which it is.
+  items: z.array(sanitizedLibraryItemSchema.partial({ type: true })),
   fromCache: z.boolean(),
-  lastSyncedAt: z.union([z.string(), z.date()]),
+  /** When this user's view of the library was last synced; null when it never was. */
+  lastSyncedAt: z.string().nullable(),
 });
 export type LibraryItemsResponse = z.infer<typeof libraryItemsResponseSchema>;
 

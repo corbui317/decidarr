@@ -23,6 +23,19 @@ export type Filters = z.infer<typeof filtersSchema>;
 
 export const DEFAULT_FILTERS: Filters = filtersSchema.parse({});
 
+/** The filters a user saved as a preference: any subset of the selection filters. */
+export const savedFiltersPreferenceSchema = z.object({
+  genres: z.array(z.string()).optional(),
+  studios: z.array(z.string()).optional(),
+  contentRatings: z.array(z.string()).optional(),
+  collections: z.array(z.string()).optional(),
+  yearRange: z.object({ start: z.number().optional(), end: z.number().optional() }).optional(),
+  ratingRange: z.object({ min: z.number().optional(), max: z.number().optional() }).optional(),
+  ratingFilter: z.string().nullable().optional(),
+  unwatchedOnly: z.boolean().optional(),
+});
+export type SavedFiltersPreference = z.infer<typeof savedFiltersPreferenceSchema>;
+
 export const filterBreakdownSchema = z.object({
   filterName: z.string(),
   label: z.string(),
