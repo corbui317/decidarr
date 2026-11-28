@@ -28,12 +28,17 @@ export interface SessionPayload {
   plexUserId: string;
   isAdmin: boolean;
   sessionVersion: number;
+  /** Unix timestamp (ms) of the sign-in that started this session's absolute lifetime. Web only. */
+  signedInAt?: number;
   exp: number; // Unix timestamp when session expires
 }
 
 const SESSION_COOKIE = 'decidarr_session';
 
-/** Verifies the web session cookie. Throws SessionError when it is missing or invalid. */
+/** A web session cannot be refreshed past this long after the sign-in that started it. */
+export const WEB_SESSION_ABSOLUTE_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** Verifies the web session cookie. Throws SessionError when it is missing, invalid, or too old. */
 export async function readCookieSession(): Promise<SessionPayload> {
   const settings = await getOrCreateSettings();
 
@@ -56,6 +61,17 @@ export async function readCookieSession(): Promise<SessionPayload> {
   }
 
   if (!payload.sub || payload.sessionVersion === undefined) {
+    throw new SessionError('UNAUTHORIZED');
+  }
+
+  // A cookie issued before this check existed carries no signedInAt: sign that session out
+  // once rather than guess when it began, the same way a DECIDARR_SECRET-rotation signs
+  // sessions out once rather than trust a key that no longer applies.
+  if (typeof payload.signedInAt !== 'number') {
+    throw new SessionError('UNAUTHORIZED');
+  }
+
+  if (Date.now() - payload.signedInAt > WEB_SESSION_ABSOLUTE_LIFETIME_MS) {
     throw new SessionError('UNAUTHORIZED');
   }
 

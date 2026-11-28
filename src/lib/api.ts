@@ -119,6 +119,24 @@ export function formatPlexLoginError(error: unknown): string {
 
 const transport = createWebTransport({ baseUrl: API_BASE });
 
+type AuthErrorListener = () => void;
+const authErrorListeners = new Set<AuthErrorListener>();
+
+/**
+ * Notified whenever any authenticated call gets a 401 that means the session itself
+ * is no longer valid - not only /auth/me or the scheduled refresh, and not a
+ * PLEX_SIGN_IN_REQUIRED 401, which means the session is still valid but this user's
+ * Plex access needs a fresh sign-in; components handle that locally (e.g.
+ * LibrarySelector's own "Sign in again" button) while staying signed in to Decidarr.
+ * AuthContext subscribes so a session revoked mid-use (logout elsewhere, un-approval,
+ * the 30-day absolute lifetime) clears the signed-in state no matter which call
+ * surfaced it.
+ */
+export function onAuthError(listener: AuthErrorListener): () => void {
+  authErrorListeners.add(listener);
+  return () => authErrorListeners.delete(listener);
+}
+
 /** Converts a 401 into a typed AuthError so components can tell "unauthenticated" apart from other failures. */
 const authConvertingTransport: Transport = {
   async request(path, options) {
@@ -127,6 +145,9 @@ const authConvertingTransport: Transport = {
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         console.warn(`[API] 401 Unauthorized on ${path}:`, error.message);
+        if (error.code !== 'PLEX_SIGN_IN_REQUIRED') {
+          authErrorListeners.forEach((listener) => listener());
+        }
         throw new AuthError(error.message, 401);
       }
       throw error;

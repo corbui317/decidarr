@@ -9,7 +9,7 @@ import React, {
 import NetInfo from '@react-native-community/netinfo';
 import * as WebBrowser from 'expo-web-browser';
 import type { SyncClientState } from '@decidarr/api-contracts';
-import { getValidAccessToken as getValidMobileAccessToken, mobileAuthApi } from '@/api/client';
+import { getValidAccessToken as getValidMobileAccessToken, mobileAuthApi, onReauthRequired } from '@/api/client';
 import {
   clearSecureSession,
   getAccessToken,
@@ -48,6 +48,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsOnline(info.isConnected ?? false);
     });
     return unsubscribe;
+  }, []);
+
+  // A revoked refresh token can be discovered by any screen's call - coreApi, syncApi,
+  // not only an explicit getValidAccessToken - so this lands every one of them in the
+  // same signed-out state, not only the calls that already went through this provider.
+  useEffect(() => {
+    return onReauthRequired(() => setState('reauth_required'));
   }, []);
 
   useEffect(() => {
