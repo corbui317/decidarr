@@ -18,7 +18,14 @@
 - Changing Plex sync frequency UX.
 - Real-time sync / webhooks from Plex.
 - Elasticsearch or external search engine.
-- Per-user library cache in this spec (remains `plexMachineId` scoped unless product changes).
+- Per-user item metadata: items and enrichment stay `plexMachineId` scoped.
+  Per-user visibility already exists (v2, issue #28): the library item store in `src/lib/library/store.ts` keeps each user's visible item keys in `LibraryVisibility` and intersects every read with them.
+
+## Seam
+
+All library reads and writes go through the library item store (`itemsFor`, `facets`, `syncLibrary`), which reaches storage only through the `LibraryStorage` interface in `src/lib/library/storage.ts`.
+The embedded adapter (`src/lib/library/embedded-storage.ts`) is the only implementation.
+This spec adds a normalized adapter behind that interface; the routes listed below no longer read `LibraryCache` themselves and need no change.
 
 ## Implementation Snapshot
 

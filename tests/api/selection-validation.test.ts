@@ -7,9 +7,9 @@ import {
   createJsonRequest,
 } from '../helpers/auth';
 import { SAMPLE_LIBRARY_ITEMS } from '../fixtures/library-items';
-import { LibraryCache } from '@/lib/models/LibraryCache';
 import {
   fakeIntegrations,
+  plexLibraryItems,
   plexMetadata,
   plexSections,
   routes,
@@ -26,6 +26,7 @@ function fakePlexServer() {
   return fakeIntegrations(
     routes({
       [`${TEST_PLEX_SERVER}/library/sections`]: () => plexSections([{ id: 'lib-1', title: 'Movies', type: 'movie' }]),
+      [`${TEST_PLEX_SERVER}/library/sections/lib-1/all`]: () => plexLibraryItems(SAMPLE_LIBRARY_ITEMS),
       ...Object.fromEntries(
         SAMPLE_LIBRARY_ITEMS.map(({ plexId, title, year }) => [
           `${TEST_PLEX_SERVER}/library/metadata/${plexId}`,
@@ -39,18 +40,6 @@ function fakePlexServer() {
         ]),
     })
   );
-}
-
-async function seedLibraryCache() {
-  await LibraryCache.create({
-    plexMachineId: 'machine-1',
-    libraryId: 'lib-1',
-    libraryName: 'Movies',
-    mediaType: 'movie',
-    items: SAMPLE_LIBRARY_ITEMS,
-    lastSyncedAt: new Date(),
-    expiresAt: new Date(Date.now() + 86400000),
-  });
 }
 
 describe('Selection API validation', () => {
@@ -123,7 +112,6 @@ describe('Selection API validation', () => {
     });
 
     it('returns matching count for valid payload after validation', async () => {
-      await seedLibraryCache();
       const req = createJsonRequest('http://localhost/api/selection/pool-count', 'POST', {
         libraryIds: ['lib-1'],
         mediaType: 'movie',
@@ -163,7 +151,6 @@ describe('Selection API validation', () => {
     });
 
     it('returns selection for valid payload after validation', async () => {
-      await seedLibraryCache();
       const req = createJsonRequest('http://localhost/api/selection/random', 'POST', {
         libraryIds: ['lib-1'],
         mediaType: 'movie',

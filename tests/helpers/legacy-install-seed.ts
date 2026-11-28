@@ -22,6 +22,11 @@ export const LEGACY_PLAINTEXT = {
 export const LEGACY_ADMIN_PLEX_USER_ID = FAKE_PLEX_ACCOUNT.id;
 export const LEGACY_MACHINE_ID = 'legacy-machine-1';
 export const LEGACY_LIBRARY_ID = '1';
+/** The legacy install's cached movies, which its Plex server (the E2E fake) still lists. */
+export const LEGACY_LIBRARY_ITEMS = [
+  { plexId: 'movie-1', title: 'Legacy Movie One', year: 2020, thumbPath: '/library/metadata/1/thumb', type: 'movie' },
+  { plexId: 'movie-2', title: 'Legacy Movie Two', year: 2021, thumbPath: '/library/metadata/2/thumb', type: 'movie' },
+];
 
 /** The settings document as stored, for tests that read it without the model. */
 export interface StoredSettings {
@@ -109,10 +114,7 @@ async function seedInstall(
     libraryId: LEGACY_LIBRARY_ID,
     libraryName: 'Movies',
     mediaType: 'movie',
-    items: [
-      { plexId: 'movie-1', title: 'Legacy Movie One', year: 2020, thumbPath: '/library/metadata/1/thumb', type: 'movie' },
-      { plexId: 'movie-2', title: 'Legacy Movie Two', year: 2021, thumbPath: '/library/metadata/2/thumb', type: 'movie' },
-    ],
+    items: LEGACY_LIBRARY_ITEMS,
     lastSyncedAt: now,
     expiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
     createdAt: now,

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { route } from '@/lib/request/route';
 import { getAccessibleLibraryIds, getOverseerrConfig } from '@/lib/auth';
 import { getOrCreateSettings } from '@/lib/models/Settings';
-import { LibraryCache } from '@/lib/models/LibraryCache';
+import { itemsFor } from '@/lib/library/store';
 import { WatchedItem } from '@/lib/models/WatchedItem';
 import { PlexService } from '@/lib/services/plex';
 import { createLogger } from '@/lib/logger';
@@ -25,18 +25,15 @@ export const POST = route({ access: 'user', body: selectionRequestBodySchema }, 
   }
 
   const settings = await getOrCreateSettings();
-  const allowedLibraryIds = await getAccessibleLibraryIds(
-    {
-      userId: session.userId.toString(),
-      plexToken: session.plex.token,
-      plexServerUrl: session.plex.serverUrl,
-      plexMachineId: settings.plexMachineId || null,
-    },
-    libraryIds
-  );
+  const access = {
+    userId: session.userId.toString(),
+    plexToken: session.plex.token,
+    plexServerUrl: session.plex.serverUrl,
+    plexMachineId: settings.plexMachineId || null,
+  };
+  const allowedLibraryIds = await getAccessibleLibraryIds(access, libraryIds);
 
-  const machineId = settings.plexMachineId;
-  if (!machineId) {
+  if (!settings.plexMachineId) {
     return NextResponse.json({
       totalItems: 0,
       matchingItems: 0,
@@ -48,13 +45,7 @@ export const POST = route({ access: 'user', body: selectionRequestBodySchema }, 
 
   const overseerrConfig = await getOverseerrConfig();
 
-  const caches = await LibraryCache.find({
-    plexMachineId: machineId,
-    libraryId: { $in: allowedLibraryIds },
-    mediaType,
-  }).lean();
-
-  const allItems = caches.flatMap((cache) => cache.items);
+  const { items: allItems } = await itemsFor(access, { libraryIds: allowedLibraryIds, mediaType });
 
   if (allItems.length === 0) {
     return NextResponse.json({

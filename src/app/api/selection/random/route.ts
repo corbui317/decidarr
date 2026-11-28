@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { route } from '@/lib/request/route';
 import { getAccessibleLibraryIds } from '@/lib/auth';
 import { getOrCreateSettings } from '@/lib/models/Settings';
-import { LibraryCache } from '@/lib/models/LibraryCache';
+import { itemsFor } from '@/lib/library/store';
 import { WatchedItem } from '@/lib/models/WatchedItem';
 import { PlexService } from '@/lib/services/plex';
 import { TMDbService } from '@/lib/services/tmdb';
@@ -25,15 +25,13 @@ export const POST = route({ access: 'user', body: selectionRequestBodySchema }, 
   }
 
   const settings = await getOrCreateSettings();
-  const allowedLibraryIds = await getAccessibleLibraryIds(
-    {
-      userId: session.userId.toString(),
-      plexToken: session.plex.token,
-      plexServerUrl: session.plex.serverUrl,
-      plexMachineId: settings.plexMachineId || null,
-    },
-    libraryIds
-  );
+  const access = {
+    userId: session.userId.toString(),
+    plexToken: session.plex.token,
+    plexServerUrl: session.plex.serverUrl,
+    plexMachineId: settings.plexMachineId || null,
+  };
+  const allowedLibraryIds = await getAccessibleLibraryIds(access, libraryIds);
   if (allowedLibraryIds.length === 0) {
     return NextResponse.json(
       { error: 'No accessible libraries selected', code: 'NO_ACCESSIBLE_LIBRARIES' },
@@ -41,21 +39,14 @@ export const POST = route({ access: 'user', body: selectionRequestBodySchema }, 
     );
   }
 
-  const machineId = settings.plexMachineId;
-  if (!machineId) {
+  if (!settings.plexMachineId) {
     return NextResponse.json(
       { error: 'Plex machine ID not configured', code: 'MACHINE_ID_MISSING' },
       { status: 400 }
     );
   }
 
-  const caches = await LibraryCache.find({
-    plexMachineId: machineId,
-    libraryId: { $in: allowedLibraryIds },
-    mediaType,
-  }).lean();
-
-  let allItems = caches.flatMap((cache) => cache.items);
+  let { items: allItems } = await itemsFor(access, { libraryIds: allowedLibraryIds, mediaType });
 
   if (allItems.length === 0) {
     const errorResponse: SelectionError = {
@@ -72,7 +63,7 @@ export const POST = route({ access: 'user', body: selectionRequestBodySchema }, 
   if (filters.collections && filters.collections.length > 0) {
     collectionItemIds = await fetchCollectionItemIds(filters.collections, plexService, logger);
     logger.debug('Filtered by collections', {
-      before: caches.flatMap((c) => c.items).length,
+      before: allItems.length,
       collectionItemCount: collectionItemIds.size,
     });
   }
