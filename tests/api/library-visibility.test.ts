@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { clearDatabase } from '../helpers/mongo';
 import {
@@ -17,6 +17,7 @@ import {
   TEST_PLEX_SERVER,
 } from '../helpers/fake-integrations';
 import { LibraryCache, type ILibraryItem } from '@/lib/models/LibraryCache';
+import { LibraryVisibility } from '@/lib/models/LibraryVisibility';
 import type { IUser } from '@/lib/models/User';
 
 import { GET as itemsGet } from '@/app/api/library/[id]/items/route';
@@ -38,8 +39,10 @@ const RESTRICTED_TITLES = ['The Room', 'Parasite', 'No Rating Movie'];
  * The Plex server, which answers each user with what their own server token lets them see,
  * as Plex does for a Friend with label or content-rating restrictions.
  */
-function fakeRestrictedPlex(views: Record<string, ILibraryItem[]>) {
+function fakeRestrictedPlex(views: Record<string, ILibraryItem[]>, plex = { listingDown: false }) {
   return fakeIntegrations(({ url, headers }) => {
+    // A large library's listing can time out while Plex still answers its section list.
+    if (plex.listingDown && url.pathname.endsWith('/all')) throw new TypeError('fetch failed');
     const view = views[headers.get('X-Plex-Token') ?? ''];
     if (url.origin !== TEST_PLEX_SERVER || !view) return new Response('unauthorized', { status: 401 });
     if (url.pathname === '/library/sections') return plexSections([{ id: 'lib-1', title: 'Movies', type: 'movie' }]);
@@ -61,8 +64,12 @@ async function loadItems(options: { forceRefresh?: boolean } = {}) {
   return (await res.json()) as { items: ILibraryItem[]; fromCache: boolean };
 }
 
+function get(handler: (req: NextRequest) => Promise<Response>, path: string) {
+  return handler(new NextRequest(`http://localhost${path}?libraryIds=lib-1`));
+}
+
 async function getJson(handler: (req: NextRequest) => Promise<Response>, path: string) {
-  const res = await handler(new NextRequest(`http://localhost${path}?libraryIds=lib-1`));
+  const res = await get(handler, path);
   expect(res.status).toBe(200);
   return res.json();
 }
@@ -198,5 +205,134 @@ describe('Library visibility follows each user\'s own Plex view', () => {
 
     await signInAs(admin);
     expect(await poolCount()).toMatchObject({ totalItems: ADMIN_VIEW.length });
+  });
+});
+
+/** How stale a Friend's visible set may be: a restriction the Admin tightens in Plex applies within this. */
+const VISIBILITY_BOUND_MS = 60_000;
+
+describe('A restriction the Admin tightens in Plex reaches the Friend within the bound', () => {
+  let admin: IUser;
+  let friend: IUser;
+  let views: Record<string, ILibraryItem[]>;
+  let plex: { listingDown: boolean };
+  let sent: { url: URL; headers: Headers }[];
+
+  /** Only Old Classic (PG) stays shared with the Friend; Inception and Hidden Gem Film become restricted. */
+  const TIGHTENED_VIEW = FRIEND_VIEW.filter((item) => item.contentRating === 'PG');
+  const NEWLY_RESTRICTED = ['Inception', 'Hidden Gem Film'];
+
+  const signInAs = (user: IUser) => authenticateTestSession({ user });
+  const advance = (ms: number) => vi.setSystemTime(Date.now() + ms);
+  const listingsFor = (token: string) =>
+    sent.filter(({ url, headers }) => url.pathname === '/library/sections/lib-1/all' && headers.get('X-Plex-Token') === token)
+      .length;
+
+  beforeEach(async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    await clearDatabase();
+    clearTestCookies();
+    await seedConfiguredSettings();
+    admin = await seedTestUser({ plexUserId: 'admin-1', plexUsername: 'admin', isAdmin: true });
+    friend = await seedTestUser({
+      plexUserId: 'friend-1',
+      plexUsername: 'friend',
+      isAdmin: false,
+      serverToken: FRIEND_SERVER_TOKEN,
+    });
+    views = { [TEST_SERVER_TOKEN]: ADMIN_VIEW, [FRIEND_SERVER_TOKEN]: FRIEND_VIEW };
+    plex = { listingDown: false };
+    ({ sent } = fakeRestrictedPlex(views, plex));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('serves no newly restricted title from items, facets, filter options, pool count or spin once the bound has passed', async () => {
+    await signInAs(friend);
+    expect(titles((await loadItems()).items)).toEqual(titles(FRIEND_VIEW));
+
+    views[FRIEND_SERVER_TOKEN] = TIGHTENED_VIEW;
+    advance(VISIBILITY_BOUND_MS + 1);
+
+    expect(titles((await loadItems()).items)).toEqual(titles(TIGHTENED_VIEW));
+    expect((await getJson(genresGet, '/api/library/genres')).genres).toEqual(['Adventure']);
+    expect(await getJson(yearsGet, '/api/library/years')).toEqual({ min: 1985, max: 1985 });
+    const options = await getJson(filterOptionsGet, '/api/library/filter-options');
+    expect(options.contentRatings).toEqual(['PG']);
+    expect(options.studios).toEqual(['Universal Pictures']);
+    expect(await poolCount()).toMatchObject({ totalItems: 1, matchingItems: 1 });
+    for (let i = 0; i < 5; i++) {
+      const result = await spin();
+      expect(NEWLY_RESTRICTED).not.toContain(result.selection.title);
+      expect(result.stats.totalMatches).toBe(1);
+    }
+  });
+
+  it('costs no Plex listing within the bound, and one shared listing per user and library past it', async () => {
+    await signInAs(friend);
+    await loadItems();
+    const afterFirstSync = listingsFor(FRIEND_SERVER_TOKEN);
+
+    advance(VISIBILITY_BOUND_MS - 1_000);
+    await poolCount();
+    await getJson(filterOptionsGet, '/api/library/filter-options');
+    expect(listingsFor(FRIEND_SERVER_TOKEN)).toBe(afterFirstSync);
+
+    advance(2_000);
+    await Promise.all([poolCount(), poolCount(), loadItems(), getJson(genresGet, '/api/library/genres')]);
+    expect(listingsFor(FRIEND_SERVER_TOKEN)).toBe(afterFirstSync + 1);
+  });
+
+  it("a Friend's refresh past the bound changes only the Friend's visible set and the shared metadata", async () => {
+    await signInAs(admin);
+    await loadItems();
+    await signInAs(friend);
+    await loadItems();
+    const adminSet = await LibraryVisibility.findOne({ userId: admin._id.toString() }).lean();
+
+    views[FRIEND_SERVER_TOKEN] = TIGHTENED_VIEW;
+    advance(VISIBILITY_BOUND_MS + 1);
+    expect(await poolCount()).toMatchObject({ totalItems: 1 });
+
+    expect(await LibraryVisibility.findOne({ userId: admin._id.toString() }).lean()).toEqual(adminSet);
+    const shared = await LibraryCache.findOne({ libraryId: 'lib-1' }).lean();
+    expect(titles(shared!.items)).toEqual(titles(ADMIN_VIEW));
+
+    await signInAs(admin);
+    expect(await poolCount()).toMatchObject({ totalItems: ADMIN_VIEW.length });
+  });
+
+  it("serves no title Plex has not confirmed for the Friend once the bound has passed while Plex is down", async () => {
+    await signInAs(friend);
+    await loadItems();
+
+    plex.listingDown = true;
+    advance(VISIBILITY_BOUND_MS + 1);
+
+    const responses = await Promise.all([
+      itemsGet(new NextRequest('http://localhost/api/library/lib-1/items') as never, { params: Promise.resolve({ id: 'lib-1' }) }),
+      get(genresGet, '/api/library/genres'),
+      get(filterOptionsGet, '/api/library/filter-options'),
+      poolCountPost(createJsonRequest('http://localhost/api/selection/pool-count', 'POST', selection) as never),
+      randomPost(createJsonRequest('http://localhost/api/selection/random', 'POST', selection) as never),
+    ]);
+    for (const res of responses) {
+      expect(res.status).toBe(503);
+      expect((await res.json()).code).toBe('INTEGRATION_UNAVAILABLE');
+    }
+  });
+
+  it('still asks the Friend to sign in again when Plex refuses their token past the bound', async () => {
+    await signInAs(friend);
+    await loadItems();
+
+    delete views[FRIEND_SERVER_TOKEN];
+    advance(VISIBILITY_BOUND_MS + 1);
+
+    const res = await poolCountPost(createJsonRequest('http://localhost/api/selection/pool-count', 'POST', selection) as never);
+    expect(res.status).toBe(401);
+    expect((await res.json()).code).toBe('PLEX_SIGN_IN_REQUIRED');
   });
 });
