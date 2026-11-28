@@ -5,7 +5,9 @@
  * repeated. Visibility is per user: each user's visible item keys are fetched with that user's
  * own Plex server token and stored separately, and every read intersects the two, so a Friend
  * with Plex label or content-rating restrictions never receives a title Plex hides from them,
- * and one user's sync never changes another user's pool.
+ * and one user's sync never changes another user's pool. A visible set is re-confirmed with
+ * Plex once it is older than VISIBILITY_BOUND_MS, so a restriction the Admin adds or tightens
+ * applies within that bound rather than at the next library sync.
  */
 import type { MediaType } from '@decidarr/api-contracts';
 import type { LibraryAccess } from '@/lib/auth';
@@ -37,7 +39,15 @@ export interface LibraryView {
   fromCache: boolean;
 }
 
+/**
+ * How stale a user's visible set may be: past this, a read first re-fetches the user's view
+ * from Plex (one listing request per user and library), and fails rather than serving titles
+ * Plex has not confirmed. The same bound as the accessible-sections cache.
+ */
+export const VISIBILITY_BOUND_MS = 60_000;
+
 const isExpired = (record: { expiresAt: Date }) => record.expiresAt.getTime() <= Date.now();
+const isUnconfirmed = (visible: VisibleSet) => Date.now() - visible.lastSyncedAt.getTime() > VISIBILITY_BOUND_MS;
 
 /**
  * Whether this user's view of a library must be fetched before it can be read: never synced,
@@ -74,8 +84,12 @@ export async function itemsFor(
   const wanted = libraryIds.filter((id) => !mediaType || (libraries.get(id)?.mediaType ?? mediaType) === mediaType);
 
   const stale = wanted.filter((id) => needsSync(libraries.get(id), visible.get(id)));
-  if (stale.length > 0) {
-    await Promise.all(stale.map((id) => syncLibrary(access, id)));
+  const unconfirmed = wanted.filter((id) => !stale.includes(id) && isUnconfirmed(visible.get(id)!));
+  if (stale.length > 0 || unconfirmed.length > 0) {
+    await Promise.all([
+      ...stale.map((id) => syncLibrary(access, id)),
+      ...unconfirmed.map((id) => confirmVisibility(access, libraries.get(id)!, visible.get(id)!)),
+    ]);
     ({ libraries, visible } = await read(access, libraryIds));
   }
 
@@ -157,6 +171,17 @@ export async function facets(access: LibraryAccess, libraryIds: string[]): Promi
 
 const inFlight = new Map<string, Promise<void>>();
 
+/** Runs `work` once for concurrent callers of the same kind of refresh of one user's library. */
+function once(kind: string, access: LibraryAccess, libraryId: string, work: () => Promise<void>): Promise<void> {
+  const key = `${kind}:${access.userId}:${serverOf(access)}:${libraryId}`;
+  let running = inFlight.get(key);
+  if (!running) {
+    running = work().finally(() => inFlight.delete(key));
+    inFlight.set(key, running);
+  }
+  return running;
+}
+
 /**
  * Fetches this user's view of a library with their own server token, stores it as their
  * visible set, and merges its items into the shared metadata. It never changes another
@@ -164,13 +189,33 @@ const inFlight = new Map<string, Promise<void>>();
  * syncs of the same user's library share one fetch.
  */
 export function syncLibrary(access: LibraryAccess, libraryId: string): Promise<void> {
-  const key = `${access.userId}:${serverOf(access)}:${libraryId}`;
-  let running = inFlight.get(key);
-  if (!running) {
-    running = fetchAndStore(access, libraryId).finally(() => inFlight.delete(key));
-    inFlight.set(key, running);
-  }
-  return running;
+  return once('sync', access, libraryId, () => fetchAndStore(access, libraryId));
+}
+
+/**
+ * Re-fetches this user's view of a library and replaces only their visible set, keeping its
+ * expiry so the library sync runs on its usual schedule. A view naming a title the shared
+ * metadata lacks (newly added in Plex) is stored by a full sync instead. Concurrent
+ * confirmations of the same user's library share one fetch.
+ */
+function confirmVisibility(access: LibraryAccess, library: StoredLibrary, visible: VisibleSet): Promise<void> {
+  return once('confirm', access, library.libraryId, async () => {
+    // A caller that read the set just before another confirmation finished finds it fresh here.
+    const [current] = await storage.readVisibility(serverOf(access), access.userId, [library.libraryId]);
+    if (current && !isUnconfirmed(current)) return;
+    const plex = new PlexService(access.plexToken, access.plexServerUrl, access.plexMachineId);
+    const plexIds = (await plex.getLibraryItems(library.libraryId)).map((item) => item.plexId);
+    const shared = new Set(library.items.map((item) => item.plexId));
+    if (plexIds.some((plexId) => !shared.has(plexId))) {
+      return syncLibrary(access, library.libraryId);
+    }
+    await storage.writeVisibility(serverOf(access), access.userId, {
+      libraryId: library.libraryId,
+      plexIds,
+      lastSyncedAt: new Date(),
+      expiresAt: visible.expiresAt,
+    });
+  });
 }
 
 async function fetchAndStore(access: LibraryAccess, libraryId: string): Promise<void> {

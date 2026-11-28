@@ -39,10 +39,11 @@ const RESTRICTED_TITLES = ['The Room', 'Parasite', 'No Rating Movie'];
  * The Plex server, which answers each user with what their own server token lets them see,
  * as Plex does for a Friend with label or content-rating restrictions.
  */
-function fakeRestrictedPlex(views: Record<string, ILibraryItem[]>, plex = { listingDown: false }) {
+function fakeRestrictedPlex(views: Record<string, ILibraryItem[]>, plex: { listing: 'up' | 'unreachable' | 'failing' } = { listing: 'up' }) {
   return fakeIntegrations(({ url, headers }) => {
-    // A large library's listing can time out while Plex still answers its section list.
-    if (plex.listingDown && url.pathname.endsWith('/all')) throw new TypeError('fetch failed');
+    // A large library's listing can time out or fail while Plex still answers its section list.
+    if (url.pathname.endsWith('/all') && plex.listing === 'unreachable') throw new TypeError('fetch failed');
+    if (url.pathname.endsWith('/all') && plex.listing === 'failing') return new Response('busy', { status: 503 });
     const view = views[headers.get('X-Plex-Token') ?? ''];
     if (url.origin !== TEST_PLEX_SERVER || !view) return new Response('unauthorized', { status: 401 });
     if (url.pathname === '/library/sections') return plexSections([{ id: 'lib-1', title: 'Movies', type: 'movie' }]);
@@ -215,7 +216,7 @@ describe('A restriction the Admin tightens in Plex reaches the Friend within the
   let admin: IUser;
   let friend: IUser;
   let views: Record<string, ILibraryItem[]>;
-  let plex: { listingDown: boolean };
+  let plex: { listing: 'up' | 'unreachable' | 'failing' };
   let sent: { url: URL; headers: Headers }[];
 
   /** Only Old Classic (PG) stays shared with the Friend; Inception and Hidden Gem Film become restricted. */
@@ -241,7 +242,7 @@ describe('A restriction the Admin tightens in Plex reaches the Friend within the
       serverToken: FRIEND_SERVER_TOKEN,
     });
     views = { [TEST_SERVER_TOKEN]: ADMIN_VIEW, [FRIEND_SERVER_TOKEN]: FRIEND_VIEW };
-    plex = { listingDown: false };
+    plex = { listing: 'up' };
     ({ sent } = fakeRestrictedPlex(views, plex));
   });
 
@@ -304,11 +305,11 @@ describe('A restriction the Admin tightens in Plex reaches the Friend within the
     expect(await poolCount()).toMatchObject({ totalItems: ADMIN_VIEW.length });
   });
 
-  it("serves no title Plex has not confirmed for the Friend once the bound has passed while Plex is down", async () => {
+  it.each(['unreachable', 'failing'] as const)("serves no title Plex has not confirmed for the Friend once the bound has passed while Plex is %s", async (listing) => {
     await signInAs(friend);
     await loadItems();
 
-    plex.listingDown = true;
+    plex.listing = listing;
     advance(VISIBILITY_BOUND_MS + 1);
 
     const responses = await Promise.all([

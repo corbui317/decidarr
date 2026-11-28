@@ -180,7 +180,7 @@ export class PlexService {
 
     if (!response.ok) {
       logger.warn('Failed to get library sections', { status: response.status });
-      throw new Error(`Failed to get library sections (HTTP ${response.status})`);
+      throw new IntegrationError('Plex', 'http_status', `HTTP ${response.status}`, response.status);
     }
 
     const data = await response.json();
@@ -206,7 +206,7 @@ export class PlexService {
 
     if (!response.ok) {
       logger.warn('Failed to get library items', { sectionId, status: response.status });
-      throw new Error(`Failed to get library items (HTTP ${response.status})`);
+      throw new IntegrationError('Plex', 'http_status', `HTTP ${response.status}`, response.status);
     }
 
     const data = await response.json();
