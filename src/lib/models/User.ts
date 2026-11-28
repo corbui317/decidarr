@@ -56,7 +56,6 @@ export interface IUser extends Document {
   isAdmin: boolean;
   isApproved: boolean;
   sessionVersion: number;
-  tautulliUserId?: number;
   lastLoginAt?: Date;
   tokenValidatedAt?: Date;
   preferences: IUserPreferences;
@@ -86,7 +85,6 @@ const userSchema = new mongoose.Schema<IUser>(
     isAdmin: { type: Boolean, default: false },
     isApproved: { type: Boolean, default: false },
     sessionVersion: { type: Number, default: 0 },
-    tautulliUserId: { type: Number },
     lastLoginAt: { type: Date },
     tokenValidatedAt: { type: Date },
     preferences: {
