@@ -36,7 +36,7 @@ async function seedLibraryCache() {
   });
 }
 
-const collectionFilter = { libraryIds: ['lib-1'], mediaType: 'movie', filters: { collections: ['col-1'] } };
+const collectionFilter = { libraryIds: ['lib-1'], mediaType: 'movie', filters: { collections: ['101'] } };
 
 async function expectSignInAgain(res: Response) {
   expect(res.status).toBe(401);

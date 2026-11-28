@@ -37,7 +37,7 @@ function fakePlexServer() {
           () => plexMetadata([{ ratingKey: plexId, title, year, type: 'movie' }]),
         ])
       ),
-      [`${TEST_PLEX_SERVER}/library/collections/col-1/children`]: () =>
+      [`${TEST_PLEX_SERVER}/library/collections/101/children`]: () =>
         plexMetadata([
           { ratingKey: '1', title: 'Inception' },
           { ratingKey: '2', title: 'The Matrix' },
@@ -199,7 +199,7 @@ describe('Selection API routes', () => {
       const poolReq = createJsonRequest('http://localhost/api/selection/pool-count', 'POST', {
         libraryIds: ['lib-1'],
         mediaType: 'movie',
-        filters: { collections: ['col-1'] },
+        filters: { collections: ['101'] },
       });
       const poolRes = await poolCountPost(poolReq as never);
       const poolBody = await poolRes.json();
@@ -207,13 +207,13 @@ describe('Selection API routes', () => {
       const randomReq = createJsonRequest('http://localhost/api/selection/random', 'POST', {
         libraryIds: ['lib-1'],
         mediaType: 'movie',
-        filters: { collections: ['col-1'] },
+        filters: { collections: ['101'] },
       });
       const randomRes = await randomPost(randomReq as never);
       const randomBody = await randomRes.json();
 
       expect(poolBody.matchingItems).toBe(randomBody.stats.totalMatches);
-      expect(sent.filter((r) => r.url.pathname === '/library/collections/col-1/children')).toHaveLength(2);
+      expect(sent.filter((r) => r.url.pathname === '/library/collections/101/children')).toHaveLength(2);
     });
   });
 });

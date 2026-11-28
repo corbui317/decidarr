@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { mediaTypeSchema, tvSelectionModeSchema } from './shared';
-import { filtersSchema, type Filters } from './filters';
+import { filtersSchema, plexCollectionKeySchema, type Filters } from './filters';
 
 export const tmdbMatchSchema = z.object({
   voteAverage: z.number().optional(),
@@ -72,7 +72,7 @@ export const selectionRequestFiltersSchema = z
     genres: z.array(z.string()).optional(),
     contentRatings: z.array(z.string()).optional(),
     studios: z.array(z.string()).optional(),
-    collections: z.array(z.string()).optional(),
+    collections: z.array(plexCollectionKeySchema).optional(),
     unwatchedOnly: z.boolean().optional(),
     ratingFilter: z.string().nullable().optional(),
     yearRange: z
