@@ -1,11 +1,10 @@
-import mongoose from 'mongoose';
 import { tautulliSyncResponseSchema } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { DomainError } from '@/lib/request/errors';
 import { getOrCreateSettings } from '@/lib/models/Settings';
 import { User } from '@/lib/models/User';
-import { WatchedItem } from '@/lib/models/WatchedItem';
 import { TautulliService } from '@/lib/services/tautulli';
+import { importWatchedFromTautulli } from '@/lib/user-data';
 import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('API:TautulliSync');
@@ -41,23 +40,15 @@ export const POST = route({ access: 'user', response: tautulliSyncResponseSchema
     throw new DomainError('INTEGRATION_UNAVAILABLE');
   }
 
-  const plexUsername = user.plexUsername || settings.plexUsername;
-  let tautulliUserId: number | undefined = user.tautulliUserId;
-  if (!tautulliUserId && plexUsername) {
-    const foundId = await service.getUserIdByPlexUsername(plexUsername);
-    if (foundId !== null) {
-      tautulliUserId = foundId;
-      user.tautulliUserId = foundId;
-      await user.save();
-      logger.info('Found Plex user in Tautulli', { plexUsername, userId: foundId });
-    }
-  }
+  const plexAccountId = Number(user.plexUserId);
+  const tautulliUserId = Number.isInteger(plexAccountId)
+    ? await service.getUserIdByPlexId(plexAccountId)
+    : null;
 
-  if (!tautulliUserId) {
+  if (tautulliUserId === null) {
     throw new DomainError('NOT_FOUND', 'Could not find your Plex user in Tautulli history');
   }
 
-  const decidarrUserId = user._id;
   const movieHistory = await service.getWatchHistoryPaged(tautulliUserId, 'movie');
   const episodeHistory = await service.getWatchHistoryPaged(tautulliUserId, 'episode');
 
@@ -92,61 +83,31 @@ export const POST = route({ access: 'user', response: tautulliSyncResponseSchema
     }
   }
 
+  const actor = { userId: user._id, isAdmin: user.isAdmin };
   let synced = 0;
-  const bulkOps: mongoose.AnyBulkWriteOperation<typeof WatchedItem>[] = [];
 
   for (const [ratingKey, data] of Array.from(moviesWatched.entries())) {
-    bulkOps.push({
-      updateOne: {
-        filter: { userId: decidarrUserId, plexId: ratingKey },
-        update: {
-          $set: {
-            mediaType: 'movie',
-            title: data.title,
-            watchedAt: data.watchedAt,
-            source: 'tautulli',
-            plexUserId: data.userId,
-            plexUsername: data.username,
-          },
-          $setOnInsert: {
-            userId: decidarrUserId,
-            plexId: ratingKey,
-            markedManually: false,
-          },
-        },
-        upsert: true,
-      },
+    await importWatchedFromTautulli(actor, {
+      plexId: ratingKey,
+      mediaType: 'movie',
+      title: data.title,
+      watchedAt: data.watchedAt,
+      plexUserId: data.userId,
+      plexUsername: data.username,
     });
     synced++;
   }
 
   for (const [ratingKey, data] of Array.from(showsWatched.entries())) {
-    bulkOps.push({
-      updateOne: {
-        filter: { userId: decidarrUserId, plexId: ratingKey },
-        update: {
-          $set: {
-            mediaType: 'show',
-            title: data.title,
-            watchedAt: data.watchedAt,
-            source: 'tautulli',
-            plexUserId: data.userId,
-            plexUsername: data.username,
-          },
-          $setOnInsert: {
-            userId: decidarrUserId,
-            plexId: ratingKey,
-            markedManually: false,
-          },
-        },
-        upsert: true,
-      },
+    await importWatchedFromTautulli(actor, {
+      plexId: ratingKey,
+      mediaType: 'show',
+      title: data.title,
+      watchedAt: data.watchedAt,
+      plexUserId: data.userId,
+      plexUsername: data.username,
     });
     synced++;
-  }
-
-  if (bulkOps.length > 0) {
-    await WatchedItem.bulkWrite(bulkOps, { ordered: false });
   }
 
   settings.tautulliLastSync = new Date();

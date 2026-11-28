@@ -185,12 +185,10 @@ export class TautulliService {
     return watchedMap;
   }
 
-  async getUserIdByPlexUsername(plexUsername: string): Promise<number | null> {
+  /** Tautulli's user_id is the Plex account id for a Plex-synced user. */
+  async getUserIdByPlexId(plexUserId: number): Promise<number | null> {
     const users = await this.getUsers();
-    const match = users.find(
-      u => u.username.toLowerCase() === plexUsername.toLowerCase() ||
-           u.friendly_name.toLowerCase() === plexUsername.toLowerCase()
-    );
+    const match = users.find(u => u.user_id === plexUserId);
     return match?.user_id ?? null;
   }
 }
