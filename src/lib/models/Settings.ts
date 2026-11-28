@@ -233,13 +233,3 @@ export async function getOrCreateSettings(): Promise<ISettings> {
 
   return settings;
 }
-
-// Helper to check if app is configured
-export async function isAppConfigured(): Promise<boolean> {
-  try {
-    const settings = await Settings.findById(SETTINGS_ID);
-    return settings?.setupComplete ?? false;
-  } catch {
-    return false;
-  }
-}
