@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { clearDatabase } from '../helpers/mongo';
 import { seedConfiguredSettings, seedTestUser } from '../helpers/auth';
+import { User } from '@/lib/models/User';
 import { MobileRefreshToken } from '@/lib/models/MobileRefreshToken';
 import { issueTokenPair, rotateRefreshToken } from '@/lib/mobile-auth/tokens';
 
@@ -12,7 +13,7 @@ describe('Mobile refresh token rotation (M6)', () => {
     await seedConfiguredSettings();
   });
 
-  it('two concurrent refreshes with the same refresh token yield at most one new token', async () => {
+  it('two concurrent refreshes with the same refresh token yield at most one new token, and no token in the family remains live afterward', async () => {
     const user = await seedTestUser();
     const { refreshToken } = await issueTokenPair(user, DEVICE_ID);
 
@@ -21,17 +22,34 @@ describe('Mobile refresh token rotation (M6)', () => {
       rotateRefreshToken(refreshToken, DEVICE_ID),
     ]);
 
-    const fulfilled = results.filter((r) => r.status === 'fulfilled');
+    const fulfilled = results.filter(
+      (r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof rotateRefreshToken>>> =>
+        r.status === 'fulfilled'
+    );
     const rejected = results.filter((r) => r.status === 'rejected');
-    expect(fulfilled).toHaveLength(1);
-    expect(rejected).toHaveLength(1);
-    expect((rejected[0] as PromiseRejectedResult).reason).toMatchObject({ code: 'UNAUTHORIZED' });
+    expect(fulfilled.length).toBeLessThanOrEqual(1);
+    expect(rejected.length).toBeGreaterThanOrEqual(1);
+    for (const r of rejected) {
+      expect((r as PromiseRejectedResult).reason).toMatchObject({ code: 'UNAUTHORIZED' });
+    }
+
+    // Whatever "won" the race is dead too: this is the whole point of reuse detection
+    // under true concurrency, where a legitimate retry and a replay look identical.
+    if (fulfilled.length === 1) {
+      await expect(
+        rotateRefreshToken(fulfilled[0].value.refreshToken, DEVICE_ID)
+      ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+    }
+    // The original is dead too, deterministically, regardless of which branch won.
+    await expect(rotateRefreshToken(refreshToken, DEVICE_ID)).rejects.toMatchObject({
+      code: 'UNAUTHORIZED',
+    });
 
     const unrevokedCount = await MobileRefreshToken.countDocuments({
       userId: user._id,
       revokedAt: { $exists: false },
     });
-    expect(unrevokedCount).toBeLessThanOrEqual(1);
+    expect(unrevokedCount).toBe(0);
   });
 
   it('replaying a rotated refresh token revokes its whole family, including the token issued by the legitimate rotation', async () => {
@@ -40,13 +58,43 @@ describe('Mobile refresh token rotation (M6)', () => {
 
     const rotatedOnce = await rotateRefreshToken(first.refreshToken, DEVICE_ID);
 
-    // Replaying the now-stale original token is rejected...
     await expect(rotateRefreshToken(first.refreshToken, DEVICE_ID)).rejects.toMatchObject({
       code: 'UNAUTHORIZED',
     });
 
-    // ...and the whole family it belonged to, including the legitimately-rotated
-    // successor, is now dead: only a fresh sign-in recovers from a detected replay.
+    await expect(rotateRefreshToken(rotatedOnce.refreshToken, DEVICE_ID)).rejects.toMatchObject({
+      code: 'UNAUTHORIZED',
+    });
+  });
+
+  it('a replay with the wrong device id still revokes the family, rather than returning early', async () => {
+    const user = await seedTestUser();
+    const first = await issueTokenPair(user, DEVICE_ID);
+    const rotatedOnce = await rotateRefreshToken(first.refreshToken, DEVICE_ID);
+
+    // The stale, already-rotated token presented with a device id that never issued it.
+    await expect(rotateRefreshToken(first.refreshToken, 'attacker-device')).rejects.toMatchObject({
+      code: 'UNAUTHORIZED',
+    });
+
+    // The family is dead, not just this one mismatched attempt.
+    await expect(rotateRefreshToken(rotatedOnce.refreshToken, DEVICE_ID)).rejects.toMatchObject({
+      code: 'UNAUTHORIZED',
+    });
+  });
+
+  it('a replay while the user is unapproved still revokes the family, rather than returning early', async () => {
+    const user = await seedTestUser({ isApproved: true });
+    const first = await issueTokenPair(user, DEVICE_ID);
+    const rotatedOnce = await rotateRefreshToken(first.refreshToken, DEVICE_ID);
+
+    await User.updateOne({ _id: user._id }, { $set: { isApproved: false } });
+    await expect(rotateRefreshToken(first.refreshToken, DEVICE_ID)).rejects.toMatchObject({
+      code: 'UNAUTHORIZED',
+    });
+
+    // Restoring approval does not resurrect the family: the replay already killed it.
+    await User.updateOne({ _id: user._id }, { $set: { isApproved: true } });
     await expect(rotateRefreshToken(rotatedOnce.refreshToken, DEVICE_ID)).rejects.toMatchObject({
       code: 'UNAUTHORIZED',
     });

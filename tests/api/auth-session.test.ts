@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import {
   authenticateTestSession,
@@ -112,6 +112,56 @@ describe('Auth session API routes', () => {
 
     expect(meRes.status).toBe(401);
     expect(await meRes.json()).toEqual({ error: 'Unauthorized', code: 'UNAUTHENTICATED' });
+  });
+
+  it('bumps the session version on logout even when the Plex server token is refused or unreadable', async () => {
+    await seedConfiguredSettings();
+    const { user } = await authenticateTestSession();
+    // The full Session seam (resolveSession) would throw PLEX_SIGN_IN_REQUIRED here;
+    // logout must still revoke the session on identity alone.
+    await User.updateOne({ _id: user._id }, { $unset: { plexServerToken: 1 } });
+
+    const res = await logoutDelete(createJsonRequest('http://localhost/api/auth/logout', 'DELETE'));
+    expect(res.status).toBe(200);
+
+    const revoked = await User.findById(user._id);
+    expect(revoked?.sessionVersion).toBe(1);
+  });
+
+  it('rejects a cross-origin logout request and does not revoke the session', async () => {
+    await seedConfiguredSettings();
+    const { user } = await authenticateTestSession();
+
+    const res = await logoutDelete(
+      new Request('http://localhost/api/auth/logout', {
+        method: 'DELETE',
+        headers: { Origin: 'https://evil.example' },
+      })
+    );
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).code).toBe('FORBIDDEN');
+    const untouched = await User.findById(user._id);
+    expect(untouched?.sessionVersion).toBe(0);
+    expect(getTestCookie('decidarr_session')).toBeTruthy();
+  });
+
+  it('does not report a successful logout when revoking the session fails', async () => {
+    await seedConfiguredSettings();
+    const { user } = await authenticateTestSession();
+    const findByIdAndUpdate = vi
+      .spyOn(User, 'findByIdAndUpdate')
+      .mockRejectedValueOnce(new Error('database unavailable'));
+
+    const res = await logoutDelete(createJsonRequest('http://localhost/api/auth/logout', 'DELETE'));
+    const body = await res.json();
+
+    expect(res.status).toBeGreaterThanOrEqual(500);
+    expect(body.message).not.toBe('Logged out successfully');
+    const untouched = await User.findById(user._id);
+    expect(untouched?.sessionVersion).toBe(0);
+
+    findByIdAndUpdate.mockRestore();
   });
 
   it('refuses to refresh a web session older than 30 days from sign-in', async () => {
