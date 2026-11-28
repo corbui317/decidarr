@@ -73,20 +73,35 @@ async function read(access: LibraryAccess, libraryIds: string[]) {
 }
 
 /**
+ * Refresh rounds one read may run. A later round only follows one that joined a refresh
+ * already in flight, so the next round starts its own listing and two rounds normally settle.
+ */
+const MAX_REFRESH_ROUNDS = 3;
+
+/**
  * The items of `libraryIds` that this user may see, optionally only those of one media type.
  * A library this user has no current view of is first synced with their own server token.
+ * A view is served only while its listing is within VISIBILITY_BOUND_MS or was requested after
+ * this read began (Plex or enrichment may take longer than the bound); a view joined from an
+ * older refresh is confirmed again, and a read that cannot get one fails as unconfirmed.
  * Callers pass only library ids the user can access (see getAccessibleLibraryIds).
  */
 export async function itemsFor(
   access: LibraryAccess,
   { libraryIds, mediaType }: { libraryIds: string[]; mediaType?: MediaType }
 ): Promise<LibraryView> {
+  const startedAt = Date.now();
   let { libraries, visible } = await read(access, libraryIds);
   const wanted = libraryIds.filter((id) => !mediaType || (libraries.get(id)?.mediaType ?? mediaType) === mediaType);
+  const servable = (set: VisibleSet) => !isUnconfirmed(set) || set.lastSyncedAt.getTime() >= startedAt;
 
-  const stale = wanted.filter((id) => needsSync(libraries.get(id), visible.get(id)));
-  const unconfirmed = wanted.filter((id) => !stale.includes(id) && isUnconfirmed(visible.get(id)!));
-  if (stale.length > 0 || unconfirmed.length > 0) {
+  let fromCache = true;
+  for (let round = 0; ; round++) {
+    const stale = wanted.filter((id) => needsSync(libraries.get(id), visible.get(id)));
+    const unconfirmed = wanted.filter((id) => !stale.includes(id) && !servable(visible.get(id)!));
+    if (stale.length === 0 && unconfirmed.length === 0) break;
+    if (round === MAX_REFRESH_ROUNDS) throw new DomainError('INTEGRATION_UNAVAILABLE');
+    if (stale.length > 0) fromCache = false;
     await Promise.all([
       ...stale.map((id) => syncLibrary(access, id)),
       ...unconfirmed.map((id) => confirmVisibility(access, libraries.get(id)!, visible.get(id)!)),
@@ -105,7 +120,7 @@ export async function itemsFor(
     if (!lastSyncedAt || set.lastSyncedAt < lastSyncedAt) lastSyncedAt = set.lastSyncedAt;
   }
 
-  return { items, lastSyncedAt, fromCache: stale.length === 0 };
+  return { items, lastSyncedAt, fromCache };
 }
 
 export interface LibraryFacets {
