@@ -68,7 +68,7 @@ function fakePlexServer() {
           () => plexMetadata([{ ratingKey: plexId, title, year, type: 'movie' }]),
         ])
       ),
-      [`${TEST_PLEX_SERVER}/library/collections/col-1/children`]: () =>
+      [`${TEST_PLEX_SERVER}/library/collections/201/children`]: () =>
         plexMetadata([
           { ratingKey: '1', title: 'Inception' },
           { ratingKey: '2', title: 'The Room' },
@@ -135,7 +135,7 @@ const CASES: Array<{ name: string; params: Params; expected: string[] }> = [
   { name: 'score range', params: lib1({ ratingRange: { min: 7, max: 8.6 } }), expected: ['3', '4'] },
   { name: 'score preset', params: lib1({ ratingFilter: 'top_rated' }), expected: ['1', '3'] },
   { name: 'unwatched only', params: lib1({ unwatchedOnly: true }), expected: ['4', '6'] },
-  { name: 'collections', params: lib1({ collections: ['col-1'] }), expected: ['1', '2', '4'] },
+  { name: 'collections', params: lib1({ collections: ['201'] }), expected: ['1', '2', '4'] },
   {
     name: 'every filter at once',
     params: lib1({
@@ -145,7 +145,7 @@ const CASES: Array<{ name: string; params: Params; expected: string[] }> = [
       studios: ['films', 'entertainment', 'indie'],
       ratingRange: { min: 3 },
       unwatchedOnly: true,
-      collections: ['col-1'],
+      collections: ['201'],
     }),
     expected: ['4'],
   },

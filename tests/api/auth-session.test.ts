@@ -84,6 +84,17 @@ describe('Auth session API routes', () => {
     expect(sent).toEqual([]);
   });
 
+  it('never includes the Plex server URL in the response (spec #18 story 30)', async () => {
+    await seedConfiguredSettings({ plexServerUrl: 'http://internal-plex.example:32400' });
+    await authenticateTestSession();
+
+    const res = await meGet(createJsonRequest('http://localhost/api/auth/me', 'GET'));
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).not.toContain('internal-plex.example');
+    expect(JSON.parse(text).user).not.toHaveProperty('serverUrl');
+  });
+
   it('clears the session cookie on logout', async () => {
     await seedConfiguredSettings();
     await authenticateTestSession();

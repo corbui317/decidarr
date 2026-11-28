@@ -107,7 +107,6 @@ describe('AuthContext', () => {
       user: {
         id: 'user-1',
         username: 'testuser',
-        serverUrl: 'http://192.168.1.10:32400',
         isAdmin: false,
       },
       preferences: { theme: 'dark', defaultMediaType: 'movie', tvSelectionMode: 'show' },
@@ -175,7 +174,7 @@ describe('AuthContext', () => {
 
     async function renderSignedIn(expiresAt: number) {
       vi.mocked(authApi.getCurrentUser).mockResolvedValue({
-        user: { id: 'user-1', username: 'testuser', serverUrl: 'http://192.168.1.10:32400', isAdmin: false },
+        user: { id: 'user-1', username: 'testuser', isAdmin: false },
         preferences: { theme: 'dark', defaultMediaType: 'movie', tvSelectionMode: 'show' },
         expiresAt,
       });

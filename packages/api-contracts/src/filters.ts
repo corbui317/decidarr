@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+/** A Plex collection rating key: always a decimal integer, used directly in a Plex URL path. */
+export const plexCollectionKeySchema = z.string().regex(/^\d+$/, 'Malformed collection key');
+
 export const filtersSchema = z.object({
   genres: z.array(z.string()).default([]),
   yearRange: z
@@ -14,7 +17,7 @@ export const filtersSchema = z.object({
     .default(null),
   ratingFilter: z.string().nullable().default(null),
   unwatchedOnly: z.boolean().default(false),
-  collections: z.array(z.string()).default([]),
+  collections: z.array(plexCollectionKeySchema).default([]),
 });
 export type Filters = z.infer<typeof filtersSchema>;
 

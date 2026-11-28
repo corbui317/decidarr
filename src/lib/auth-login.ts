@@ -22,7 +22,6 @@ export interface LoginResult {
   user?: {
     id: string;
     username: string;
-    serverUrl: string;
     isAdmin: boolean;
     thumb?: string;
   };
@@ -205,6 +204,30 @@ export async function completePlexLogin(
     };
   }
 
+  // Resolve the server connection for first-run setup before anything is persisted, so a
+  // validation failure here never leaves a stale Admin flag on a user record (a half-finished
+  // setup must not be hijackable; see spec #18 story 40).
+  let setupServerUrl: string | undefined;
+  if (!settings.setupComplete && isAdmin && candidateServer) {
+    const localConnection = candidateServer.connections.find((c: { local: boolean }) => c.local);
+    const connection = localConnection || candidateServer.connections[0];
+    const urlCheck = connection ? await assertSafeServiceUrl(connection.uri) : null;
+    if (!connection || !urlCheck?.valid) {
+      const authError = createAuthError(
+        'SERVER_MISCONFIGURED',
+        connection ? `Unsafe Plex server connection: ${urlCheck?.error}` : 'Owned Plex server has no connection'
+      );
+      logger.warn('Setup denied', { reason: authError.detailedReason, plexUserId: plexUser.id });
+      return {
+        success: false,
+        error: authError.message,
+        code: authError.code,
+        status: 403,
+      };
+    }
+    setupServerUrl = urlCheck.normalized || connection.uri;
+  }
+
   let user = await User.findOne({ plexUserId: plexUser.id });
   if (!user) {
     user = new User({
@@ -236,27 +259,40 @@ export async function completePlexLogin(
   user.setPlexTokens({ serverToken, accountToken: isAdmin ? authToken : null, machineId: installServer.clientIdentifier });
   await user.save();
 
-  if (!settings.setupComplete && isAdmin && candidateServer) {
-    const localConnection = candidateServer.connections.find((c: { local: boolean }) => c.local);
-    const connection = localConnection || candidateServer.connections[0];
-    if (connection) {
-      const urlCheck = await assertSafeServiceUrl(connection.uri);
-      if (urlCheck.valid) {
-        settings.plexServerUrl = urlCheck.normalized || connection.uri;
-        settings.plexMachineId = candidateServer.clientIdentifier;
-        settings.plexUsername = plexUser.username;
-        settings.adminUserId = user._id as Types.ObjectId;
-        settings.setupComplete = true;
-        if (options?.setupTmdbApiKey) {
-          settings.tmdbApiKey = options.setupTmdbApiKey;
-        }
-        await settings.save();
-        logger.info('Initial setup completed via OAuth', {
-          username: plexUser.username,
-          machineId: candidateServer.clientIdentifier,
-        });
+  if (setupServerUrl && candidateServer) {
+    try {
+      settings.plexServerUrl = setupServerUrl;
+      settings.plexMachineId = candidateServer.clientIdentifier;
+      settings.plexUsername = plexUser.username;
+      settings.adminUserId = user._id as Types.ObjectId;
+      settings.setupComplete = true;
+      if (options?.setupTmdbApiKey) {
+        settings.tmdbApiKey = options.setupTmdbApiKey;
       }
+      await settings.save();
+    } catch (err) {
+      // The user was already saved as Admin above (its own write is atomic, but there is no
+      // transaction across the two documents: Mongo here is not a replica set). Anything
+      // that fails between that write and this one - saving settings, or encrypting the
+      // TMDb key above - must not leave a stale Admin flag behind (spec #18 story 40), so
+      // roll the flags back by hand.
+      await User.updateOne({ _id: user._id }, { isAdmin: false, isApproved: false });
+      const authError = createAuthError('SERVER_MISCONFIGURED', `Failed to complete setup: ${(err as Error).message}`);
+      logger.error('Setup failed while saving settings; rolled back Admin flag', {
+        reason: authError.detailedReason,
+        plexUserId: plexUser.id,
+      });
+      return {
+        success: false,
+        error: authError.message,
+        code: authError.code,
+        status: 500,
+      };
     }
+    logger.info('Initial setup completed via OAuth', {
+      username: plexUser.username,
+      machineId: candidateServer.clientIdentifier,
+    });
   } else if (isAdmin && !settings.adminUserId) {
     settings.adminUserId = user._id as Types.ObjectId;
     await settings.save();
@@ -269,7 +305,6 @@ export async function completePlexLogin(
     user: {
       id: user._id.toString(),
       username: plexUser.username,
-      serverUrl: settings.plexServerUrl || '',
       isAdmin: user.isAdmin,
       thumb: plexUser.thumb,
     },
