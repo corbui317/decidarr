@@ -15,6 +15,7 @@ export interface StoredLibrary {
 export interface VisibleSet {
   libraryId: string;
   plexIds: string[];
+  /** When the Plex listing this set came from was requested. */
   lastSyncedAt: Date;
   expiresAt: Date;
 }
@@ -28,6 +29,7 @@ export interface LibraryStorage {
   readLibraries(server: string, libraryIds: string[]): Promise<StoredLibrary[]>;
   writeLibrary(server: string, library: StoredLibrary): Promise<void>;
   readVisibility(server: string, userId: string, libraryIds: string[]): Promise<VisibleSet[]>;
+  /** Stores `visible` unless the stored set came from a listing requested at the same time or later. */
   writeVisibility(server: string, userId: string, visible: VisibleSet): Promise<void>;
   /** Every item key that some user other than `userId` can see in the library. */
   keysVisibleToOthers(server: string, libraryId: string, userId: string): Promise<Set<string>>;

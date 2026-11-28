@@ -40,9 +40,10 @@ export interface LibraryView {
 }
 
 /**
- * How stale a user's visible set may be: past this, a read first re-fetches the user's view
- * from Plex (one listing request per user and library), and fails rather than serving titles
- * Plex has not confirmed. The same bound as the accessible-sections cache.
+ * How stale a user's visible set may be, counted from when its Plex listing was requested:
+ * past this, a read first re-fetches the user's view from Plex (one listing request per user
+ * and library), and fails rather than serving titles Plex has not confirmed. The same bound
+ * as the accessible-sections cache.
  */
 export const VISIBILITY_BOUND_MS = 60_000;
 
@@ -204,6 +205,7 @@ function confirmVisibility(access: LibraryAccess, library: StoredLibrary, visibl
     const [current] = await storage.readVisibility(serverOf(access), access.userId, [library.libraryId]);
     if (current && !isUnconfirmed(current)) return;
     const plex = new PlexService(access.plexToken, access.plexServerUrl, access.plexMachineId);
+    const lastSyncedAt = new Date();
     const plexIds = (await plex.getLibraryItems(library.libraryId)).map((item) => item.plexId);
     const shared = new Set(library.items.map((item) => item.plexId));
     if (plexIds.some((plexId) => !shared.has(plexId))) {
@@ -212,7 +214,7 @@ function confirmVisibility(access: LibraryAccess, library: StoredLibrary, visibl
     await storage.writeVisibility(serverOf(access), access.userId, {
       libraryId: library.libraryId,
       plexIds,
-      lastSyncedAt: new Date(),
+      lastSyncedAt,
       expiresAt: visible.expiresAt,
     });
   });
@@ -228,6 +230,8 @@ async function fetchAndStore(access: LibraryAccess, libraryId: string): Promise<
     throw new DomainError('NOT_FOUND', 'Library not found');
   }
 
+  // The view's age runs from when Plex was asked, not from when enrichment finished.
+  const lastSyncedAt = new Date();
   const fresh = (await plex.getLibraryItems(libraryId)) as ILibraryItem[];
   const [existing] = await storage.readLibraries(server, [libraryId]);
 
@@ -241,7 +245,6 @@ async function fetchAndStore(access: LibraryAccess, libraryId: string): Promise<
     (item) => !freshKeys.has(item.plexId) && othersKeys.has(item.plexId)
   );
 
-  const lastSyncedAt = new Date();
   const expiresAt = new Date(lastSyncedAt.getTime() + settings.syncFrequencyHours * 60 * 60 * 1000);
 
   // Shared metadata first: until the visible set is written, reads intersect the old set with a superset.

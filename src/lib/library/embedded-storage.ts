@@ -25,11 +25,16 @@ export const embeddedStorage: LibraryStorage = {
   },
 
   async writeVisibility(server, userId, visible) {
-    await LibraryVisibility.updateOne(
-      { userId, plexMachineId: server, libraryId: visible.libraryId },
-      { $set: { userId, plexMachineId: server, ...visible } },
-      { upsert: true }
+    const key = { userId, plexMachineId: server, libraryId: visible.libraryId };
+    const document = { ...key, ...visible };
+    const replaced = await LibraryVisibility.updateOne(
+      { ...key, lastSyncedAt: { $lt: visible.lastSyncedAt } },
+      { $set: document }
     );
+    if (replaced.matchedCount === 0) {
+      // No older set to replace: store this one only if there is none at all.
+      await LibraryVisibility.updateOne(key, { $setOnInsert: document }, { upsert: true });
+    }
   },
 
   async keysVisibleToOthers(server, libraryId, userId) {
