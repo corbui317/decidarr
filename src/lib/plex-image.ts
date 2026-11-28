@@ -137,12 +137,8 @@ const CLIENT_ITEM_FIELDS: readonly string[] = sanitizedLibraryItemSchema.keyof()
  * An item as the client receives it: only the fields the item contract declares, with
  * image fields only in tokenless, proxied form.
  */
-export type ClientSafeItem<T> = Pick<T, Exclude<Extract<keyof T, ClientItemField>, keyof ItemImageFields>> & {
-  thumbPath?: string;
-  artPath?: string;
-  posterUrl?: string;
-  art?: string;
-};
+export type ClientSafeItem<T> = Pick<T, Exclude<Extract<keyof T, ClientItemField>, keyof ItemImageFields>> &
+  Pick<SanitizedLibraryItem, keyof ItemImageFields>;
 
 /** Takes a plain object (not a Mongoose document). Internal fields such as enrichment state are left out. */
 export function sanitizeLibraryItemForClient<T extends ItemImageFields>(item: T): ClientSafeItem<T> {

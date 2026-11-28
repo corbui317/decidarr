@@ -1,3 +1,4 @@
+import type { PlexFriendUser } from '@decidarr/api-contracts';
 import crypto from 'crypto';
 import { createLogger } from '../logger';
 import { createIntegrationClient, type IntegrationClient } from '../integrations/client';
@@ -209,9 +210,9 @@ export async function fetchPlexServers(accountToken: string): Promise<PlexServer
   }));
 }
 
-export async function fetchPlexFriends(authToken: string): Promise<
-  Array<{ id: string; username: string; thumb?: string }>
-> {
+export async function fetchPlexFriends(
+  authToken: string
+): Promise<Pick<PlexFriendUser, 'id' | 'username' | 'thumb'>[]> {
   try {
     const response = await (await plexTvClient(authToken)).request('/api/v2/friends');
 

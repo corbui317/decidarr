@@ -7,7 +7,7 @@ import { loadPool, POOL_PROBLEMS } from '@/lib/selection/pool';
 import { recordSpin } from '@/lib/user-data';
 import { sanitizeLibraryItemForClient } from '@/lib/plex-image';
 import { selectionRequestBodySchema, selectionResultResponseSchema } from '@decidarr/api-contracts';
-import type { SelectionResultResponse } from '@decidarr/api-contracts';
+import type { SelectionResultResponse, TmdbMatch } from '@decidarr/api-contracts';
 
 export const POST = route(
   { access: 'user', body: selectionRequestBodySchema, response: selectionResultResponseSchema },
@@ -35,10 +35,11 @@ export const POST = route(
     const fullDetails = await plexService.getItemMetadata(picked.plexId);
     const playLinks = plexService.buildPlayLinks(picked.plexId);
 
-    let tmdbData = null;
+    let tmdb: TmdbMatch | null = null;
     const tmdbApiKey = settings.getDecryptedTmdbKey();
     if (tmdbApiKey) {
-      tmdbData = await new TMDbService(tmdbApiKey).matchPlexItem(fullDetails.title, fullDetails.year, mediaType);
+      const match = await new TMDbService(tmdbApiKey).matchPlexItem(fullDetails.title, fullDetails.year, mediaType);
+      tmdb = match && { voteAverage: match.voteAverage, overview: match.overview };
     }
 
     const selection: SelectionResultResponse['selection'] = {
@@ -47,7 +48,7 @@ export const POST = route(
         type: fullDetails.type ?? mediaType,
         overseerrStatus: picked.overseerrStatus ?? null,
       }),
-      tmdb: tmdbData,
+      tmdb,
     };
 
     // The server records every spin it answers, whichever client asked, so clients never record it.

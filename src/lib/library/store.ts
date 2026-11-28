@@ -7,7 +7,7 @@
  * with Plex label or content-rating restrictions never receives a title Plex hides from them,
  * and one user's sync never changes another user's pool.
  */
-import type { MediaType } from '@decidarr/api-contracts';
+import type { LibraryFilterOptionsResponse, LibraryYearsResponse, MediaType } from '@decidarr/api-contracts';
 import type { LibraryAccess } from '@/lib/auth';
 import type { ILibraryItem } from '@/lib/models/LibraryCache';
 import { getOrCreateSettings, type ISettings } from '@/lib/models/Settings';
@@ -96,11 +96,11 @@ export async function itemsFor(
 export interface LibraryFacets {
   genres: string[];
   /** Null when no visible item has a year. */
-  years: { min: number; max: number } | null;
+  years: LibraryYearsResponse | null;
   contentRatings: string[];
   studios: string[];
   /** Null when no visible item has a rating. */
-  ratingRange: { min: number; max: number } | null;
+  ratingRange: LibraryFilterOptionsResponse['ratingRange'] | null;
 }
 
 const RATING_ORDER = [

@@ -1,7 +1,13 @@
 import crypto from 'crypto';
 import { Types } from 'mongoose';
-import type { SyncChange, SyncMutation, MutationResult, SYNC_SCHEMA_VERSION } from '@decidarr/api-contracts';
-import { SYNC_CHANGE_RETENTION_DAYS } from '@decidarr/api-contracts';
+import type {
+  MutationResult,
+  SyncBootstrapResponse,
+  SyncChange,
+  SyncMutation,
+  SyncMutationBatchResponse,
+} from '@decidarr/api-contracts';
+import { SYNC_CHANGE_RETENTION_DAYS, SYNC_SCHEMA_VERSION } from '@decidarr/api-contracts';
 import { SyncChange as SyncChangeModel } from '@/lib/models/SyncChange';
 import { SyncEntityRevision } from '@/lib/models/SyncEntityRevision';
 import { AppliedSyncMutation } from '@/lib/models/AppliedSyncMutation';
@@ -24,7 +30,7 @@ import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('Sync');
 
-export async function buildBootstrap(user: IUser) {
+export async function buildBootstrap(user: IUser): Promise<SyncBootstrapResponse> {
   const userId = user._id as Types.ObjectId;
   const [watched, spinHistory] = await Promise.all([
     WatchedItem.find({ userId }).sort({ watchedAt: -1 }).limit(500).lean(),
@@ -36,7 +42,7 @@ export async function buildBootstrap(user: IUser) {
     .lean();
 
   return {
-    schemaVersion: 1 as typeof SYNC_SCHEMA_VERSION,
+    schemaVersion: SYNC_SCHEMA_VERSION,
     cursor: latestChange?.cursor ?? '',
     serverTime: new Date().toISOString(),
     entities: {
@@ -148,7 +154,7 @@ async function applySingleMutation(
 export async function applyMutations(
   user: IUser,
   mutations: SyncMutation[]
-): Promise<{ results: MutationResult[]; nextCursor: string }> {
+): Promise<SyncMutationBatchResponse> {
   const userId = user._id as Types.ObjectId;
   const actor: UserDataActor = { userId, isAdmin: user.isAdmin };
   const results: MutationResult[] = [];

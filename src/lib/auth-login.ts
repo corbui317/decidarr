@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers';
+import type { AuthUser } from '@decidarr/api-contracts';
 import { signSessionJwt } from './security/session-jwt';
 import { Types } from 'mongoose';
 import { getOrCreateSettings } from './models/Settings';
@@ -19,12 +20,8 @@ const SESSION_MAX_AGE = 7 * 24 * 60 * 60;
 
 export interface LoginResult {
   success: boolean;
-  user?: {
-    id: string;
-    username: string;
-    isAdmin: boolean;
-    thumb?: string;
-  };
+  /** The signed-in user as the auth contract describes them; replies send it as is. */
+  user?: AuthUser;
   error?: string;
   code?: AuthErrorCode;
   status?: number;

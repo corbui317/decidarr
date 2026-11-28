@@ -6,38 +6,12 @@ import {
   spinHistoryListQuerySchema,
   spinHistoryListResponseSchema,
 } from '@decidarr/api-contracts';
-import type { Document, Types } from 'mongoose';
-import { SpinHistoryEntry, type ISpinHistoryEntry } from '@/lib/models/SpinHistoryEntry';
-import { resolveItemImageUrls } from '@/lib/plex-image';
+import { SpinHistoryEntry } from '@/lib/models/SpinHistoryEntry';
+import { toSpinHistoryEntryResponse } from '@/lib/routes/spin-history-entry';
 import { clearSpinHistory, recordSpin } from '@/lib/user-data';
 
 // Reads the session and database on every request; never prerender at build time.
 export const dynamic = 'force-dynamic';
-
-/** An entry as a document or as a lean query result. */
-type StoredEntry = ISpinHistoryEntry | (Omit<ISpinHistoryEntry, keyof Document> & { _id: Types.ObjectId });
-
-/** A stored entry as its contract declares it, with proxied image URLs; storage internals stay behind. */
-function toEntryResponse(entry: StoredEntry) {
-  const images = resolveItemImageUrls(entry);
-  return {
-    _id: entry._id,
-    userId: entry.userId,
-    plexId: entry.plexId,
-    title: entry.title,
-    mediaType: entry.mediaType,
-    posterUrl: images.posterUrl || undefined,
-    thumbPath: entry.thumbPath || images.thumbPath,
-    year: entry.year,
-    libraryIds: entry.libraryIds,
-    filtersSnapshot: entry.filtersSnapshot,
-    tvSelectionMode: entry.tvSelectionMode,
-    poolSizeAtSpin: entry.poolSizeAtSpin,
-    spunAt: entry.spunAt,
-    createdAt: entry.createdAt,
-    updatedAt: entry.updatedAt,
-  };
-}
 
 export const GET = route(
   { access: 'user', query: spinHistoryListQuerySchema, response: spinHistoryListResponseSchema },
@@ -53,7 +27,7 @@ export const GET = route(
       SpinHistoryEntry.countDocuments(filter),
     ]);
 
-    return reply({ items: items.map(toEntryResponse), total, page, pageSize: limit });
+    return reply({ items: items.map(toSpinHistoryEntryResponse), total, page, pageSize: limit });
   }
 );
 
@@ -64,7 +38,7 @@ export const POST = route(
     if (!entry) {
       return reply({ skipped: true, reason: 'disabled' });
     }
-    return reply({ entry: toEntryResponse(entry) }, 201);
+    return reply({ entry: toSpinHistoryEntryResponse(entry) }, 201);
   }
 );
 

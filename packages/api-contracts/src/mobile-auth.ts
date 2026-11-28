@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { authUserSchema } from './auth';
 
 export const mobileAuthStartRequestSchema = z.object({
   deviceId: z.string().min(8, 'deviceId is required'),
@@ -20,12 +21,8 @@ export const mobileAuthExchangeRequestSchema = z.object({
 });
 export type MobileAuthExchangeRequest = z.infer<typeof mobileAuthExchangeRequestSchema>;
 
-export const mobileUserSchema = z.object({
-  id: z.string(),
-  username: z.string(),
-  isAdmin: z.boolean(),
-  thumb: z.string().optional(),
-});
+/** The signed-in user, the same shape the web gets from /auth/me. */
+export const mobileUserSchema = authUserSchema;
 export type MobileUser = z.infer<typeof mobileUserSchema>;
 
 export const mobileAuthTokensSchema = z.object({

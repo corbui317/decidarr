@@ -2,9 +2,9 @@ import { route } from '@/lib/request/route';
 import { DomainError } from '@/lib/request/errors';
 import { invalidateAccessibleLibraryCache } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
-import { findCredentialsNeedingReentry } from '@/lib/migrate';
 import { assertSafeServiceUrl } from '@/lib/security/service-url';
 import { getOrCreateSettings } from '@/lib/models/Settings';
+import { settingsResponseBody } from '@/lib/routes/settings-response';
 import { setPlexServer } from '@/lib/plex-server-move';
 import {
   APP_THEMES,
@@ -19,57 +19,6 @@ import {
 export const dynamic = 'force-dynamic';
 
 const logger = createLogger('API:Settings');
-
-// Helper to mask sensitive values
-const maskValue = (value: string | undefined): string | null => {
-  if (!value) return null;
-  if (value.length <= 8) return '****';
-  return value.substring(0, 4) + '****' + value.substring(value.length - 4);
-};
-
-async function settingsResponseBody(settings: Awaited<ReturnType<typeof getOrCreateSettings>>) {
-  const tmdbKey = settings.getDecryptedTmdbKey();
-  const tautulliKey = settings.getDecryptedTautulliKey();
-  const overseerrKey = settings.getDecryptedOverseerrKey();
-
-  return {
-    setupComplete: settings.setupComplete,
-    credentialsNeedingReentry: await findCredentialsNeedingReentry(),
-    plex: {
-      serverUrl: settings.plexServerUrl || null,
-      username: settings.plexUsername || null,
-      machineId: settings.plexMachineId || null,
-    },
-    tmdb: {
-      hasKey: !!tmdbKey,
-      keyMasked: maskValue(tmdbKey || undefined),
-    },
-    tautulli: {
-      url: settings.tautulliUrl || null,
-      enabled: settings.tautulliEnabled,
-      hasKey: !!tautulliKey,
-      keyMasked: maskValue(tautulliKey || undefined),
-      syncIntervalMinutes: settings.tautulliSyncIntervalMinutes,
-      lastSync: settings.tautulliLastSync || null,
-    },
-    overseerr: {
-      url: settings.overseerrUrl || null,
-      filterEnabled: settings.overseerrFilterEnabled ?? false,
-      hasKey: !!overseerrKey,
-      keyMasked: maskValue(overseerrKey || undefined),
-      lastSyncAt: settings.overseerrLastSyncAt || null,
-      lastSyncOk: settings.overseerrLastSyncOk ?? true,
-    },
-    syncFrequencyHours: settings.syncFrequencyHours,
-    uiPreferences: {
-      theme: settings.uiPreferences?.theme ?? 'dark',
-      defaultMediaType: settings.uiPreferences?.defaultMediaType ?? 'movie',
-      tvSelectionMode: settings.uiPreferences?.tvSelectionMode ?? 'show',
-      animationStyle: settings.uiPreferences?.animationStyle ?? 'slots',
-      animationSpeed: settings.uiPreferences?.animationSpeed ?? 'normal',
-    },
-  };
-}
 
 export const GET = route({ access: 'admin', response: settingsResponseSchema }, async ({ reply }) => {
   logger.debug('Fetching settings');

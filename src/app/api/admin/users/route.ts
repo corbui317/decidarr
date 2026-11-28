@@ -1,4 +1,4 @@
-import { adminUsersListResponseSchema } from '@decidarr/api-contracts';
+import { adminUsersListResponseSchema, type PlexFriendUser } from '@decidarr/api-contracts';
 import { route } from '@/lib/request/route';
 import { getOrCreateSettings } from '@/lib/models/Settings';
 import { User } from '@/lib/models/User';
@@ -29,9 +29,16 @@ export const GET = route({ access: 'admin', response: adminUsersListResponseSche
   const dbUsers = await User.find({ isAdmin: false }).lean();
   const approvedSet = new Set(settings.approvedPlexUserIds || []);
 
-  const friendMap = new Map(
-    friends.map((f) => [f.id, { ...f, hasServerAccess: true, isApproved: approvedSet.has(f.id) }])
-  );
+  const friendMap = new Map<string, PlexFriendUser>();
+  for (const f of friends) {
+    friendMap.set(f.id, {
+      id: f.id,
+      username: f.username,
+      thumb: f.thumb,
+      hasServerAccess: true,
+      isApproved: approvedSet.has(f.id),
+    });
+  }
 
   for (const u of dbUsers) {
     if (!friendMap.has(u.plexUserId)) {
