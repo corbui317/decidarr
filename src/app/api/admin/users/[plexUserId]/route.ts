@@ -35,9 +35,16 @@ export const PUT = route(
       user.isApproved = approved;
       if (!approved) {
         user.sessionVersion += 1;
+      }
+      // Save before revoking: an in-flight mobile rotation that already read this user
+      // as approved could otherwise mint a fresh refresh token after the revoke call
+      // scans the collection, leaving a token that quietly works again if the Friend is
+      // later re-approved. Saving the now-unapproved user first means that rotation's
+      // own approval check (not just the revocation) rejects it instead.
+      await user.save();
+      if (!approved) {
         await revokeAllRefreshTokensForUser(user._id);
       }
-      await user.save();
     }
 
     logger.info('User approval updated', { plexUserId, approved });

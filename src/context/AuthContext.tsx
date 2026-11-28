@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
-import { settingsApi, authApi, AuthUser } from '@/lib/api';
+import { settingsApi, authApi, onAuthError, AuthUser } from '@/lib/api';
 
 interface AuthContextType {
   user: AuthUser | null;
@@ -57,6 +57,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
   useEffect(() => {
     checkAuth();
   }, [checkAuth]);
+
+  // A revoked session surfaces as a 401 on whichever call happens to run next, not
+  // only /auth/me or the scheduled refresh; this clears the signed-in state from
+  // any of them so the user lands in a clean signed-out state immediately.
+  useEffect(() => {
+    return onAuthError(() => {
+      setUser(null);
+      setExpiresAt(null);
+    });
+  }, []);
 
   // Silent refresh logic: refresh proactively 24h before expiry
   useEffect(() => {

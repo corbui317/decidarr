@@ -22,6 +22,21 @@ export { ApiError };
 const publicTransport = createPublicTransport({ baseUrl: getApiBaseUrl });
 const publicClient = createApiClient(publicTransport);
 
+type ReauthRequiredListener = () => void;
+const reauthRequiredListeners = new Set<ReauthRequiredListener>();
+
+/**
+ * Notified whenever the server definitively rejects the stored refresh token (401),
+ * from any authenticated call - coreApi, syncApi, or an explicit getValidAccessToken -
+ * not only one that happened to be made through AuthProvider already. AuthProvider
+ * subscribes so a revoked session (logout, un-approval, reuse detection) lands every
+ * screen in the signed-out state, not only the ones that call logout themselves.
+ */
+export function onReauthRequired(listener: ReauthRequiredListener): () => void {
+  reauthRequiredListeners.add(listener);
+  return () => reauthRequiredListeners.delete(listener);
+}
+
 async function refresh() {
   const refreshToken = await getRefreshToken();
   if (!refreshToken) return null;
@@ -36,6 +51,7 @@ async function refresh() {
     // token, so it must not be swallowed into "sign out" - rethrow so the caller can tell
     // the two apart.
     if (error instanceof ApiError && error.status === 401) {
+      reauthRequiredListeners.forEach((listener) => listener());
       return null;
     }
     throw error;
