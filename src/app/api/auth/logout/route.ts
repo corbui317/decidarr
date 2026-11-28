@@ -5,6 +5,7 @@ import { clearSessionCookie } from '@/lib/auth-login';
 import { invalidateAccessibleLibraryCache, readCookieSession } from '@/lib/auth';
 import { extractBearerToken } from '@/lib/mobile-auth/context';
 import { verifyAccessToken } from '@/lib/mobile-auth/tokens';
+import { SessionError } from '@/lib/auth-errors';
 import { User } from '@/lib/models/User';
 
 type LogoutCredential = 'cookie' | 'bearer';
@@ -16,21 +17,31 @@ type LogoutCredential = 'cookie' | 'bearer';
  * live, readable Plex server token. Whether this user's Plex token currently works is
  * irrelevant to whether their session must end; a session resolved as current here is
  * one worth revoking regardless of that.
+ *
+ * Only a SessionError - a missing, invalid, or expired credential - means there is
+ * genuinely nothing to revoke. Any other failure (a database error reading the
+ * credential or looking up the user) must propagate rather than be treated the same
+ * way, or a transient failure could report a successful logout that revoked nothing.
  */
 async function resolveLogoutIdentity(
   request: Request
 ): Promise<{ userId: Types.ObjectId; credential: LogoutCredential } | null> {
+  const bearer = extractBearerToken(request);
+  let payload: { sub: string; sessionVersion: number };
   try {
-    const bearer = extractBearerToken(request);
-    const payload = bearer ? await verifyAccessToken(bearer) : await readCookieSession();
-    const user = await User.findById(payload.sub);
-    if (!user || user.sessionVersion !== payload.sessionVersion) {
+    payload = bearer ? await verifyAccessToken(bearer) : await readCookieSession();
+  } catch (error) {
+    if (error instanceof SessionError) {
       return null;
     }
-    return { userId: user._id as Types.ObjectId, credential: bearer ? 'bearer' : 'cookie' };
-  } catch {
+    throw error;
+  }
+
+  const user = await User.findById(payload.sub);
+  if (!user || user.sessionVersion !== payload.sessionVersion) {
     return null;
   }
+  return { userId: user._id as Types.ObjectId, credential: bearer ? 'bearer' : 'cookie' };
 }
 
 export const DELETE = route({ access: 'public' }, async ({ request }) => {
