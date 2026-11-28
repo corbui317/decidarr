@@ -388,6 +388,38 @@ describe('A restriction the Admin tightens in Plex reaches the Friend within the
     expect(titles((await loadItems()).items)).toEqual(titles(TIGHTENED_VIEW));
   });
 
+  it('never serves a read a listing that was past the bound before it began, even from a sync it joined', async () => {
+    await signInAs(friend);
+    await loadItems();
+    // The library sync is due (24 hours by default), so the next read runs a full sync.
+    advance(24 * 60 * 60 * 1000 + 1);
+
+    let release!: () => void;
+    let listed!: () => void;
+    const stalled = new Promise<void>((resolve) => (release = resolve));
+    const reached = new Promise<void>((resolve) => (listed = resolve));
+    plex.whileListing = async () => {
+      plex.whileListing = undefined;
+      listed();
+      await stalled;
+    };
+    const slowSync = loadItems();
+    await reached;
+
+    // The Admin tightens; a read past the bound joins the sync still holding the old listing.
+    views[FRIEND_SERVER_TOKEN] = TIGHTENED_VIEW;
+    advance(VISIBILITY_BOUND_MS + 1);
+    const sectionLists = () => sent.filter(({ url }) => url.pathname === '/library/sections').length;
+    const before = sectionLists();
+    const count = poolCount();
+    await vi.waitFor(() => expect(sectionLists()).toBe(before + 1));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    release();
+    await slowSync;
+    expect(await count).toMatchObject({ totalItems: TIGHTENED_VIEW.length });
+  });
+
   it.each(['unreachable', 'failing'] as const)("serves no title Plex has not confirmed for the Friend once the bound has passed while Plex is %s", async (listing) => {
     await signInAs(friend);
     await loadItems();
