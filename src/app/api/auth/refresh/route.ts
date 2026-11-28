@@ -3,6 +3,7 @@ import { route } from '@/lib/request/route';
 import { User } from '@/lib/models/User';
 import { PlexService } from '@/lib/services/plex';
 import { issueSessionCookie } from '@/lib/auth-login';
+import { readCookieSession } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('API:AuthRefresh');
@@ -19,7 +20,11 @@ export const POST = route({ access: 'user' }, async ({ session }) => {
   user.tokenValidatedAt = new Date();
   await user.save();
 
-  await issueSessionCookie(user);
+  // Carries the original sign-in time forward so sliding this cookie never outruns its
+  // 30-day absolute lifetime; readCookieSession() already proved the current cookie is
+  // within that lifetime before route() resolved this request's Session.
+  const { signedInAt } = await readCookieSession();
+  await issueSessionCookie(user, signedInAt);
 
   // Calculate expiry (7 days from now, matching issueSessionCookie)
   const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;

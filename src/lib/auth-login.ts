@@ -277,13 +277,19 @@ export async function completePlexLogin(
   };
 }
 
-export async function issueSessionCookie(user: IUser): Promise<void> {
+/**
+ * Issues (or reissues) the web session cookie. `signedInAt` carries forward the
+ * original sign-in time across a sliding refresh; omit it only at an actual sign-in,
+ * where it defaults to now and starts this session's 30-day absolute lifetime.
+ */
+export async function issueSessionCookie(user: IUser, signedInAt: number = Date.now()): Promise<void> {
   const token = signSessionJwt(
     {
       sub: user._id.toString(),
       plexUserId: user.plexUserId,
       isAdmin: user.isAdmin,
       sessionVersion: user.sessionVersion,
+      signedInAt,
     },
     deriveKey('web-session'),
     { expiresIn: '7d' }

@@ -114,6 +114,17 @@ export async function issueTokenPair(
   };
 }
 
+async function revokeTokenFamily(tokenFamily: string, deviceId: string, userId: Types.ObjectId): Promise<void> {
+  await MobileRefreshToken.updateMany(
+    { tokenFamily, revokedAt: { $exists: false } },
+    { revokedAt: new Date() }
+  );
+  logger.warn('Refresh token reuse detected; family revoked', {
+    deviceId,
+    userId: userId.toString(),
+  });
+}
+
 export async function rotateRefreshToken(
   refreshToken: string,
   deviceId: string
@@ -121,17 +132,7 @@ export async function rotateRefreshToken(
   const tokenHash = hashToken(refreshToken);
   const existing = await MobileRefreshToken.findOne({ tokenHash });
 
-  if (!existing || existing.revokedAt || existing.expiresAt < new Date()) {
-    if (existing?.revokedAt) {
-      await MobileRefreshToken.updateMany(
-        { tokenFamily: existing.tokenFamily },
-        { revokedAt: new Date() }
-      );
-      logger.warn('Refresh token reuse detected; family revoked', {
-        deviceId: existing.deviceId,
-        userId: existing.userId.toString(),
-      });
-    }
+  if (!existing || existing.expiresAt < new Date()) {
     throw new SessionError('UNAUTHORIZED');
   }
 
@@ -154,9 +155,18 @@ export async function rotateRefreshToken(
     throw new SessionError('PLEX_SIGN_IN_REQUIRED');
   }
 
-  existing.revokedAt = new Date();
-  existing.lastUsedAt = new Date();
-  await existing.save();
+  // Atomic swap: only the first caller to reach here for this token wins the rotation.
+  // A concurrent duplicate presentation (a retry, or a replay of an already-rotated
+  // token) matches no document here and is treated as reuse, revoking the whole family.
+  const rotated = await MobileRefreshToken.findOneAndUpdate(
+    { _id: existing._id, revokedAt: { $exists: false } },
+    { revokedAt: new Date(), lastUsedAt: new Date() }
+  );
+
+  if (!rotated) {
+    await revokeTokenFamily(existing.tokenFamily, deviceId, existing.userId);
+    throw new SessionError('UNAUTHORIZED');
+  }
 
   const newRefreshToken = generateOpaqueToken();
   await MobileRefreshToken.create({
@@ -176,6 +186,14 @@ export async function rotateRefreshToken(
     expiresIn: ACCESS_TOKEN_TTL_SECONDS,
     user,
   };
+}
+
+/** Revokes every refresh token this user holds, on every device (un-approval, security reset). */
+export async function revokeAllRefreshTokensForUser(userId: Types.ObjectId): Promise<void> {
+  await MobileRefreshToken.updateMany(
+    { userId, revokedAt: { $exists: false } },
+    { revokedAt: new Date() }
+  );
 }
 
 export async function revokeRefreshToken(

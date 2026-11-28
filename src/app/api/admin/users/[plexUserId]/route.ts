@@ -7,6 +7,7 @@ import {
 import { route } from '@/lib/request/route';
 import { getOrCreateSettings } from '@/lib/models/Settings';
 import { User } from '@/lib/models/User';
+import { revokeAllRefreshTokensForUser } from '@/lib/mobile-auth/tokens';
 import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('API:AdminUserToggle');
@@ -34,6 +35,7 @@ export const PUT = route(
       user.isApproved = approved;
       if (!approved) {
         user.sessionVersion += 1;
+        await revokeAllRefreshTokensForUser(user._id);
       }
       await user.save();
     }
