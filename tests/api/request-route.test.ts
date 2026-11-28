@@ -297,6 +297,101 @@ describe('request-handling module', () => {
       expect(logged).not.toMatch(/secret-/);
     });
 
+    describe('a structured value where the contract declares another shape', () => {
+      const shapes = z.object({
+        id: z.string(),
+        owner: z.object({ name: z.string() }).optional(),
+        tags: z.array(z.string()).optional(),
+        counts: z.record(z.string(), z.number()).optional(),
+        either: z.union([z.string(), z.object({ label: z.string() })]).optional(),
+        free: z.unknown().optional(),
+      });
+
+      async function sendInProduction(body: unknown) {
+        vi.stubEnv('NODE_ENV', 'production');
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const res = await route({ access: 'public', response: shapes }, async () => body as never)(request('GET', {}));
+        return { res, body: await res.json(), logged: warn.mock.calls.map((call) => String(call[0])).join('\n') };
+      }
+
+      it('is never sent where a string is declared, such as a populated document in place of an id', async () => {
+        const { res, body, logged } = await sendInProduction({
+          id: { _id: 'u1', plexServerToken: 'secret-token', isAdmin: true },
+          owner: { name: 'friend' },
+        });
+        expect(res.status).toBe(200);
+        expect(body).toEqual({ owner: { name: 'friend' } });
+        expect(logged).toContain('id (undeclared structure)');
+        expect(logged).not.toMatch(/secret-/);
+      });
+
+      it('is never sent where an object, an array or a record is declared', async () => {
+        const { body, logged } = await sendInProduction({
+          id: 'x',
+          owner: [{ name: 'friend', passwordHash: 'secret-hash' }],
+          tags: { 0: 'a', token: 'secret-token' },
+          counts: [{ secret: 'secret-value' }],
+        });
+        expect(body).toEqual({ id: 'x' });
+        expect(logged).toContain('owner (undeclared structure)');
+        expect(logged).toContain('tags (undeclared structure)');
+        expect(logged).toContain('counts (undeclared structure)');
+        expect(logged).not.toMatch(/secret-/);
+      });
+
+      it('keeps a wrong-typed primitive, as for any other mismatch', async () => {
+        const { body } = await sendInProduction({ id: 7, owner: 'friend', tags: 'a', counts: 3 });
+        expect(body).toEqual({ id: 7, owner: 'friend', tags: 'a', counts: 3 });
+      });
+
+      it('strips a union value by the option of its own shape when no option matches', async () => {
+        const { body, logged } = await sendInProduction({ id: 'x', either: { label: 3, token: 'secret-token' } });
+        expect(body).toEqual({ id: 'x', either: { label: 3 } });
+        expect(logged).toContain('either.token');
+        expect(logged).not.toMatch(/secret-/);
+      });
+
+      it('drops a union value whose shape no option declares', async () => {
+        const { body } = await sendInProduction({ id: 'x', either: [{ token: 'secret-token' }] });
+        expect(body).toEqual({ id: 'x' });
+      });
+
+      it('keeps any structure only where the contract declares unknown', async () => {
+        const { body } = await sendInProduction({ id: 'x', free: { nested: [1, { deep: true }] } });
+        expect(body).toEqual({ id: 'x', free: { nested: [1, { deep: true }] } });
+      });
+
+      it('applies to error replies too', async () => {
+        vi.stubEnv('NODE_ENV', 'production');
+        vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const failing = route({ access: 'public', response: shapes }, async () =>
+          errorReply(500, {
+            error: { message: 'boom', stack: 'secret-stack' },
+            code: 'X',
+            issues: [{ path: { token: 'secret-token' }, message: 'bad' }],
+          } as never)
+        );
+        const res = await failing(request('GET', {}));
+        expect(res.status).toBe(500);
+        expect(await res.json()).toEqual({ code: 'X', issues: [{ message: 'bad' }] });
+      });
+
+      it('sends no body fields when the whole reply has a shape the contract does not declare', async () => {
+        const { res, body } = await sendInProduction([{ id: 'x', token: 'secret-token' }]);
+        expect(res.status).toBe(200);
+        expect(body).toBeNull();
+      });
+
+      it('sends no JSON success body from a raw route', async () => {
+        vi.stubEnv('NODE_ENV', 'production');
+        vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const raw = route({ access: 'public', response: 'raw' }, async ({ reply }) =>
+          reply({ token: 'secret-token' } as never)
+        );
+        expect(await (await raw(request('GET', {}))).json()).toBeNull();
+      });
+    });
+
     it('checks error replies against the shared error contract, with the same stripping', async () => {
       vi.stubEnv('NODE_ENV', 'production');
       vi.spyOn(console, 'warn').mockImplementation(() => {});
