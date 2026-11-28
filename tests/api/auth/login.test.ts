@@ -25,6 +25,7 @@ import { POST as loginPost } from '@/app/api/auth/login/route';
 import { GET as meGet } from '@/app/api/auth/me/route';
 import { POST as testPlexPost } from '@/app/api/settings/test-plex/route';
 import { getOrCreateSettings } from '@/lib/models/Settings';
+import { completePlexLogin } from '@/lib/auth-login';
 
 describe('Auth and setup API routes', () => {
   let sent: SentRequest[];
@@ -213,6 +214,24 @@ describe('Auth and setup API routes', () => {
       const res = await testPlexPost(req as never);
       expect(res.status).toBe(200);
       expect(await res.json()).toMatchObject({ valid: false });
+    });
+  });
+
+  describe('completePlexLogin, with no stored server id', () => {
+    it("resolves the server id from /identity without sending the Admin's account token", async () => {
+      const settings = await seedPartialSettings();
+      const admin = await seedTestUser({ plexUserId: '1', isAdmin: true });
+      settings.adminUserId = admin._id;
+      await settings.save();
+
+      const result = await completePlexLogin('admin-oauth-token');
+      expect(result).toMatchObject({ success: true, user: { isAdmin: true } });
+
+      const identityRequests = sent.filter((r) => r.url.pathname === '/identity');
+      expect(identityRequests).toHaveLength(1);
+      expect(identityRequests[0].headers.get('X-Plex-Token')).toBeNull();
+
+      expect((await getOrCreateSettings()).plexMachineId).toBe('machine-1');
     });
   });
 });

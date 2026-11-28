@@ -3,7 +3,7 @@ import { signSessionJwt } from './security/session-jwt';
 import { Types } from 'mongoose';
 import { getOrCreateSettings } from './models/Settings';
 import { User, IUser } from './models/User';
-import { PlexService } from './services/plex';
+import { readPlexServerIdentity } from './services/plex';
 import { fetchPlexServers, fetchPlexUser, type PlexServerResource } from './services/plex-oauth';
 import { assertSafeServiceUrl } from './security/service-url';
 import { createLogger } from './logger';
@@ -179,7 +179,7 @@ export async function completePlexLogin(
   if (settings.setupComplete && isAdmin && !settings.plexMachineId && settings.plexServerUrl) {
     // Installs set up by hand before OAuth may not know their server's identity yet.
     // A refusal leaves the identity unknown, and sign-in then reports no access to this server.
-    const machineId = await new PlexService(authToken, settings.plexServerUrl).fetchMachineIdFromServer().catch(() => null);
+    const machineId = await readPlexServerIdentity(settings.plexServerUrl);
     if (machineId) {
       settings.plexMachineId = machineId;
       await settings.save();
